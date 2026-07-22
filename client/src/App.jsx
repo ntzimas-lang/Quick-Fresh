@@ -29,10 +29,10 @@ export default function App() {
       </aside>
       <main className="main">
         <section className={'view' + (view === 'products' ? ' active' : '')}>
-          {view === 'products' && <ProductsView />}
+          <ProductsView />
         </section>
         <section className={'view' + (view === 'contacts' ? ' active' : '')}>
-          {view === 'contacts' && <ContactsView />}
+          <ContactsView />
         </section>
       </main>
     </div>
