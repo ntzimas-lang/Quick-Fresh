@@ -141,7 +141,7 @@ export default function ProductEntryView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', flexShrink: 0 }}>
-        <strong style={{ fontSize: 15 }}>Καταχώρηση προϊόντων</strong>
+        <strong style={{ fontSize: 15 }}>Καταχώρηση Ληγμένων</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: '#f9fafb' }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
