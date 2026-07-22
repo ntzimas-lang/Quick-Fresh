@@ -159,6 +159,41 @@ export const Contacts = {
   }
 };
 
+export const Entries = {
+  async list() {
+    const { data, error } = await supabase.from('product_entries').select('*').order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async create({ productId, productItemCode, productDescription, store, expiryDate }) {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const id = newId();
+    const record = {
+      id,
+      productId,
+      productItemCode: productItemCode || '',
+      productDescription: productDescription || '',
+      store,
+      expiryDate,
+      enteredBy: user?.id || null,
+      enteredByEmail: user?.email || null,
+      createdAt: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('product_entries')
+      .insert({ id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async remove(id) {
+    const { error } = await supabase.from('product_entries').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const History = {
   async list(limit = 300) {
     const { data, error } = await supabase

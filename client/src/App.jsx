@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import ProductsView from './components/ProductsView.jsx';
 import ContactsView from './components/ContactsView.jsx';
 import HistoryView from './components/HistoryView.jsx';
+import ProductEntryView from './components/ProductEntryView.jsx';
+import ExpiredReportView from './components/ExpiredReportView.jsx';
 import Login from './components/Login.jsx';
 import { Auth } from './api.js';
 
@@ -25,6 +27,12 @@ export default function App() {
       setProfile(null);
     }
   }, [session]);
+
+  useEffect(() => {
+    if (profile?.role === 'driver' && view === 'products') {
+      setView('entry');
+    }
+  }, [profile]);
 
   if (session === undefined) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#97a2b0' }}>Φόρτωση...</div>;
@@ -58,6 +66,18 @@ export default function App() {
             👤 Αρχείο Επικοινωνίας
           </button>
           <button
+            className={'nav-item' + (view === 'entry' ? ' active' : '')}
+            onClick={() => setView('entry')}
+          >
+            📷 Καταχώρηση προϊόντων
+          </button>
+          <button
+            className={'nav-item' + (view === 'expired' ? ' active' : '')}
+            onClick={() => setView('expired')}
+          >
+            ⏰ Report Ληγμένα
+          </button>
+          <button
             className={'nav-item' + (view === 'history' ? ' active' : '')}
             onClick={() => setView('history')}
           >
@@ -83,6 +103,12 @@ export default function App() {
         </section>
         <section className={'view' + (view === 'contacts' ? ' active' : '')}>
           <ContactsView readOnly={readOnly} />
+        </section>
+        <section className={'view' + (view === 'entry' ? ' active' : '')}>
+          <ProductEntryView />
+        </section>
+        <section className={'view' + (view === 'expired' ? ' active' : '')}>
+          <ExpiredReportView canDelete={role === 'super_user'} />
         </section>
         <section className={'view' + (view === 'history' ? ' active' : '')}>
           <HistoryView />
