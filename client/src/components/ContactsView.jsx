@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Contacts } from '../api.js';
 
 const CONTACT_COLUMNS = [
@@ -24,6 +24,9 @@ const CONTACT_COLUMNS = [
 
 const DEFAULT_VISIBLE_CONTACT_COLUMNS = CONTACT_COLUMNS.map((col) => col.key);
 
+const DATE_KEYS = new Set(['firstCallDate', 'firstMailDate', 'firstVisitDate', 'secondCallDate', 'secondMailDate', 'secondVisitDate']);
+const TEXT_KEYS = new Set(['company', 'department', 'phone', 'emailInfo', 'status', 'autoSeller', 'interest', 'responsible', 'email', 'phone2', 'notes']);
+
 function getContactColumnValue(c, key) {
   if (key === 'people') return (c.people || []).join(', ');
   return c[key];
@@ -44,6 +47,11 @@ function loadVisibleColumns() {
   return null;
 }
 
+const inlineInputStyle = {
+  width: '100%', border: '1px solid transparent', background: 'transparent',
+  padding: '3px 4px', fontSize: 12.5, fontFamily: 'inherit', color: 'inherit', borderRadius: 4
+};
+
 export default function ContactsView() {
   const [contacts, setContacts] = useState([]);
   const [current, setCurrent] = useState(null);
@@ -56,6 +64,9 @@ export default function ContactsView() {
   const [columnFilters, setColumnFilters] = useState({});
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+
+  const cardSaveTimer = useRef(null);
+  const inlineSaveTimers = useRef({});
 
   useEffect(() => {
     Contacts.list().then(setContacts);
@@ -82,25 +93,36 @@ export default function ContactsView() {
     setViewMode('card');
   }
 
+  // ---------- Card view: auto-save (debounced) ----------
+  function scheduleCardSave(record) {
+    if (cardSaveTimer.current) clearTimeout(cardSaveTimer.current);
+    cardSaveTimer.current = setTimeout(async () => {
+      const saved = await Contacts.update(record.id, record);
+      setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
+      setContacts((list) => list.map((c) => (c.id === saved.id ? saved : c)));
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1200);
+    }, 700);
+  }
+  function applyCardUpdate(updater) {
+    setCurrent((prev) => {
+      const next = updater(prev);
+      scheduleCardSave(next);
+      return next;
+    });
+  }
+
   function updateField(key, value) {
-    setCurrent((prev) => ({ ...prev, [key]: value }));
+    applyCardUpdate((prev) => ({ ...prev, [key]: value }));
   }
   function addPerson() {
     const name = personInput.trim();
     if (!name) return;
-    setCurrent((prev) => ({ ...prev, people: [...(prev.people || []), name] }));
+    applyCardUpdate((prev) => ({ ...prev, people: [...(prev.people || []), name] }));
     setPersonInput('');
   }
   function removePerson(idx) {
-    setCurrent((prev) => ({ ...prev, people: prev.people.filter((_, i) => i !== idx) }));
-  }
-
-  async function handleSave() {
-    const saved = await Contacts.update(current.id, current);
-    setCurrent(saved);
-    setContacts((list) => list.map((c) => (c.id === saved.id ? saved : c)));
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1200);
+    applyCardUpdate((prev) => ({ ...prev, people: prev.people.filter((_, i) => i !== idx) }));
   }
 
   async function handleDelete() {
@@ -109,6 +131,28 @@ export default function ContactsView() {
     setContacts((list) => list.filter((c) => c.id !== current.id));
     setCurrent(null);
     setViewMode('table');
+  }
+
+  // ---------- Table view: inline editing (debounced per-row) ----------
+  function scheduleInlineSave(contactId) {
+    if (inlineSaveTimers.current[contactId]) clearTimeout(inlineSaveTimers.current[contactId]);
+    inlineSaveTimers.current[contactId] = setTimeout(async () => {
+      setContacts((list) => {
+        const record = list.find((c) => c.id === contactId);
+        if (record) {
+          Contacts.update(contactId, record).then((saved) => {
+            setContacts((list2) => list2.map((c) => (c.id === saved.id ? saved : c)));
+            setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
+          });
+        }
+        return list;
+      });
+    }, 700);
+  }
+  function updateContactInline(contactId, updater) {
+    setContacts((prevList) => prevList.map((c) => (c.id === contactId ? updater(c) : c)));
+    setCurrent((prev) => (prev && prev.id === contactId ? updater(prev) : prev));
+    scheduleInlineSave(contactId);
   }
 
   function toggleColumn(key) {
@@ -152,6 +196,44 @@ export default function ContactsView() {
     });
     return withVal.map((x) => x.c);
   })();
+
+  function renderCell(c, col) {
+    const stop = (e) => e.stopPropagation();
+    if (col.key === 'status') {
+      return (
+        <input
+          value={c.status || ''}
+          onClick={stop}
+          onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, status: e.target.value }))}
+          style={inlineInputStyle}
+        />
+      );
+    }
+    if (TEXT_KEYS.has(col.key)) {
+      return (
+        <input
+          value={c[col.key] || ''}
+          onClick={stop}
+          onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, [col.key]: e.target.value }))}
+          style={inlineInputStyle}
+        />
+      );
+    }
+    if (DATE_KEYS.has(col.key)) {
+      return (
+        <input
+          type="date"
+          value={c[col.key] || ''}
+          onClick={stop}
+          onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, [col.key]: e.target.value || null }))}
+          style={inlineInputStyle}
+        />
+      );
+    }
+    // people: read-only preview, κλικ ανοίγει την κάρτα για επεξεργασία
+    const value = getContactColumnValue(c, col.key);
+    return value || '—';
+  }
 
   return (
     <div className="detail-pane" style={{ width: '100%' }}>
@@ -217,21 +299,11 @@ export default function ContactsView() {
                     style={{ borderBottom: '1px solid #f1f3f5', cursor: 'pointer' }}
                   >
                     <td style={{ padding: '8px 12px', color: '#97a2b0' }}>{i + 1}</td>
-                    {visibleColumnDefs.map((col) => {
-                      const value = getContactColumnValue(c, col.key);
-                      if (col.key === 'status') {
-                        return (
-                          <td key={col.key} style={{ padding: '8px 12px' }}>
-                            {value ? (
-                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#eef1f4', color: '#6b7684' }}>{value}</span>
-                            ) : (
-                              <span style={{ color: '#d7dce2' }}>—</span>
-                            )}
-                          </td>
-                        );
-                      }
-                      return <td key={col.key} style={{ padding: '8px 12px' }}>{value || '—'}</td>;
-                    })}
+                    {visibleColumnDefs.map((col) => (
+                      <td key={col.key} style={{ padding: '4px 8px' }}>
+                        {renderCell(c, col)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -255,7 +327,9 @@ export default function ContactsView() {
           <div className="tabs">
             <div className="tab-actions" style={{ marginLeft: 'auto' }}>
               <button className="btn-primary" onClick={() => setViewMode('table')} style={{ background: '#6b7684' }}>← Πίνακας</button>
-              <button className="btn-primary" onClick={handleSave}>{savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αποθήκευση'}</button>
+              <span style={{ fontSize: 12, color: savedFlash ? '#2f8f8a' : '#97a2b0', alignSelf: 'center', minWidth: 110 }}>
+                {savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αυτόματη αποθήκευση'}
+              </span>
               <button className="btn-danger" onClick={handleDelete}>Διαγραφή</button>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Products, upload } from '../api.js';
 
 const STORE_CANDIDATES = ['DEMO', 'Plaisio', 'Novibet', 'Kryoneri', 'Nestle', 'AIA', 'Metlen', 'ACS Courier'];
@@ -39,6 +39,13 @@ const ALL_COLUMNS = [
 ];
 
 const DEFAULT_VISIBLE_COLUMNS = ['categoryGr', 'itemCode', 'barcode', 'descriptionErp', 'status', 'images365'];
+
+// Στήλες που επεξεργάζονται απευθείας μέσα στον πίνακα (χωρίς να ανοίγει η κάρτα).
+const INLINE_EDITABLE_TEXT_KEYS = new Set([
+  'itemCode', 'barcode', 'descriptionErp', 'descriptionGr', 'descriptionEn',
+  'detailedDescriptionGr', 'detailedDescriptionEn'
+]);
+const INLINE_EDITABLE_NUMBER_KEYS = new Set(['unitsPerMachine']);
 
 function computeFC(p) {
   const vat = p.cost?.vatPercent || 0;
@@ -113,6 +120,11 @@ function loadViewState() {
   return null;
 }
 
+const inlineInputStyle = {
+  width: '100%', border: '1px solid transparent', background: 'transparent',
+  padding: '3px 4px', fontSize: 12.5, fontFamily: 'inherit', color: 'inherit', borderRadius: 4
+};
+
 export default function ProductsView() {
   const [products, setProducts] = useState([]);
   const [current, setCurrent] = useState(null);
@@ -129,6 +141,9 @@ export default function ProductsView() {
   const [storeOptions, setStoreOptions] = useState(STORE_CANDIDATES);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+
+  const cardSaveTimer = useRef(null);
+  const inlineSaveTimers = useRef({});
 
   useEffect(() => {
     try {
@@ -162,14 +177,33 @@ export default function ProductsView() {
     setViewMode('card');
   }
 
+  // ---------- Card view: auto-save (debounced) ----------
+  function scheduleCardSave(record) {
+    if (cardSaveTimer.current) clearTimeout(cardSaveTimer.current);
+    cardSaveTimer.current = setTimeout(async () => {
+      const saved = await Products.update(record.id, record);
+      setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
+      setProducts((list) => list.map((p) => (p.id === saved.id ? saved : p)));
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1200);
+    }, 700);
+  }
+  function applyCardUpdate(updater) {
+    setCurrent((prev) => {
+      const next = updater(prev);
+      scheduleCardSave(next);
+      return next;
+    });
+  }
+
   function updateField(key, value) {
-    setCurrent((prev) => ({ ...prev, [key]: value }));
+    applyCardUpdate((prev) => ({ ...prev, [key]: value }));
   }
   function updateCost(key, value) {
-    setCurrent((prev) => ({ ...prev, cost: { ...prev.cost, [key]: value } }));
+    applyCardUpdate((prev) => ({ ...prev, cost: { ...prev.cost, [key]: value } }));
   }
   function updateStore(idx, field, value) {
-    setCurrent((prev) => {
+    applyCardUpdate((prev) => {
       const stores = prev.stores.map((s, i) =>
         i === idx ? { ...s, [field]: value === '' ? null : parseFloat(value) } : s
       );
@@ -210,10 +244,10 @@ export default function ProductsView() {
     await addStoreEverywhere(name);
   }
   function removeStore(idx) {
-    setCurrent((prev) => ({ ...prev, stores: prev.stores.filter((_, i) => i !== idx) }));
+    applyCardUpdate((prev) => ({ ...prev, stores: prev.stores.filter((_, i) => i !== idx) }));
   }
   function toggleActiveStore(name) {
-    setCurrent((prev) => {
+    applyCardUpdate((prev) => {
       const active = prev.activeStores.includes(name)
         ? prev.activeStores.filter((n) => n !== name)
         : [...prev.activeStores, name];
@@ -225,7 +259,7 @@ export default function ProductsView() {
     if (!name || !name.trim()) return;
     const trimmed = name.trim();
     await addStoreEverywhere(trimmed);
-    setCurrent((prev) => (prev.activeStores.includes(trimmed) ? prev : { ...prev, activeStores: [...prev.activeStores, trimmed] }));
+    applyCardUpdate((prev) => (prev.activeStores.includes(trimmed) ? prev : { ...prev, activeStores: [...prev.activeStores, trimmed] }));
   }
   function removeStoreOption(name) {
     if (!window.confirm(`Αφαίρεση καταστήματος "${name}" από τη λίστα;`)) return;
@@ -235,15 +269,7 @@ export default function ProductsView() {
   async function handleImageUpload(key, file) {
     if (!file) return;
     const { url } = await upload(file);
-    setCurrent((prev) => ({ ...prev, [key]: [...(prev[key] || []), url] }));
-  }
-
-  async function handleSave() {
-    const saved = await Products.update(current.id, current);
-    setCurrent(saved);
-    setProducts((list) => list.map((p) => (p.id === saved.id ? saved : p)));
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1200);
+    applyCardUpdate((prev) => ({ ...prev, [key]: [...(prev[key] || []), url] }));
   }
 
   async function handleDelete() {
@@ -252,6 +278,28 @@ export default function ProductsView() {
     setProducts((list) => list.filter((p) => p.id !== current.id));
     setCurrent(null);
     setViewMode('table');
+  }
+
+  // ---------- Table view: inline editing (debounced per-row) ----------
+  function scheduleInlineSave(productId) {
+    if (inlineSaveTimers.current[productId]) clearTimeout(inlineSaveTimers.current[productId]);
+    inlineSaveTimers.current[productId] = setTimeout(async () => {
+      setProducts((list) => {
+        const record = list.find((p) => p.id === productId);
+        if (record) {
+          Products.update(productId, record).then((saved) => {
+            setProducts((list2) => list2.map((p) => (p.id === saved.id ? saved : p)));
+            setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
+          });
+        }
+        return list;
+      });
+    }, 700);
+  }
+  function updateProductInline(productId, updater) {
+    setProducts((prevList) => prevList.map((p) => (p.id === productId ? updater(p) : p)));
+    setCurrent((prev) => (prev && prev.id === productId ? updater(prev) : prev));
+    scheduleInlineSave(productId);
   }
 
   function toggleColumn(key) {
@@ -337,8 +385,138 @@ export default function ProductsView() {
   const cost = current?.cost || { sellingPrice: 0, ptk: 0, quantity: 0, vatPercent: 13 };
   const vat = cost.vatPercent || 0;
   const net = cost.sellingPrice ? cost.sellingPrice / (1 + vat / 100) : 0;
-  const profit = net - (cost.ptk || 0);
   const fc = net > 0 ? ((cost.ptk || 0) / net) * 100 : NaN;
+
+  // Επεξεργάσιμο κελί πίνακα — κλικ μέσα δεν ανοίγει την κάρτα.
+  function renderCell(p, col) {
+    const stop = (e) => e.stopPropagation();
+
+    if (col.key === 'categoryGr' || col.key === 'categoryEn') {
+      return (
+        <select
+          value={p[col.key] || ''}
+          onClick={stop}
+          onChange={(e) => {
+            const val = e.target.value;
+            const pair = col.key === 'categoryGr'
+              ? CATEGORIES.find((c) => c.gr === val)
+              : CATEGORIES.find((c) => c.en === val);
+            updateProductInline(p.id, (prod) => ({
+              ...prod,
+              categoryGr: pair ? pair.gr : (col.key === 'categoryGr' ? val : prod.categoryGr),
+              categoryEn: pair ? pair.en : (col.key === 'categoryEn' ? val : prod.categoryEn)
+            }));
+          }}
+          style={inlineInputStyle}
+        >
+          <option value="">—</option>
+          {CATEGORIES.map((c) => (
+            <option key={c.gr} value={col.key === 'categoryGr' ? c.gr : c.en}>
+              {col.key === 'categoryGr' ? c.gr : c.en}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    if (INLINE_EDITABLE_TEXT_KEYS.has(col.key)) {
+      return (
+        <input
+          value={p[col.key] || ''}
+          onClick={stop}
+          onChange={(e) => updateProductInline(p.id, (prod) => ({ ...prod, [col.key]: e.target.value }))}
+          style={inlineInputStyle}
+        />
+      );
+    }
+    if (INLINE_EDITABLE_NUMBER_KEYS.has(col.key)) {
+      return (
+        <input
+          type="number"
+          value={p[col.key] ?? ''}
+          onClick={stop}
+          onChange={(e) => updateProductInline(p.id, (prod) => ({ ...prod, [col.key]: e.target.value === '' ? null : +e.target.value }))}
+          style={inlineInputStyle}
+        />
+      );
+    }
+    if (col.key === 'status') {
+      return (
+        <select
+          value={p.status || 'ΕΝΤΟΣ'}
+          onClick={stop}
+          onChange={(e) => updateProductInline(p.id, (prod) => ({ ...prod, status: e.target.value }))}
+          style={inlineInputStyle}
+        >
+          <option>ΕΝΤΟΣ</option>
+          <option>ΕΚΤΟΣ</option>
+        </select>
+      );
+    }
+    if (col.key === 'activeOnMachine') {
+      return (
+        <select
+          value={p.activeOnMachine || 'YES'}
+          onClick={stop}
+          onChange={(e) => updateProductInline(p.id, (prod) => ({ ...prod, activeOnMachine: e.target.value }))}
+          style={inlineInputStyle}
+        >
+          <option value="YES">YES</option>
+          <option value="NO">NO</option>
+        </select>
+      );
+    }
+    if (col.key === 'sellingPrice' || col.key === 'ptk' || col.key === 'vatPercent') {
+      const field = col.key === 'sellingPrice' ? 'sellingPrice' : col.key === 'ptk' ? 'ptk' : 'vatPercent';
+      return (
+        <input
+          type="number"
+          step="0.01"
+          value={p.cost?.[field] ?? ''}
+          onClick={stop}
+          onChange={(e) =>
+            updateProductInline(p.id, (prod) => ({
+              ...prod,
+              cost: { ...prod.cost, [field]: e.target.value === '' ? 0 : parseFloat(e.target.value) }
+            }))
+          }
+          style={inlineInputStyle}
+        />
+      );
+    }
+    const storeCol = parseStoreColKey(col.key);
+    if (storeCol && (storeCol.field === 'price' || storeCol.field === 'priceQF')) {
+      const storeField = storeCol.field === 'price' ? 'sellingPriceStore' : 'sellingPriceQF';
+      const storeEntry = (p.stores || []).find((s) => s.name === storeCol.storeName);
+      return (
+        <input
+          type="number"
+          step="0.01"
+          value={storeEntry?.[storeField] ?? ''}
+          onClick={stop}
+          onChange={(e) => {
+            const val = e.target.value === '' ? null : parseFloat(e.target.value);
+            updateProductInline(p.id, (prod) => {
+              const stores = (prod.stores || []).some((s) => s.name === storeCol.storeName)
+                ? prod.stores.map((s) => (s.name === storeCol.storeName ? { ...s, [storeField]: val } : s))
+                : [...(prod.stores || []), { name: storeCol.storeName, sellingPriceStore: null, sellingPriceQF: null, [storeField]: val }];
+              return { ...prod, stores };
+            });
+          }}
+          style={inlineInputStyle}
+        />
+      );
+    }
+
+    // Μη επεξεργάσιμες στήλες: εμφάνιση τιμής μόνο.
+    const value = getColumnValue(p, col.key);
+    if (col.key === 'fc' || (storeCol && (storeCol.field === 'fc' || storeCol.field === 'fcQF'))) {
+      return isFinite(value) ? fmtPct(value) : '—';
+    }
+    if (col.key === 'images365' || col.key === 'imagesPromo') {
+      return value && value[0] ? <img src={value[0]} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4 }} /> : <span style={{ color: '#d7dce2' }}>—</span>;
+    }
+    return value || '—';
+  }
 
   return (
     <div className="detail-pane" style={{ width: '100%' }}>
@@ -432,39 +610,11 @@ export default function ProductsView() {
                     style={{ borderBottom: '1px solid #f1f3f5', cursor: 'pointer' }}
                   >
                     <td style={{ padding: '8px 12px', color: '#97a2b0' }}>{i + 1}</td>
-                    {visibleColumnDefs.map((col) => {
-                      const value = getColumnValue(p, col.key);
-                      if (col.key === 'status') {
-                        return (
-                          <td key={col.key} style={{ padding: '8px 12px' }}>
-                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: value === 'ΕΝΤΟΣ' ? '#e6f4ea' : '#eef1f4', color: value === 'ΕΝΤΟΣ' ? '#257873' : '#6b7684' }}>
-                              {value}
-                            </span>
-                          </td>
-                        );
-                      }
-                      if (col.key === 'images365' || col.key === 'imagesPromo') {
-                        return (
-                          <td key={col.key} style={{ padding: '8px 12px' }}>
-                            {value && value[0] ? <img src={value[0]} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4 }} /> : <span style={{ color: '#d7dce2' }}>—</span>}
-                          </td>
-                        );
-                      }
-                      if (col.key === 'sellingPrice' || col.key === 'ptk') {
-                        return <td key={col.key} style={{ padding: '8px 12px' }}>{value ? fmtEuro(value) : '—'}</td>;
-                      }
-                      if (col.key === 'fc') {
-                        return <td key={col.key} style={{ padding: '8px 12px' }}>{isFinite(value) ? fmtPct(value) : '—'}</td>;
-                      }
-                      const storeCol = parseStoreColKey(col.key);
-                      if (storeCol) {
-                        if (storeCol.field === 'price' || storeCol.field === 'priceQF') {
-                          return <td key={col.key} style={{ padding: '8px 12px' }}>{value ? fmtEuro(value) : '—'}</td>;
-                        }
-                        return <td key={col.key} style={{ padding: '8px 12px' }}>{isFinite(value) ? fmtPct(value) : '—'}</td>;
-                      }
-                      return <td key={col.key} style={{ padding: '8px 12px' }}>{value || '—'}</td>;
-                    })}
+                    {visibleColumnDefs.map((col) => (
+                      <td key={col.key} style={{ padding: '4px 8px' }}>
+                        {renderCell(p, col)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -490,7 +640,9 @@ export default function ProductsView() {
             <button className={'tab' + (tab === 'cost' ? ' active' : '')} onClick={() => setTab('cost')}>Cost</button>
             <div className="tab-actions">
               <button className="btn-primary" onClick={() => setViewMode('table')} style={{ background: '#6b7684' }}>← Πίνακας</button>
-              <button className="btn-primary" onClick={handleSave}>{savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αποθήκευση'}</button>
+              <span style={{ fontSize: 12, color: savedFlash ? '#2f8f8a' : '#97a2b0', alignSelf: 'center', minWidth: 110 }}>
+                {savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αυτόματη αποθήκευση'}
+              </span>
               <button className="btn-danger" onClick={handleDelete}>Διαγραφή</button>
             </div>
           </div>
@@ -505,8 +657,7 @@ export default function ProductsView() {
                     onChange={(e) => {
                       const val = e.target.value;
                       const pair = CATEGORIES.find((c) => c.gr === val);
-                      updateField('categoryGr', val);
-                      if (pair) updateField('categoryEn', pair.en);
+                      applyCardUpdate((prev) => ({ ...prev, categoryGr: val, categoryEn: pair ? pair.en : prev.categoryEn }));
                     }}
                   >
                     <option value="">—</option>
@@ -520,8 +671,7 @@ export default function ProductsView() {
                     onChange={(e) => {
                       const val = e.target.value;
                       const pair = CATEGORIES.find((c) => c.en === val);
-                      updateField('categoryEn', val);
-                      if (pair) updateField('categoryGr', pair.gr);
+                      applyCardUpdate((prev) => ({ ...prev, categoryEn: val, categoryGr: pair ? pair.gr : prev.categoryGr }));
                     }}
                   >
                     <option value="">—</option>
@@ -560,7 +710,7 @@ export default function ProductsView() {
                     {storeOptions.map((name) => {
                       const on = (current.activeStores || []).includes(name);
                       return (
-                        <div key={name} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }} className="group">
+                        <div key={name} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
                           <div
                             className={'chip clickable' + (on ? '' : ' off')}
                             onClick={() => toggleActiveStore(name)}
