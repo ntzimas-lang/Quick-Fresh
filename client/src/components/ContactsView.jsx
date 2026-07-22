@@ -75,6 +75,17 @@ function loadVisibleColumns() {
   return null;
 }
 
+const CONTACT_SORT_KEY = 'qf_contacts_sort_state';
+function loadContactSortState() {
+  try {
+    const raw = localStorage.getItem(CONTACT_SORT_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    // ignore corrupt/unavailable storage
+  }
+  return null;
+}
+
 const inlineInputStyle = {
   width: '100%', border: '1px solid transparent', background: 'transparent',
   padding: '3px 4px', fontSize: 12.5, fontFamily: 'inherit', color: 'inherit', borderRadius: 4
@@ -89,11 +100,19 @@ export default function ContactsView({ readOnly = false }) {
   const [visibleColumns, setVisibleColumns] = useState(() => loadVisibleColumns() || DEFAULT_VISIBLE_CONTACT_COLUMNS);
   const [showColPicker, setShowColPicker] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState('asc');
+  const [sortKey, setSortKey] = useState(() => loadContactSortState()?.sortKey ?? null);
+  const [sortDir, setSortDir] = useState(() => loadContactSortState()?.sortDir || 'asc');
 
   const cardSaveTimer = useRef(null);
   const inlineSaveTimers = useRef({});
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CONTACT_SORT_KEY, JSON.stringify({ sortKey, sortDir }));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [sortKey, sortDir]);
 
   useEffect(() => {
     Contacts.list().then(setContacts);

@@ -170,19 +170,19 @@ export default function ProductsView({ readOnly = false }) {
   const [showColPicker, setShowColPicker] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
   const [storeOptions, setStoreOptions] = useState(STORE_CANDIDATES);
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState('asc');
+  const [sortKey, setSortKey] = useState(() => loadViewState()?.sortKey ?? null);
+  const [sortDir, setSortDir] = useState(() => loadViewState()?.sortDir || 'asc');
 
   const cardSaveTimer = useRef(null);
   const inlineSaveTimers = useRef({});
 
   useEffect(() => {
     try {
-      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({ tableViews, activeViewId }));
+      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({ tableViews, activeViewId, sortKey, sortDir }));
     } catch (e) {
       // ignore storage errors (e.g. private browsing quota)
     }
-  }, [tableViews, activeViewId]);
+  }, [tableViews, activeViewId, sortKey, sortDir]);
 
   useEffect(() => {
     Products.list().then((list) => {
