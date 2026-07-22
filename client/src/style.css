@@ -73,33 +73,4 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .btn-danger:hover { background: #fdf1ef; }
 
 .section-bar { text-align: center; color: #fff; font-weight: 700; font-size: 13px; padding: 10px; border-radius: 6px; margin: 18px 0 14px; letter-spacing: 0.3px; }
-.section-bar.teal { background: #2f8f8a; }
-.section-bar.navy { background: #1e3a6e; }
-
-.cost-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 8px; }
-.cost-field label { display: block; font-size: 11px; color: #6b7684; margin-bottom: 5px; font-weight: 700; text-align: center; }
-.cost-field input {
-  width: 100%; padding: 9px 8px; border: 1px solid #d7dce2; border-radius: 6px;
-  background: #f0f2f5; font-size: 14px; text-align: center; font-weight: 600;
-}
-.readonly-value {
-  padding: 9px 8px; border-radius: 6px; background: #eef1f4; text-align: center;
-  font-size: 14px; font-weight: 700; color: #1f2733; border: 1px solid #e1e5ea;
-}
-.readonly-value.teal { background: #2f8f8a; color: #fff; border-color: #2f8f8a; }
-
-.stores-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
-.stores-table th { font-size: 11.5px; color: #6b7684; text-align: center; font-weight: 700; padding: 0 6px 4px; }
-.stores-table td { padding: 0 6px; }
-.stores-table .store-name {
-  background: #1e3a6e; color: #fff; font-size: 12.5px; font-weight: 700;
-  padding: 10px 12px; border-radius: 6px; white-space: nowrap;
-}
-.stores-table input {
-  width: 100%; padding: 8px; border: 1px solid #d7dce2; border-radius: 6px;
-  background: #f0f2f5; font-size: 13px; text-align: center;
-}
-.stores-table .fc-cell {
-  padding: 8px; border-radius: 6px; background: #eef1f4; text-align: center;
-  font-size: 13px; font-weight: 700; border: 1px solid #e1e5ea;
-}
+.section-
