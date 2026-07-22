@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import ProductsView from './components/ProductsView.jsx';
 import ContactsView from './components/ContactsView.jsx';
+import HistoryView from './components/HistoryView.jsx';
 import Login from './components/Login.jsx';
 import { Auth } from './api.js';
 
@@ -56,6 +57,12 @@ export default function App() {
           >
             👤 Αρχείο Επικοινωνίας
           </button>
+          <button
+            className={'nav-item' + (view === 'history' ? ' active' : '')}
+            onClick={() => setView('history')}
+          >
+            🕒 Ιστορικό
+          </button>
         </nav>
         <div style={{ marginTop: 'auto', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 11.5, color: '#b9c3d6' }}>
           <div style={{ marginBottom: 6 }}>{profile?.email || session.user.email}</div>
@@ -76,6 +83,9 @@ export default function App() {
         </section>
         <section className={'view' + (view === 'contacts' ? ' active' : '')}>
           <ContactsView readOnly={readOnly} />
+        </section>
+        <section className={'view' + (view === 'history' ? ' active' : '')}>
+          <HistoryView />
         </section>
       </main>
     </div>

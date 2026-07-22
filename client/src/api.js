@@ -159,6 +159,18 @@ export const Contacts = {
   }
 };
 
+export const History = {
+  async list(limit = 300) {
+    const { data, error } = await supabase
+      .from('audit_log')
+      .select('*')
+      .order('changed_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data;
+  }
+};
+
 export async function upload(file) {
   const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
   const path = `${newId()}.${ext}`;
