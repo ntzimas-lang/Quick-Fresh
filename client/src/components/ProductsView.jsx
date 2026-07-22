@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Products, upload } from '../api.js';
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const STORE_CANDIDATES = ['DEMO', 'Plaisio', 'Novibet', 'Kryoneri', 'Nestle', 'AIA', 'Metlen', 'ACS Courier'];
 
@@ -108,6 +111,26 @@ function getFilterText(p, key) {
 
 function fmtEuro(n) { return isFinite(n) ? n.toFixed(2) + ' €' : '-'; }
 function fmtPct(n) { return isFinite(n) ? Math.round(n) + ' %' : '∞ %'; }
+
+// Τιμή στήλης έτοιμη για εξαγωγή (Excel/PDF) — αριθμοί μένουν αριθμοί, ώστε
+// να μπορούν να γίνουν υπολογισμοί στο Excel.
+function getExportValue(p, col) {
+  const storeCol = parseStoreColKey(col.key);
+  if (storeCol && (storeCol.field === 'fc' || storeCol.field === 'fcQF')) {
+    const v = getStoreColumnValue(p, storeCol.storeName, storeCol.field);
+    return isFinite(v) ? Math.round(v) : '';
+  }
+  if (col.key === 'fc') {
+    const v = computeFC(p);
+    return isFinite(v) ? Math.round(v) : '';
+  }
+  if (col.key === 'images365' || col.key === 'imagesPromo') {
+    const v = p[col.key];
+    return v && v.length ? 'Ναι' : '';
+  }
+  const v = getColumnValue(p, col.key);
+  return v === null || v === undefined ? '' : v;
+}
 
 const VIEW_STATE_KEY = 'qf_products_view_state';
 function loadViewState() {
@@ -382,6 +405,35 @@ export default function ProductsView() {
     return withVal.map((x) => x.p);
   })();
 
+  function exportExcel() {
+    const rows = sortedProducts.map((p) => {
+      const row = {};
+      visibleColumnDefs.forEach((col) => { row[col.label] = getExportValue(p, col); });
+      return row;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Product List');
+    XLSX.writeFile(wb, `quick-fresh-products-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
+  function exportPDF() {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFontSize(12);
+    doc.text('Quick & Fresh — Product List', 14, 12);
+    autoTable(doc, {
+      startY: 18,
+      head: [visibleColumnDefs.map((col) => col.label)],
+      body: sortedProducts.map((p) => visibleColumnDefs.map((col) => {
+        const v = getExportValue(p, col);
+        return v === null || v === undefined ? '' : String(v);
+      })),
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [47, 143, 138] }
+    });
+    doc.save(`quick-fresh-products-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   const cost = current?.cost || { sellingPrice: 0, ptk: 0, quantity: 0, vatPercent: 13 };
   const vat = cost.vatPercent || 0;
   const net = cost.sellingPrice ? cost.sellingPrice / (1 + vat / 100) : 0;
@@ -526,6 +578,12 @@ export default function ProductsView() {
           <button className={'tab' + (viewMode === 'card' ? ' active' : '')} onClick={() => { if (current) setViewMode('card'); }}>Κάρτα</button>
           {viewMode === 'table' && (
             <div className="tab-actions" style={{ position: 'relative' }}>
+              <button className="btn-primary" style={{ background: '#1e7d45' }} onClick={exportExcel} title="Εξαγωγή σε Excel">
+                Excel
+              </button>
+              <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title="Εξαγωγή σε PDF">
+                PDF
+              </button>
               <button className="btn-primary" style={{ background: '#6b7684' }} onClick={() => setShowColPicker((v) => !v)}>
                 Στήλες ({visibleColumns.length})
               </button>
