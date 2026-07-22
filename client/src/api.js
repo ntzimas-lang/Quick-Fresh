@@ -167,3 +167,29 @@ export async function upload(file) {
   const { data } = supabase.storage.from('images').getPublicUrl(path);
   return { url: data.publicUrl };
 }
+
+export { supabase };
+
+export const Auth = {
+  async signIn(email, password) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  },
+  async signOut() {
+    await supabase.auth.signOut();
+  },
+  async getSession() {
+    const { data } = await supabase.auth.getSession();
+    return data.session;
+  },
+  onAuthStateChange(callback) {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(session));
+    return data.subscription;
+  },
+  async getMyProfile(userId) {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    if (error) throw error;
+    return data;
+  }
+};

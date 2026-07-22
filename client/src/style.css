@@ -52,6 +52,8 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 }
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: #2f8f8a; background: #fff; }
 .field textarea { resize: vertical; }
+.field input:disabled, .field select:disabled, .field textarea:disabled { background: #f4f6f8; color: #97a2b0; cursor: not-allowed; }
+.cost-field input:disabled, .stores-table input:disabled { background: #f4f6f8; color: #97a2b0; cursor: not-allowed; }
 
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; min-height: 32px; align-items: center; }
 .chip { background: #16233f; color: #fff; padding: 5px 10px; border-radius: 14px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
