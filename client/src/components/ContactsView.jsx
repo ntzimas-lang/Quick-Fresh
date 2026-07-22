@@ -52,7 +52,7 @@ const inlineInputStyle = {
   padding: '3px 4px', fontSize: 12.5, fontFamily: 'inherit', color: 'inherit', borderRadius: 4
 };
 
-export default function ContactsView() {
+export default function ContactsView({ readOnly = false }) {
   const [contacts, setContacts] = useState([]);
   const [current, setCurrent] = useState(null);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -199,6 +199,10 @@ export default function ContactsView() {
 
   function renderCell(c, col) {
     const stop = (e) => e.stopPropagation();
+    if (readOnly) {
+      const value = getContactColumnValue(c, col.key);
+      return value || '—';
+    }
     if (col.key === 'status') {
       return (
         <input
@@ -313,7 +317,7 @@ export default function ContactsView() {
             <p style={{ fontSize: 12, color: '#97a2b0' }}>
               # {filteredContacts.length}{filteredContacts.length !== contacts.length ? ` / ${contacts.length}` : ''}
             </p>
-            <button className="btn-primary" onClick={handleNew}>+ Νέο</button>
+            {!readOnly && <button className="btn-primary" onClick={handleNew}>+ Νέο</button>}
           </div>
         </div>
       )}
@@ -328,20 +332,20 @@ export default function ContactsView() {
             <div className="tab-actions" style={{ marginLeft: 'auto' }}>
               <button className="btn-primary" onClick={() => setViewMode('table')} style={{ background: '#6b7684' }}>← Πίνακας</button>
               <span style={{ fontSize: 12, color: savedFlash ? '#2f8f8a' : '#97a2b0', alignSelf: 'center', minWidth: 110 }}>
-                {savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αυτόματη αποθήκευση'}
+                {readOnly ? 'Μόνο για ανάγνωση' : savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αυτόματη αποθήκευση'}
               </span>
-              <button className="btn-danger" onClick={handleDelete}>Διαγραφή</button>
+              {!readOnly && <button className="btn-danger" onClick={handleDelete}>Διαγραφή</button>}
             </div>
           </div>
           <div className="tab-panel active">
             <div className="grid-2">
-              <div className="field"><label>Εταιρεία</label><input value={current.company || ''} onChange={(e) => updateField('company', e.target.value)} /></div>
-              <div className="field"><label>Αρμόδιο Τμήμα</label><input value={current.department || ''} onChange={(e) => updateField('department', e.target.value)} /></div>
-              <div className="field"><label>Phone</label><input value={current.phone || ''} onChange={(e) => updateField('phone', e.target.value)} /></div>
-              <div className="field"><label>Email - Info</label><input type="email" value={current.emailInfo || ''} onChange={(e) => updateField('emailInfo', e.target.value)} /></div>
-              <div className="field"><label>Status</label><input placeholder="π.χ. Ενδιαφέρεται" value={current.status || ''} onChange={(e) => updateField('status', e.target.value)} /></div>
-              <div className="field"><label>Αυτόματος Πωλητής/Κυλικείο</label><input value={current.autoSeller || ''} onChange={(e) => updateField('autoSeller', e.target.value)} /></div>
-              <div className="field"><label>Ενδιαφέρον</label><input placeholder="π.χ. Υψηλό" value={current.interest || ''} onChange={(e) => updateField('interest', e.target.value)} /></div>
+              <div className="field"><label>Εταιρεία</label><input disabled={readOnly} value={current.company || ''} onChange={(e) => updateField('company', e.target.value)} /></div>
+              <div className="field"><label>Αρμόδιο Τμήμα</label><input disabled={readOnly} value={current.department || ''} onChange={(e) => updateField('department', e.target.value)} /></div>
+              <div className="field"><label>Phone</label><input disabled={readOnly} value={current.phone || ''} onChange={(e) => updateField('phone', e.target.value)} /></div>
+              <div className="field"><label>Email - Info</label><input disabled={readOnly} type="email" value={current.emailInfo || ''} onChange={(e) => updateField('emailInfo', e.target.value)} /></div>
+              <div className="field"><label>Status</label><input disabled={readOnly} placeholder="π.χ. Ενδιαφέρεται" value={current.status || ''} onChange={(e) => updateField('status', e.target.value)} /></div>
+              <div className="field"><label>Αυτόματος Πωλητής/Κυλικείο</label><input disabled={readOnly} value={current.autoSeller || ''} onChange={(e) => updateField('autoSeller', e.target.value)} /></div>
+              <div className="field"><label>Ενδιαφέρον</label><input disabled={readOnly} placeholder="π.χ. Υψηλό" value={current.interest || ''} onChange={(e) => updateField('interest', e.target.value)} /></div>
             </div>
 
             <div className="field">
@@ -350,38 +354,40 @@ export default function ContactsView() {
                 {(current.people || []).map((name, i) => (
                   <div className="chip" key={i}>
                     <span>{name}</span>
-                    <span className="x" onClick={() => removePerson(i)}>✕</span>
+                    {!readOnly && <span className="x" onClick={() => removePerson(i)}>✕</span>}
                   </div>
                 ))}
               </div>
-              <div className="add-person-row">
-                <input
-                  placeholder="Όνομα ατόμου + Enter"
-                  value={personInput}
-                  onChange={(e) => setPersonInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson(); } }}
-                />
-              </div>
+              {!readOnly && (
+                <div className="add-person-row">
+                  <input
+                    placeholder="Όνομα ατόμου + Enter"
+                    value={personInput}
+                    onChange={(e) => setPersonInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson(); } }}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid-2">
-              <div className="field"><label>Υπεύθυνος</label><input value={current.responsible || ''} onChange={(e) => updateField('responsible', e.target.value)} /></div>
-              <div className="field"><label>Email</label><input type="email" value={current.email || ''} onChange={(e) => updateField('email', e.target.value)} /></div>
-              <div className="field"><label>Phone (Υπεύθυνος)</label><input value={current.phone2 || ''} onChange={(e) => updateField('phone2', e.target.value)} /></div>
+              <div className="field"><label>Υπεύθυνος</label><input disabled={readOnly} value={current.responsible || ''} onChange={(e) => updateField('responsible', e.target.value)} /></div>
+              <div className="field"><label>Email</label><input disabled={readOnly} type="email" value={current.email || ''} onChange={(e) => updateField('email', e.target.value)} /></div>
+              <div className="field"><label>Phone (Υπεύθυνος)</label><input disabled={readOnly} value={current.phone2 || ''} onChange={(e) => updateField('phone2', e.target.value)} /></div>
             </div>
 
             <div className="grid-3">
-              <div className="field"><label>1η Τηλεφωνική Επικοινωνία</label><input type="date" value={current.firstCallDate || ''} onChange={(e) => updateField('firstCallDate', e.target.value || null)} /></div>
-              <div className="field"><label>1η Αποστολή Mail</label><input type="date" value={current.firstMailDate || ''} onChange={(e) => updateField('firstMailDate', e.target.value || null)} /></div>
-              <div className="field"><label>1η Επίσκεψη</label><input type="date" value={current.firstVisitDate || ''} onChange={(e) => updateField('firstVisitDate', e.target.value || null)} /></div>
-              <div className="field"><label>2η Τηλεφωνική Επικοινωνία</label><input type="date" value={current.secondCallDate || ''} onChange={(e) => updateField('secondCallDate', e.target.value || null)} /></div>
-              <div className="field"><label>2η Αποστολή Mail</label><input type="date" value={current.secondMailDate || ''} onChange={(e) => updateField('secondMailDate', e.target.value || null)} /></div>
-              <div className="field"><label>2η Επίσκεψη</label><input type="date" value={current.secondVisitDate || ''} onChange={(e) => updateField('secondVisitDate', e.target.value || null)} /></div>
+              <div className="field"><label>1η Τηλεφωνική Επικοινωνία</label><input disabled={readOnly} type="date" value={current.firstCallDate || ''} onChange={(e) => updateField('firstCallDate', e.target.value || null)} /></div>
+              <div className="field"><label>1η Αποστολή Mail</label><input disabled={readOnly} type="date" value={current.firstMailDate || ''} onChange={(e) => updateField('firstMailDate', e.target.value || null)} /></div>
+              <div className="field"><label>1η Επίσκεψη</label><input disabled={readOnly} type="date" value={current.firstVisitDate || ''} onChange={(e) => updateField('firstVisitDate', e.target.value || null)} /></div>
+              <div className="field"><label>2η Τηλεφωνική Επικοινωνία</label><input disabled={readOnly} type="date" value={current.secondCallDate || ''} onChange={(e) => updateField('secondCallDate', e.target.value || null)} /></div>
+              <div className="field"><label>2η Αποστολή Mail</label><input disabled={readOnly} type="date" value={current.secondMailDate || ''} onChange={(e) => updateField('secondMailDate', e.target.value || null)} /></div>
+              <div className="field"><label>2η Επίσκεψη</label><input disabled={readOnly} type="date" value={current.secondVisitDate || ''} onChange={(e) => updateField('secondVisitDate', e.target.value || null)} /></div>
             </div>
 
             <div className="field">
               <label>Παρατηρήσεις</label>
-              <textarea rows="4" value={current.notes || ''} onChange={(e) => updateField('notes', e.target.value)} />
+              <textarea disabled={readOnly} rows="4" value={current.notes || ''} onChange={(e) => updateField('notes', e.target.value)} />
             </div>
           </div>
         </div>

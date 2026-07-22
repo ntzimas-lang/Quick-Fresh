@@ -3,6 +3,7 @@ import { Products, upload } from '../api.js';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
 
 const STORE_CANDIDATES = ['DEMO', 'Plaisio', 'Novibet', 'Kryoneri', 'Nestle', 'AIA', 'Metlen', 'ACS Courier'];
 
@@ -148,7 +149,7 @@ const inlineInputStyle = {
   padding: '3px 4px', fontSize: 12.5, fontFamily: 'inherit', color: 'inherit', borderRadius: 4
 };
 
-export default function ProductsView() {
+export default function ProductsView({ readOnly = false }) {
   const [products, setProducts] = useState([]);
   const [current, setCurrent] = useState(null);
   const [tab, setTab] = useState('info');
@@ -419,6 +420,10 @@ export default function ProductsView() {
 
   function exportPDF() {
     const doc = new jsPDF({ orientation: 'landscape' });
+    // Embed a Unicode font (Greek + Latin) — jsPDF's built-in fonts can't render Greek text.
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(12);
     doc.text('Quick & Fresh — Product List', 14, 12);
     autoTable(doc, {
@@ -428,8 +433,8 @@ export default function ProductsView() {
         const v = getExportValue(p, col);
         return v === null || v === undefined ? '' : String(v);
       })),
-      styles: { fontSize: 7, cellPadding: 2 },
-      headStyles: { fillColor: [47, 143, 138] }
+      styles: { fontSize: 7, cellPadding: 2, font: 'DejaVuSans' },
+      headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' }
     });
     doc.save(`quick-fresh-products-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
@@ -442,6 +447,20 @@ export default function ProductsView() {
   // Επεξεργάσιμο κελί πίνακα — κλικ μέσα δεν ανοίγει την κάρτα.
   function renderCell(p, col) {
     const stop = (e) => e.stopPropagation();
+
+    if (readOnly) {
+      const storeColRO = parseStoreColKey(col.key);
+      const value = getColumnValue(p, col.key);
+      if (col.key === 'fc' || (storeColRO && (storeColRO.field === 'fc' || storeColRO.field === 'fcQF'))) {
+        return isFinite(value) ? fmtPct(value) : '—';
+      }
+      if (col.key === 'images365' || col.key === 'imagesPromo') {
+        return value && value[0] ? <img src={value[0]} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4 }} /> : <span style={{ color: '#d7dce2' }}>—</span>;
+      }
+      if (col.key === 'sellingPrice' || col.key === 'ptk') return isFinite(value) ? fmtEuro(value) : '—';
+      if (storeColRO && (storeColRO.field === 'price' || storeColRO.field === 'priceQF')) return isFinite(value) ? fmtEuro(value) : '—';
+      return value || '—';
+    }
 
     if (col.key === 'categoryGr' || col.key === 'categoryEn') {
       return (
@@ -682,7 +701,7 @@ export default function ProductsView() {
             <p style={{ fontSize: 12, color: '#97a2b0' }}>
               # {filteredProducts.length}{filteredProducts.length !== products.length ? ` / ${products.length}` : ''}
             </p>
-            <button className="btn-primary" onClick={handleNew}>+ Νέο</button>
+            {!readOnly && <button className="btn-primary" onClick={handleNew}>+ Νέο</button>}
           </div>
         </div>
       )}
@@ -699,9 +718,9 @@ export default function ProductsView() {
             <div className="tab-actions">
               <button className="btn-primary" onClick={() => setViewMode('table')} style={{ background: '#6b7684' }}>← Πίνακας</button>
               <span style={{ fontSize: 12, color: savedFlash ? '#2f8f8a' : '#97a2b0', alignSelf: 'center', minWidth: 110 }}>
-                {savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αυτόματη αποθήκευση'}
+                {readOnly ? 'Μόνο για ανάγνωση' : savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αυτόματη αποθήκευση'}
               </span>
-              <button className="btn-danger" onClick={handleDelete}>Διαγραφή</button>
+              {!readOnly && <button className="btn-danger" onClick={handleDelete}>Διαγραφή</button>}
             </div>
           </div>
 
@@ -711,6 +730,7 @@ export default function ProductsView() {
                 <div className="field">
                   <label>Κατηγορία GR</label>
                   <select
+                    disabled={readOnly}
                     value={current.categoryGr || ''}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -725,6 +745,7 @@ export default function ProductsView() {
                 <div className="field">
                   <label>Κατηγορία EN</label>
                   <select
+                    disabled={readOnly}
                     value={current.categoryEn || ''}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -736,28 +757,28 @@ export default function ProductsView() {
                     {CATEGORIES.map((c) => <option key={c.en} value={c.en}>{c.en}</option>)}
                   </select>
                 </div>
-                <div className="field"><label>Κωδικός είδους</label><input value={current.itemCode || ''} onChange={(e) => updateField('itemCode', e.target.value)} /></div>
-                <div className="field"><label>Barcode</label><input value={current.barcode || ''} onChange={(e) => updateField('barcode', e.target.value)} /></div>
-                <div className="field"><label>Περιγραφή είδους ERP</label><input value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
-                <div className="field"><label>ΤΕΜ στο μηχάνημα</label><input type="number" value={current.unitsPerMachine ?? ''} onChange={(e) => updateField('unitsPerMachine', e.target.value ? +e.target.value : null)} /></div>
-                <div className="field"><label>Περιγραφή είδους GR</label><input value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
-                <div className="field"><label>Περιγραφή είδους EN</label><input value={current.descriptionEn || ''} onChange={(e) => updateField('descriptionEn', e.target.value)} /></div>
+                <div className="field"><label>Κωδικός είδους</label><input disabled={readOnly} value={current.itemCode || ''} onChange={(e) => updateField('itemCode', e.target.value)} /></div>
+                <div className="field"><label>Barcode</label><input disabled={readOnly} value={current.barcode || ''} onChange={(e) => updateField('barcode', e.target.value)} /></div>
+                <div className="field"><label>Περιγραφή είδους ERP</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
+                <div className="field"><label>ΤΕΜ στο μηχάνημα</label><input disabled={readOnly} type="number" value={current.unitsPerMachine ?? ''} onChange={(e) => updateField('unitsPerMachine', e.target.value ? +e.target.value : null)} /></div>
+                <div className="field"><label>Περιγραφή είδους GR</label><input disabled={readOnly} value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
+                <div className="field"><label>Περιγραφή είδους EN</label><input disabled={readOnly} value={current.descriptionEn || ''} onChange={(e) => updateField('descriptionEn', e.target.value)} /></div>
               </div>
               <div className="grid-2">
-                <div className="field"><label>Αναλυτική Περιγραφή είδους GR</label><textarea rows="4" value={current.detailedDescriptionGr || ''} onChange={(e) => updateField('detailedDescriptionGr', e.target.value)} /></div>
-                <div className="field"><label>Αναλυτική Περιγραφή είδους EN</label><textarea rows="4" value={current.detailedDescriptionEn || ''} onChange={(e) => updateField('detailedDescriptionEn', e.target.value)} /></div>
+                <div className="field"><label>Αναλυτική Περιγραφή είδους GR</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionGr || ''} onChange={(e) => updateField('detailedDescriptionGr', e.target.value)} /></div>
+                <div className="field"><label>Αναλυτική Περιγραφή είδους EN</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionEn || ''} onChange={(e) => updateField('detailedDescriptionEn', e.target.value)} /></div>
               </div>
               <div className="grid-3">
                 <div className="field">
                   <label>Status</label>
-                  <select value={current.status || 'ΕΝΤΟΣ'} onChange={(e) => updateField('status', e.target.value)}>
+                  <select disabled={readOnly} value={current.status || 'ΕΝΤΟΣ'} onChange={(e) => updateField('status', e.target.value)}>
                     <option>ΕΝΤΟΣ</option>
                     <option>ΕΚΤΟΣ</option>
                   </select>
                 </div>
                 <div className="field">
                   <label>Ενεργό Στο Μηχάνημα</label>
-                  <select value={current.activeOnMachine || 'YES'} onChange={(e) => updateField('activeOnMachine', e.target.value)}>
+                  <select disabled={readOnly} value={current.activeOnMachine || 'YES'} onChange={(e) => updateField('activeOnMachine', e.target.value)}>
                     <option value="YES">YES</option>
                     <option value="NO">NO</option>
                   </select>
@@ -770,25 +791,29 @@ export default function ProductsView() {
                       return (
                         <div key={name} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
                           <div
-                            className={'chip clickable' + (on ? '' : ' off')}
-                            onClick={() => toggleActiveStore(name)}
-                            style={{ paddingRight: 18 }}
+                            className={'chip' + (readOnly ? '' : ' clickable') + (on ? '' : ' off')}
+                            onClick={() => { if (!readOnly) toggleActiveStore(name); }}
+                            style={{ paddingRight: readOnly ? 10 : 18 }}
                           >
                             {name}
                           </div>
-                          <span
-                            onClick={() => removeStoreOption(name)}
-                            style={{ position: 'absolute', right: 4, fontSize: 10, cursor: 'pointer', color: on ? '#fff' : '#6b7684', opacity: 0.6 }}
-                            title="Αφαίρεση από τη λίστα"
-                          >
-                            ✕
-                          </span>
+                          {!readOnly && (
+                            <span
+                              onClick={() => removeStoreOption(name)}
+                              style={{ position: 'absolute', right: 4, fontSize: 10, cursor: 'pointer', color: on ? '#fff' : '#6b7684', opacity: 0.6 }}
+                              title="Αφαίρεση από τη λίστα"
+                            >
+                              ✕
+                            </span>
+                          )}
                         </div>
                       );
                     })}
-                    <div className="chip clickable off" onClick={addStoreOption} style={{ borderStyle: 'dashed' }}>
-                      + Κατάστημα
-                    </div>
+                    {!readOnly && (
+                      <div className="chip clickable off" onClick={addStoreOption} style={{ borderStyle: 'dashed' }}>
+                        + Κατάστημα
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -796,7 +821,7 @@ export default function ProductsView() {
                 <div className="field">
                   <label>Image - 365</label>
                   <div className="image-box">
-                    <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('images365', e.target.files[0])} />
+                    {!readOnly && <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('images365', e.target.files[0])} />}
                     <div className="image-thumbs">
                       {(current.images365 || []).map((u, i) => <img key={i} src={u} alt="" />)}
                     </div>
@@ -805,7 +830,7 @@ export default function ProductsView() {
                 <div className="field">
                   <label>Image - Promo</label>
                   <div className="image-box">
-                    <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('imagesPromo', e.target.files[0])} />
+                    {!readOnly && <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('imagesPromo', e.target.files[0])} />}
                     <div className="image-thumbs">
                       {(current.imagesPromo || []).map((u, i) => <img key={i} src={u} alt="" />)}
                     </div>
@@ -819,9 +844,9 @@ export default function ProductsView() {
             <div className="tab-panel active">
               <div className="section-bar teal">General Cost</div>
               <div className="cost-grid">
-                <div className="cost-field"><label>Τιμή Πώλησης</label><input type="number" step="0.01" value={cost.sellingPrice ?? ''} onChange={(e) => updateCost('sellingPrice', parseFloat(e.target.value) || 0)} /></div>
-                <div className="cost-field"><label>ΦΠΑ %</label><input type="number" step="1" value={cost.vatPercent ?? 13} onChange={(e) => updateCost('vatPercent', parseFloat(e.target.value) || 0)} /></div>
-                <div className="cost-field"><label>ΠΤΚ (κόστος)</label><input type="number" step="0.01" value={cost.ptk ?? ''} onChange={(e) => updateCost('ptk', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>Τιμή Πώλησης</label><input disabled={readOnly} type="number" step="0.01" value={cost.sellingPrice ?? ''} onChange={(e) => updateCost('sellingPrice', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>ΦΠΑ %</label><input disabled={readOnly} type="number" step="1" value={cost.vatPercent ?? 13} onChange={(e) => updateCost('vatPercent', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>ΠΤΚ (κόστος)</label><input disabled={readOnly} type="number" step="0.01" value={cost.ptk ?? ''} onChange={(e) => updateCost('ptk', parseFloat(e.target.value) || 0)} /></div>
                 <div className="readonly-value teal" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <label style={{ fontSize: 11, marginBottom: 4 }}>F.C.</label>
                   {fmtPct(fc)}
@@ -849,17 +874,17 @@ export default function ProductsView() {
                     return (
                       <tr key={i}>
                         <td><div className="store-name">{s.name}</div></td>
-                        <td><input type="number" step="0.01" value={s.sellingPriceStore ?? ''} onChange={(e) => updateStore(i, 'sellingPriceStore', e.target.value)} /></td>
+                        <td><input disabled={readOnly} type="number" step="0.01" value={s.sellingPriceStore ?? ''} onChange={(e) => updateStore(i, 'sellingPriceStore', e.target.value)} /></td>
                         <td><div className="fc-cell">{fmtPct(fcStore)}</div></td>
-                        <td><input type="number" step="0.01" value={s.sellingPriceQF ?? ''} onChange={(e) => updateStore(i, 'sellingPriceQF', e.target.value)} /></td>
+                        <td><input disabled={readOnly} type="number" step="0.01" value={s.sellingPriceQF ?? ''} onChange={(e) => updateStore(i, 'sellingPriceQF', e.target.value)} /></td>
                         <td><div className="fc-cell">{fmtPct(fcQF)}</div></td>
-                        <td><button className="btn-danger" onClick={() => removeStore(i)}>✕</button></td>
+                        <td>{!readOnly && <button className="btn-danger" onClick={() => removeStore(i)}>✕</button>}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-              <button className="btn-primary" style={{ background: '#6b7684', marginTop: 10 }} onClick={addStore}>+ Κατάστημα</button>
+              {!readOnly && <button className="btn-primary" style={{ background: '#6b7684', marginTop: 10 }} onClick={addStore}>+ Κατάστημα</button>}
             </div>
           )}
         </div>
