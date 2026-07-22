@@ -65,24 +65,30 @@ export default function App() {
           >
             ⏰ Report Ληγμένα
           </button>
-          <button
-            className={'nav-item' + (view === 'contacts' ? ' active' : '')}
-            onClick={() => setView('contacts')}
-          >
-            👤 Αρχείο Επικοινωνίας
-          </button>
-          <button
-            className={'nav-item' + (view === 'products' ? ' active' : '')}
-            onClick={() => setView('products')}
-          >
-            🛒 Product List
-          </button>
-          <button
-            className={'nav-item' + (view === 'history' ? ' active' : '')}
-            onClick={() => setView('history')}
-          >
-            🕒 Ιστορικό
-          </button>
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'contacts' ? ' active' : '')}
+              onClick={() => setView('contacts')}
+            >
+              👤 Αρχείο Επικοινωνίας
+            </button>
+          )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'products' ? ' active' : '')}
+              onClick={() => setView('products')}
+            >
+              🛒 Product List
+            </button>
+          )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'history' ? ' active' : '')}
+              onClick={() => setView('history')}
+            >
+              🕒 Ιστορικό
+            </button>
+          )}
         </nav>
         <div style={{ marginTop: 'auto', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 11.5, color: '#b9c3d6' }}>
           <div style={{ marginBottom: 6 }}>{profile?.email || session.user.email}</div>
@@ -98,21 +104,27 @@ export default function App() {
         </div>
       </aside>
       <main className="main">
-        <section className={'view' + (view === 'products' ? ' active' : '')}>
-          <ProductsView readOnly={readOnly} />
-        </section>
-        <section className={'view' + (view === 'contacts' ? ' active' : '')}>
-          <ContactsView readOnly={readOnly} />
-        </section>
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'products' ? ' active' : '')}>
+            <ProductsView readOnly={readOnly} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'contacts' ? ' active' : '')}>
+            <ContactsView readOnly={readOnly} />
+          </section>
+        )}
         <section className={'view' + (view === 'entry' ? ' active' : '')}>
           <ProductEntryView />
         </section>
         <section className={'view' + (view === 'expired' ? ' active' : '')}>
           <ExpiredReportView canDelete={role === 'super_user'} />
         </section>
-        <section className={'view' + (view === 'history' ? ' active' : '')}>
-          <HistoryView />
-        </section>
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'history' ? ' active' : '')}>
+            <HistoryView />
+          </section>
+        )}
       </main>
     </div>
   );
