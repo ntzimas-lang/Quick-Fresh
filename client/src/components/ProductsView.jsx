@@ -153,10 +153,38 @@ export default function ProductsView() {
       return { ...prev, stores };
     });
   }
-  function addStore() {
-    const name = window.prompt('Όνομα καταστήματος:');
+  // Προσθέτει ένα νέο κατάστημα σε ΟΛΑ τα προϊόντα (όχι μόνο στο τρέχον),
+  // ώστε να εμφανίζεται αμέσως στον πίνακα Stores κάθε προϊόντος, και το
+  // αποθηκεύει στη βάση. Επιστρέφει τη λίστα προϊόντων μετά την ενημέρωση.
+  async function addStoreEverywhere(rawName) {
+    const trimmed = (rawName || '').trim();
+    if (!trimmed) return null;
+    if (!storeOptions.includes(trimmed)) {
+      setStoreOptions((prev) => [...prev, trimmed]);
+    }
+    const updatedList = await Promise.all(
+      products.map(async (p) => {
+        if ((p.stores || []).some((s) => s.name === trimmed)) return p;
+        const updatedProduct = {
+          ...p,
+          stores: [...(p.stores || []), { name: trimmed, sellingPriceStore: null, sellingPriceQF: null }]
+        };
+        try {
+          return await Products.update(p.id, updatedProduct);
+        } catch (e) {
+          console.error('Αποτυχία ενημέρωσης προϊόντος', p.id, e);
+          return updatedProduct;
+        }
+      })
+    );
+    setProducts(updatedList);
+    setCurrent((prev) => (prev ? updatedList.find((p) => p.id === prev.id) || prev : prev));
+    return updatedList;
+  }
+  async function addStore() {
+    const name = window.prompt('Όνομα καταστήματος (θα προστεθεί σε όλα τα προϊόντα):');
     if (!name || !name.trim()) return;
-    setCurrent((prev) => ({ ...prev, stores: [...prev.stores, { name: name.trim(), sellingPriceStore: null, sellingPriceQF: null }] }));
+    await addStoreEverywhere(name);
   }
   function removeStore(idx) {
     setCurrent((prev) => ({ ...prev, stores: prev.stores.filter((_, i) => i !== idx) }));
@@ -169,11 +197,11 @@ export default function ProductsView() {
       return { ...prev, activeStores: active };
     });
   }
-  function addStoreOption() {
-    const name = window.prompt('Όνομα καταστήματος:');
+  async function addStoreOption() {
+    const name = window.prompt('Όνομα καταστήματος (θα προστεθεί σε όλα τα προϊόντα):');
     if (!name || !name.trim()) return;
     const trimmed = name.trim();
-    setStoreOptions((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+    await addStoreEverywhere(trimmed);
     setCurrent((prev) => (prev.activeStores.includes(trimmed) ? prev : { ...prev, activeStores: [...prev.activeStores, trimmed] }));
   }
   function removeStoreOption(name) {
