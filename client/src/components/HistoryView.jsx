@@ -3,7 +3,7 @@ import { History } from '../api.js';
 
 const ACTION_LABELS = { INSERT: 'Δημιουργία', UPDATE: 'Ενημέρωση', DELETE: 'Διαγραφή' };
 const ACTION_COLORS = { INSERT: '#2f8f8a', UPDATE: '#c98a1f', DELETE: '#c0392b' };
-const TABLE_LABELS = { products: 'Προϊόν', contacts: 'Επαφή' };
+const TABLE_LABELS = { products: 'Προϊόν', contacts: 'Επαφή', product_entries: 'Καταχώρηση προϊόντος' };
 
 function itemLabel(tableName, data) {
   if (!data) return '—';
@@ -12,6 +12,9 @@ function itemLabel(tableName, data) {
   }
   if (tableName === 'contacts') {
     return data.company || data.id || '—';
+  }
+  if (tableName === 'product_entries') {
+    return [data.productItemCode, data.store].filter(Boolean).join(' @ ') || data.id || '—';
   }
   return data.id || '—';
 }
@@ -58,6 +61,7 @@ export default function HistoryView() {
           <option value="all">Όλα</option>
           <option value="products">Προϊόντα</option>
           <option value="contacts">Επαφές</option>
+          <option value="product_entries">Καταχωρήσεις προϊόντων</option>
         </select>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
