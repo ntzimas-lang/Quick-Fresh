@@ -206,6 +206,19 @@ export const History = {
   }
 };
 
+export const Profiles = {
+  async list() {
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+  async updateRole(id, role) {
+    const { data, error } = await supabase.from('profiles').update({ role }).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  }
+};
+
 export async function upload(file) {
   const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
   const path = `${newId()}.${ext}`;
