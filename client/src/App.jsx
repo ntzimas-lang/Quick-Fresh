@@ -54,10 +54,16 @@ export default function App() {
         </div>
         <nav className="nav">
           <button
-            className={'nav-item' + (view === 'products' ? ' active' : '')}
-            onClick={() => setView('products')}
+            className={'nav-item' + (view === 'entry' ? ' active' : '')}
+            onClick={() => setView('entry')}
           >
-            🛒 Product List
+            📷 Καταχώρηση Ληγμένων
+          </button>
+          <button
+            className={'nav-item' + (view === 'expired' ? ' active' : '')}
+            onClick={() => setView('expired')}
+          >
+            ⏰ Report Ληγμένα
           </button>
           <button
             className={'nav-item' + (view === 'contacts' ? ' active' : '')}
@@ -66,16 +72,10 @@ export default function App() {
             👤 Αρχείο Επικοινωνίας
           </button>
           <button
-            className={'nav-item' + (view === 'entry' ? ' active' : '')}
-            onClick={() => setView('entry')}
+            className={'nav-item' + (view === 'products' ? ' active' : '')}
+            onClick={() => setView('products')}
           >
-            📷 Καταχώρηση προϊόντων
-          </button>
-          <button
-            className={'nav-item' + (view === 'expired' ? ' active' : '')}
-            onClick={() => setView('expired')}
-          >
-            ⏰ Report Ληγμένα
+            🛒 Product List
           </button>
           <button
             className={'nav-item' + (view === 'history' ? ' active' : '')}
