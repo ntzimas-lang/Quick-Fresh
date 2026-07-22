@@ -1,7 +1,7 @@
 [build]
   base = "client"
   command = "npm run build"
-  publish = "client/dist"
+  publish = "dist"
 
 # React Router-style SPA fallback: κάθε path επιστρέφει το index.html
 # ώστε client-side navigation να μη σκάει σε 404 μετά από refresh.
