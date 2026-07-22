@@ -33,6 +33,17 @@ function getContactFilterText(c, key) {
   return v === null || v === undefined ? '' : String(v);
 }
 
+const CONTACT_COLUMNS_KEY = 'qf_contacts_visible_columns';
+function loadVisibleColumns() {
+  try {
+    const raw = localStorage.getItem(CONTACT_COLUMNS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    // ignore corrupt/unavailable storage
+  }
+  return null;
+}
+
 export default function ContactsView() {
   const [contacts, setContacts] = useState([]);
   const [current, setCurrent] = useState(null);
@@ -40,13 +51,23 @@ export default function ContactsView() {
   const [personInput, setPersonInput] = useState('');
 
   const [viewMode, setViewMode] = useState('table');
-  const [visibleColumns, setVisibleColumns] = useState(DEFAULT_VISIBLE_CONTACT_COLUMNS);
+  const [visibleColumns, setVisibleColumns] = useState(() => loadVisibleColumns() || DEFAULT_VISIBLE_CONTACT_COLUMNS);
   const [showColPicker, setShowColPicker] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
 
   useEffect(() => {
     Contacts.list().then(setContacts);
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CONTACT_COLUMNS_KEY, JSON.stringify(visibleColumns));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [visibleColumns]);
 
   async function selectContact(id) {
     const c = contacts.find((x) => x.id === id) || (await Contacts.get(id));
@@ -103,6 +124,35 @@ export default function ContactsView() {
     })
   );
 
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  const sortedContacts = (() => {
+    if (!sortKey) return filteredContacts;
+    const withVal = filteredContacts.map((c) => ({ c, v: getContactColumnValue(c, sortKey) }));
+    withVal.sort((a, b) => {
+      let av = a.v;
+      let bv = b.v;
+      const aEmpty = av === null || av === undefined || av === '';
+      const bEmpty = bv === null || bv === undefined || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      av = String(av).toLowerCase();
+      bv = String(bv).toLowerCase();
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return withVal.map((x) => x.c);
+  })();
+
   return (
     <div className="detail-pane" style={{ width: '100%' }}>
       <div className="tabs" style={{ position: 'sticky', top: 0 }}>
@@ -135,7 +185,14 @@ export default function ContactsView() {
                 <tr style={{ color: '#6b7684' }}>
                   <th style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px' }}>#</th>
                   {visibleColumnDefs.map((col) => (
-                    <th key={col.key} style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap' }}>{col.label}</th>
+                    <th
+                      key={col.key}
+                      onClick={() => toggleSort(col.key)}
+                      style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}
+                      title="Κλικ για ταξινόμηση"
+                    >
+                      {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
                   ))}
                 </tr>
                 <tr style={{ borderTop: '1px solid #e1e5ea' }}>
@@ -153,7 +210,7 @@ export default function ContactsView() {
                 </tr>
               </thead>
               <tbody>
-                {filteredContacts.map((c, i) => (
+                {sortedContacts.map((c, i) => (
                   <tr
                     key={c.id}
                     onClick={() => selectContact(c.id)}

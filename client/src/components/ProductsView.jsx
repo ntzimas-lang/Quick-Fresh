@@ -102,6 +102,17 @@ function getFilterText(p, key) {
 function fmtEuro(n) { return isFinite(n) ? n.toFixed(2) + ' €' : '-'; }
 function fmtPct(n) { return isFinite(n) ? Math.round(n) + ' %' : '∞ %'; }
 
+const VIEW_STATE_KEY = 'qf_products_view_state';
+function loadViewState() {
+  try {
+    const raw = localStorage.getItem(VIEW_STATE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    // ignore corrupt/unavailable storage
+  }
+  return null;
+}
+
 export default function ProductsView() {
   const [products, setProducts] = useState([]);
   const [current, setCurrent] = useState(null);
@@ -109,11 +120,23 @@ export default function ProductsView() {
   const [savedFlash, setSavedFlash] = useState(false);
 
   const [viewMode, setViewMode] = useState('table');
-  const [tableViews, setTableViews] = useState([{ id: 'data', name: 'Data', columns: DEFAULT_VISIBLE_COLUMNS }]);
-  const [activeViewId, setActiveViewId] = useState('data');
+  const [tableViews, setTableViews] = useState(
+    () => loadViewState()?.tableViews || [{ id: 'data', name: 'Data', columns: DEFAULT_VISIBLE_COLUMNS }]
+  );
+  const [activeViewId, setActiveViewId] = useState(() => loadViewState()?.activeViewId || 'data');
   const [showColPicker, setShowColPicker] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
   const [storeOptions, setStoreOptions] = useState(STORE_CANDIDATES);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({ tableViews, activeViewId }));
+    } catch (e) {
+      // ignore storage errors (e.g. private browsing quota)
+    }
+  }, [tableViews, activeViewId]);
 
   useEffect(() => {
     Products.list().then((list) => {
@@ -279,6 +302,38 @@ export default function ProductsView() {
     })
   );
 
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  const sortedProducts = (() => {
+    if (!sortKey) return filteredProducts;
+    const withVal = filteredProducts.map((p) => ({ p, v: getColumnValue(p, sortKey) }));
+    withVal.sort((a, b) => {
+      let av = a.v;
+      let bv = b.v;
+      const aEmpty = av === null || av === undefined || av === '' || (typeof av === 'number' && isNaN(av));
+      const bEmpty = bv === null || bv === undefined || bv === '' || (typeof bv === 'number' && isNaN(bv));
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortDir === 'asc' ? av - bv : bv - av;
+      }
+      av = String(av).toLowerCase();
+      bv = String(bv).toLowerCase();
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return withVal.map((x) => x.p);
+  })();
+
   const cost = current?.cost || { sellingPrice: 0, ptk: 0, quantity: 0, vatPercent: 13 };
   const vat = cost.vatPercent || 0;
   const net = cost.sellingPrice ? cost.sellingPrice / (1 + vat / 100) : 0;
@@ -345,7 +400,14 @@ export default function ProductsView() {
                 <tr style={{ color: '#6b7684' }}>
                   <th style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px' }}>#</th>
                   {visibleColumnDefs.map((col) => (
-                    <th key={col.key} style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap' }}>{col.label}</th>
+                    <th
+                      key={col.key}
+                      onClick={() => toggleSort(col.key)}
+                      style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}
+                      title="Κλικ για ταξινόμηση"
+                    >
+                      {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
                   ))}
                 </tr>
                 <tr style={{ borderTop: '1px solid #e1e5ea' }}>
@@ -363,7 +425,7 @@ export default function ProductsView() {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((p, i) => (
+                {sortedProducts.map((p, i) => (
                   <tr
                     key={p.id}
                     onClick={() => selectProduct(p.id)}
