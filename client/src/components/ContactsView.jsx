@@ -9,7 +9,7 @@ const CONTACT_COLUMNS = [
   { key: 'status', label: 'Status' },
   { key: 'autoSeller', label: 'Αυτόματος Πωλητής/Κυλικείο' },
   { key: 'interest', label: 'Ενδιαφέρον' },
-  { key: 'people', label: 'Άτομα' },
+  { key: 'peopleCount', label: 'Άτομα' },
   { key: 'responsible', label: 'Υπεύθυνος' },
   { key: 'email', label: 'Email' },
   { key: 'phone2', label: 'Phone (Υπεύθυνος)' },
@@ -25,10 +25,38 @@ const CONTACT_COLUMNS = [
 const DEFAULT_VISIBLE_CONTACT_COLUMNS = CONTACT_COLUMNS.map((col) => col.key);
 
 const DATE_KEYS = new Set(['firstCallDate', 'firstMailDate', 'firstVisitDate', 'secondCallDate', 'secondMailDate', 'secondVisitDate']);
-const TEXT_KEYS = new Set(['company', 'department', 'phone', 'emailInfo', 'status', 'autoSeller', 'interest', 'responsible', 'email', 'phone2', 'notes']);
+const TEXT_KEYS = new Set(['company', 'department', 'phone', 'emailInfo', 'responsible', 'email', 'phone2', 'notes']);
+
+const STATUS_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'Έκλεισε', label: 'Έκλεισε', color: '#27ae60' },
+  { value: 'Ενδιαφέρεται', label: 'Ενδιαφέρεται', color: '#e0a500' },
+  { value: 'Δεν Ενδιαφέρεται', label: 'Δεν Ενδιαφέρεται', color: '#c0392b' }
+];
+const INTEREST_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'Υψηλό', label: 'Υψηλό', color: '#27ae60' },
+  { value: 'Χαμηλό', label: 'Χαμηλό', color: '#e0a500' }
+];
+const AUTO_SELLER_OPTIONS = ['', 'Αυτόματος Πωλητής', 'Κυλικείο', 'Τίποτα'];
+
+function statusColor(value) {
+  const opt = STATUS_OPTIONS.find((o) => o.value === value);
+  return opt && opt.color ? opt.color : '#c7cdd6';
+}
+function interestColor(value) {
+  const opt = INTEREST_OPTIONS.find((o) => o.value === value);
+  return opt && opt.color ? opt.color : '#c7cdd6';
+}
+function badgeStyle(color) {
+  return { display: 'inline-block', color: '#fff', background: color, padding: '3px 9px', borderRadius: 10, fontSize: 11.5, fontWeight: 600 };
+}
 
 function getContactColumnValue(c, key) {
-  if (key === 'people') return (c.people || []).join(', ');
+  if (key === 'peopleCount') {
+    if (c.peopleCount !== undefined && c.peopleCount !== null && c.peopleCount !== '') return c.peopleCount;
+    return Array.isArray(c.people) ? c.people.length : '';
+  }
   return c[key];
 }
 function getContactFilterText(c, key) {
@@ -56,7 +84,6 @@ export default function ContactsView({ readOnly = false }) {
   const [contacts, setContacts] = useState([]);
   const [current, setCurrent] = useState(null);
   const [savedFlash, setSavedFlash] = useState(false);
-  const [personInput, setPersonInput] = useState('');
 
   const [viewMode, setViewMode] = useState('table');
   const [visibleColumns, setVisibleColumns] = useState(() => loadVisibleColumns() || DEFAULT_VISIBLE_CONTACT_COLUMNS);
@@ -114,15 +141,6 @@ export default function ContactsView({ readOnly = false }) {
 
   function updateField(key, value) {
     applyCardUpdate((prev) => ({ ...prev, [key]: value }));
-  }
-  function addPerson() {
-    const name = personInput.trim();
-    if (!name) return;
-    applyCardUpdate((prev) => ({ ...prev, people: [...(prev.people || []), name] }));
-    setPersonInput('');
-  }
-  function removePerson(idx) {
-    applyCardUpdate((prev) => ({ ...prev, people: prev.people.filter((_, i) => i !== idx) }));
   }
 
   async function handleDelete() {
@@ -200,15 +218,61 @@ export default function ContactsView({ readOnly = false }) {
   function renderCell(c, col) {
     const stop = (e) => e.stopPropagation();
     if (readOnly) {
+      if (col.key === 'status') {
+        return c.status ? <span style={badgeStyle(statusColor(c.status))}>{c.status}</span> : '—';
+      }
+      if (col.key === 'interest') {
+        return c.interest ? <span style={badgeStyle(interestColor(c.interest))}>{c.interest}</span> : '—';
+      }
       const value = getContactColumnValue(c, col.key);
-      return value || '—';
+      return value === '' || value === null || value === undefined ? '—' : value;
     }
     if (col.key === 'status') {
+      const hasVal = !!c.status;
       return (
-        <input
+        <select
           value={c.status || ''}
           onClick={stop}
           onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, status: e.target.value }))}
+          style={{ ...inlineInputStyle, background: hasVal ? statusColor(c.status) : 'transparent', color: hasVal ? '#fff' : 'inherit', fontWeight: hasVal ? 600 : 400, borderRadius: 10 }}
+        >
+          {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      );
+    }
+    if (col.key === 'interest') {
+      const hasVal = !!c.interest;
+      return (
+        <select
+          value={c.interest || ''}
+          onClick={stop}
+          onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, interest: e.target.value }))}
+          style={{ ...inlineInputStyle, background: hasVal ? interestColor(c.interest) : 'transparent', color: hasVal ? '#fff' : 'inherit', fontWeight: hasVal ? 600 : 400, borderRadius: 10 }}
+        >
+          {INTEREST_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      );
+    }
+    if (col.key === 'autoSeller') {
+      return (
+        <select
+          value={c.autoSeller || ''}
+          onClick={stop}
+          onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, autoSeller: e.target.value }))}
+          style={inlineInputStyle}
+        >
+          {AUTO_SELLER_OPTIONS.map((o) => <option key={o} value={o}>{o || '—'}</option>)}
+        </select>
+      );
+    }
+    if (col.key === 'peopleCount') {
+      return (
+        <input
+          type="number"
+          min="0"
+          value={getContactColumnValue(c, 'peopleCount')}
+          onClick={stop}
+          onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, peopleCount: e.target.value === '' ? '' : Number(e.target.value) }))}
           style={inlineInputStyle}
         />
       );
@@ -343,31 +407,44 @@ export default function ContactsView({ readOnly = false }) {
               <div className="field"><label>Αρμόδιο Τμήμα</label><input disabled={readOnly} value={current.department || ''} onChange={(e) => updateField('department', e.target.value)} /></div>
               <div className="field"><label>Phone</label><input disabled={readOnly} value={current.phone || ''} onChange={(e) => updateField('phone', e.target.value)} /></div>
               <div className="field"><label>Email - Info</label><input disabled={readOnly} type="email" value={current.emailInfo || ''} onChange={(e) => updateField('emailInfo', e.target.value)} /></div>
-              <div className="field"><label>Status</label><input disabled={readOnly} placeholder="π.χ. Ενδιαφέρεται" value={current.status || ''} onChange={(e) => updateField('status', e.target.value)} /></div>
-              <div className="field"><label>Αυτόματος Πωλητής/Κυλικείο</label><input disabled={readOnly} value={current.autoSeller || ''} onChange={(e) => updateField('autoSeller', e.target.value)} /></div>
-              <div className="field"><label>Ενδιαφέρον</label><input disabled={readOnly} placeholder="π.χ. Υψηλό" value={current.interest || ''} onChange={(e) => updateField('interest', e.target.value)} /></div>
-            </div>
-
-            <div className="field">
-              <label>Άτομα</label>
-              <div className="chip-row editable-chips">
-                {(current.people || []).map((name, i) => (
-                  <div className="chip" key={i}>
-                    <span>{name}</span>
-                    {!readOnly && <span className="x" onClick={() => removePerson(i)}>✕</span>}
-                  </div>
-                ))}
+              <div className="field">
+                <label>Status</label>
+                <select
+                  disabled={readOnly}
+                  value={current.status || ''}
+                  onChange={(e) => updateField('status', e.target.value)}
+                  style={current.status ? { background: statusColor(current.status), color: '#fff', fontWeight: 600, border: 'none' } : undefined}
+                >
+                  {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </div>
-              {!readOnly && (
-                <div className="add-person-row">
-                  <input
-                    placeholder="Όνομα ατόμου + Enter"
-                    value={personInput}
-                    onChange={(e) => setPersonInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson(); } }}
-                  />
-                </div>
-              )}
+              <div className="field">
+                <label>Αυτόματος Πωλητής/Κυλικείο</label>
+                <select disabled={readOnly} value={current.autoSeller || ''} onChange={(e) => updateField('autoSeller', e.target.value)}>
+                  {AUTO_SELLER_OPTIONS.map((o) => <option key={o} value={o}>{o || '—'}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Ενδιαφέρον</label>
+                <select
+                  disabled={readOnly}
+                  value={current.interest || ''}
+                  onChange={(e) => updateField('interest', e.target.value)}
+                  style={current.interest ? { background: interestColor(current.interest), color: '#fff', fontWeight: 600, border: 'none' } : undefined}
+                >
+                  {INTEREST_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Άτομα</label>
+                <input
+                  disabled={readOnly}
+                  type="number"
+                  min="0"
+                  value={getContactColumnValue(current, 'peopleCount')}
+                  onChange={(e) => updateField('peopleCount', e.target.value === '' ? '' : Number(e.target.value))}
+                />
+              </div>
             </div>
 
             <div className="grid-2">
