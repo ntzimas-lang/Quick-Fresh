@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quick &amp; Fresh</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">QF</div>
+      <div class="brand-name">Quick &amp; Fresh</div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="products">🛒 Product List</button>
+      <button class="nav-item" data-view="contacts">👤 Αρχείο Επικοινωνίας</button>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <!-- PRODUCTS VIEW -->
+    <section id="view-products" class="view active">
+      <div class="split">
+        <div class="list-pane">
+          <div class="list-pane-header">
+            <input type="text" id="product-search" placeholder="Αναζήτηση προϊόντος...">
+            <button id="btn-new-product" class="btn-primary">+ Νέο</button>
+          </div>
+          <div id="product-list" class="list"></div>
+        </div>
+        <div class="detail-pane">
+          <div id="product-empty" class="empty-state">Επίλεξε ή δημιούργησε ένα προϊόν</div>
+          <div id="product-detail" class="detail hidden">
+            <div class="tabs">
+              <button class="tab active" data-tab="info">Product List</button>
+              <button class="tab" data-tab="goldensw">Golden S/W</button>
+              <button class="tab" data-tab="cost">Cost</button>
+              <div class="tab-actions">
+                <button id="btn-save-product" class="btn-primary">Αποθήκευση</button>
+                <button id="btn-delete-product" class="btn-danger">Διαγραφή</button>
+              </div>
+            </div>
+
+            <!-- TAB: INFO -->
+            <div class="tab-panel active" data-panel="info">
+              <div class="grid-2">
+                <div class="field">
+                  <label>Κατηγορία GR</label>
+                  <input type="text" id="f-categoryGr">
+                </div>
+                <div class="field">
+                  <label>Κατηγορία EN</label>
+                  <input type="text" id="f-categoryEn">
+                </div>
+                <div class="field">
+                  <label>Κωδικός είδους</label>
+                  <input type="text" id="f-itemCode">
+                </div>
+                <div class="field">
+                  <label>Barcode</label>
+                  <input type="text" id="f-barcode">
+                </div>
+                <div class="field">
+                  <label>Περιγραφή είδους ERP</label>
+                  <input type="text" id="f-descriptionErp">
+                </div>
+                <div class="field">
+                  <label>ΤΕΜ στο μηχάνημα</label>
+                  <input type="number" id="f-unitsPerMachine">
+                </div>
+                <div class="field">
+                  <label>Περιγραφή είδους GR</label>
+                  <input type="text" id="f-descriptionGr">
+                </div>
+                <div class="field">
+                  <label>Περιγραφή είδους EN</label>
+                  <input type="text" id="f-descriptionEn">
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>Αναλυτική Περιγραφή είδους GR</label>
+                  <textarea id="f-detailedDescriptionGr" rows="4"></textarea>
+                </div>
+                <div class="field">
+                  <label>Αναλυτική Περιγραφή είδους EN</label>
+                  <textarea id="f-detailedDescriptionEn" rows="4"></textarea>
+                </div>
+              </div>
+              <div class="grid-3">
+                <div class="field">
+                  <label>Status</label>
+                  <select id="f-status">
+                    <option>ΕΝΤΟΣ</option>
+                    <option>ΕΚΤΟΣ</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Ενεργό Στο Μηχάνημα</label>
+                  <select id="f-activeOnMachine">
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Ενεργό Σε Κατάστημα</label>
+                  <div id="f-activeStores" class="chip-row"></div>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>Image - 365</label>
+                  <div class="image-box" id="f-images365">
+                    <input type="file" accept="image/*" class="image-input">
+                    <div class="image-thumbs"></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Image - Promo</label>
+                  <div class="image-box" id="f-imagesPromo">
+                    <input type="file" accept="image/*" class="image-input">
+                    <div class="image-thumbs"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB: GOLDEN S/W -->
+            <div class="tab-panel" data-panel="goldensw">
+              <div class="empty-state">Η καρτέλα Golden S/W θα προστεθεί σε επόμενη έκδοση.</div>
+            </div>
+
+            <!-- TAB: COST -->
+            <div class="tab-panel" data-panel="cost">
+              <div class="section-bar teal">General Cost</div>
+              <div class="cost-grid">
+                <div class="cost-field">
+                  <label>Τιμή Πώλησης</label>
+                  <input type="number" step="0.01" id="c-sellingPrice">
+                </div>
+                <div class="cost-field">
+                  <label>ΦΠΑ %</label>
+                  <input type="number" step="1" id="c-vatPercent">
+                </div>
+                <div class="cost-field">
+                  <label>ΠΤΚ (κόστος)</label>
+                  <input type="number" step="0.01" id="c-ptk">
+                </div>
+                <div class="cost-field readonly">
+                  <label>F.C.</label>
+                  <div class="readonly-value teal" id="c-fc">-</div>
+                </div>
+                <div class="cost-field readonly">
+                  <label>Κέρδος</label>
+                  <div class="readonly-value" id="c-profit">-</div>
+                </div>
+                <div class="cost-field">
+                  <label>Ποσότητα</label>
+                  <input type="number" step="1" id="c-quantity">
+                </div>
+                <div class="cost-field readonly">
+                  <label>Μικτό</label>
+                  <div class="readonly-value" id="c-gross">-</div>
+                </div>
+                <div class="cost-field readonly">
+                  <label>Κέρδος SUM</label>
+                  <div class="readonly-value" id="c-profitSum">-</div>
+                </div>
+              </div>
+
+              <div class="section-bar navy">Stores</div>
+              <table class="stores-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Τιμή Πώλησης Store</th>
+                    <th>F.C. Store</th>
+                    <th>Τιμή Πώλησης Q&amp;F</th>
+                    <th>F.C. Q&amp;F</th>
+                  </tr>
+                </thead>
+                <tbody id="stores-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTACTS VIEW -->
+    <section id="view-contacts" class="view">
+      <div class="split">
+        <div class="list-pane">
+          <div class="list-pane-header">
+            <input type="text" id="contact-search" placeholder="Αναζήτηση επαφής...">
+            <button id="btn-new-contact" class="btn-primary">+ Νέα</button>
+          </div>
+          <div id="contact-list" class="list"></div>
+        </div>
+        <div class="detail-pane">
+          <div id="contact-empty" class="empty-state">Επίλεξε ή δημιούργησε μία επαφή</div>
+          <div id="contact-detail" class="detail hidden">
+            <div class="tabs">
+              <div class="tab-actions" style="margin-left:auto">
+                <button id="btn-save-contact" class="btn-primary">Αποθήκευση</button>
+                <button id="btn-delete-contact" class="btn-danger">Διαγραφή</button>
+              </div>
+            </div>
+            <div class="tab-panel active">
+              <div class="grid-2">
+                <div class="field">
+                  <label>Εταιρεία</label>
+                  <input type="text" id="k-company">
+                </div>
+                <div class="field">
+                  <label>Αρμόδιο Τμήμα</label>
+                  <input type="text" id="k-department">
+                </div>
+                <div class="field">
+                  <label>Phone</label>
+                  <input type="text" id="k-phone">
+                </div>
+                <div class="field">
+                  <label>Email - Info</label>
+                  <input type="email" id="k-emailInfo">
+                </div>
+                <div class="field">
+                  <label>Status</label>
+                  <input type="text" id="k-status" placeholder="π.χ. Δεν Ενδιαφέρει">
+                </div>
+                <div class="field">
+                  <label>Αυτόματος Πωλητής/Κυλικείο</label>
+                  <input type="text" id="k-autoSeller">
+                </div>
+                <div class="field">
+                  <label>Ενδιαφέρον</label>
+                  <input type="text" id="k-interest" placeholder="π.χ. Χαμηλό">
+                </div>
+              </div>
+
+              <div class="field">
+                <label>Άτομα</label>
+                <div id="k-people" class="chip-row editable-chips"></div>
+                <div class="add-person-row">
+                  <input type="text" id="k-people-input" placeholder="Όνομα ατόμου + Enter">
+                </div>
+              </div>
+
+              <div class="grid-2">
+                <div class="field">
+                  <label>Υπεύθυνος</label>
+                  <input type="text" id="k-responsible">
+                </div>
+                <div class="field">
+                  <label>Email</label>
+                  <input type="email" id="k-email">
+                </div>
+                <div class="field">
+                  <label>Phone</label>
+                  <input type="text" id="k-phone2">
+                </div>
+              </div>
+
+              <div class="grid-3">
+                <div class="field">
+                  <label>1η Τηλεφωνική Επικοινωνία</label>
+                  <input type="date" id="k-firstCallDate">
+                </div>
+                <div class="field">
+                  <label>1η Αποστολή Mail</label>
+                  <input type="date" id="k-firstMailDate">
+                </div>
+                <div class="field">
+                  <label>1η Επίσκεψη</label>
+                  <input type="date" id="k-firstVisitDate">
+                </div>
+                <div class="field">
+                  <label>2η Τηλεφωνική Επικοινωνία</label>
+                  <input type="date" id="k-secondCallDate">
+                </div>
+                <div class="field">
+                  <label>2η Αποστολή Mail</label>
+                  <input type="date" id="k-secondMailDate">
+                </div>
+                <div class="field">
+                  <label>2η Επίσκεψη</label>
+                  <input type="date" id="k-secondVisitDate">
+                </div>
+              </div>
+
+              <div class="field">
+                <label>Παρατηρήσεις</label>
+                <textarea id="k-notes" rows="4"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
