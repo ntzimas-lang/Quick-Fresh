@@ -8,10 +8,30 @@ import UsersView from './components/UsersView.jsx';
 import Login from './components/Login.jsx';
 import { Auth } from './api.js';
 
+const SIDEBAR_KEY = 'qf_sidebar_open';
+
 export default function App() {
   const [view, setView] = useState('products');
   const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
   const [profile, setProfile] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem(SIDEBAR_KEY);
+      if (v !== null) return v === '1';
+      // Πρώτη φορά: σε στενή οθόνη (κινητό) ξεκινάει κρυμμένο για περισσότερο χώρο.
+      return typeof window === 'undefined' || window.innerWidth > 640;
+    } catch (e) {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? '1' : '0');
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [sidebarOpen]);
 
   useEffect(() => {
     Auth.getSession().then((s) => setSession(s || null));
@@ -48,10 +68,27 @@ export default function App() {
 
   return (
     <div className="app">
+      {!sidebarOpen && (
+        <button
+          className="sidebar-toggle"
+          onClick={() => setSidebarOpen(true)}
+          title="Εμφάνιση μενού"
+        >
+          ☰
+        </button>
+      )}
+      {sidebarOpen && (
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-logo">QF</div>
-          <div className="brand-name">Quick &amp; Fresh</div>
+          <div className="brand-name" style={{ flex: 1 }}>Quick &amp; Fresh</div>
+          <button
+            className="sidebar-toggle sidebar-toggle--inline"
+            onClick={() => setSidebarOpen(false)}
+            title="Απόκρυψη μενού"
+          >
+            ‹
+          </button>
         </div>
         <nav className="nav">
           <button
@@ -112,6 +149,7 @@ export default function App() {
           </button>
         </div>
       </aside>
+      )}
       <main className="main">
         {role !== 'driver' && (
           <section className={'view' + (view === 'products' ? ' active' : '')}>
