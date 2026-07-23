@@ -33,6 +33,18 @@ export default function App() {
     }
   }, [sidebarOpen]);
 
+  // Η ροδέλα του mouse δεν πρέπει να αλλάζει κατά λάθος έναν αριθμό ενώ ο χρήστης
+  // απλά κάνει scroll στη σελίδα (κλασικό πρόβλημα στα input type="number").
+  useEffect(() => {
+    function blurNumberInputOnWheel() {
+      if (document.activeElement && document.activeElement.type === 'number') {
+        document.activeElement.blur();
+      }
+    }
+    document.addEventListener('wheel', blurNumberInputOnWheel, { passive: true });
+    return () => document.removeEventListener('wheel', blurNumberInputOnWheel);
+  }, []);
+
   useEffect(() => {
     Auth.getSession().then((s) => setSession(s || null));
     const sub = Auth.onAuthStateChange((s) => setSession(s || null));
