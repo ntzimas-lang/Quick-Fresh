@@ -15,13 +15,6 @@ function daysDiff(expiryDateStr) {
   return Math.round((expiry.getTime() - today.getTime()) / 86400000);
 }
 
-function cardStyle() {
-  return { background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 16 };
-}
-function cardTitleStyle() {
-  return { fontSize: 12, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10 };
-}
-
 export default function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -68,61 +61,75 @@ export default function DashboardView() {
         <strong style={{ fontSize: 15 }}>Πίνακας Ελέγχου</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, background: '#f9fafb' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+        <div className="dashboard-grid">
 
-          <div style={cardStyle()}>
-            <div style={cardTitleStyle()}>Προϊόντα</div>
-            <div style={{ display: 'flex', gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#27ae60' }}>{entos}</div>
-                <div style={{ fontSize: 11.5, color: '#6b7684' }}>ΕΝΤΟΣ</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#c0392b' }}>{ektos}</div>
-                <div style={{ fontSize: 11.5, color: '#6b7684' }}>ΕΚΤΟΣ</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#16233f' }}>{products.length}</div>
-                <div style={{ fontSize: 11.5, color: '#6b7684' }}>Σύνολο</div>
-              </div>
+          {/* 1. Επαφές ανά Status — μεγαλύτερη έμφαση, με μπάρες ποσοστού */}
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
+            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+              Επαφές ανά Status
             </div>
-          </div>
-
-          <div style={cardStyle()}>
-            <div style={cardTitleStyle()}>Ληγμένα</div>
-            <div style={{ display: 'flex', gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#c0392b' }}>{expiredCount}</div>
-                <div style={{ fontSize: 11.5, color: '#6b7684' }}>Έχουν λήξει</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#c98a1f' }}>{expiringSoonCount}</div>
-                <div style={{ fontSize: 11.5, color: '#6b7684' }}>Λήγουν ≤ 7 ημέρες</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#16233f' }}>{entries.length}</div>
-                <div style={{ fontSize: 11.5, color: '#6b7684' }}>Σύνολο καταχωρήσεων</div>
-              </div>
-            </div>
-          </div>
-
-          <div style={cardStyle()}>
-            <div style={cardTitleStyle()}>Επαφές ανά Status</div>
             {contacts.length === 0 ? (
-              <p style={{ fontSize: 12.5, color: '#97a2b0', margin: 0 }}>Καμία επαφή.</p>
+              <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>Καμία επαφή.</p>
             ) : (
               statusOrder.map((key) => {
                 const count = statusGroups[key] || 0;
                 if (count === 0) return null;
+                const pct = contacts.length ? Math.round((count / contacts.length) * 100) : 0;
                 return (
-                  <div key={key || 'none'} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: CONTACT_STATUS_COLORS[key] || '#c7cdd6', flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, flex: 1 }}>{key || 'Χωρίς status'}</span>
-                    <strong style={{ fontSize: 13 }}>{count}</strong>
+                  <div key={key || 'none'} style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                      <span style={{ fontSize: 16, fontWeight: 600 }}>{key || 'Χωρίς status'}</span>
+                      <span style={{ fontSize: 16, fontWeight: 700 }}>
+                        {count} <span style={{ fontSize: 12.5, color: '#97a2b0', fontWeight: 400 }}>({pct}%)</span>
+                      </span>
+                    </div>
+                    <div style={{ height: 12, background: '#f1f3f5', borderRadius: 6, overflow: 'hidden' }}>
+                      <div style={{ width: pct + '%', height: '100%', background: CONTACT_STATUS_COLORS[key] || '#c7cdd6' }} />
+                    </div>
                   </div>
                 );
               })
             )}
+          </div>
+
+          {/* 2. Ληγμένα — μεγαλύτερη έμφαση */}
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
+            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+              Ληγμένα
+            </div>
+            <div style={{ display: 'flex', gap: 24 }}>
+              <div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#c0392b' }}>{expiredCount}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Έχουν λήξει</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#c98a1f' }}>{expiringSoonCount}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Λήγουν ≤ 7 ημέρες</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#16233f' }}>{entries.length}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Σύνολο καταχωρήσεων</div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Προϊόντα — πιο συμπαγής κάρτα, τελευταία */}
+          <div className="dashboard-card--sm" style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 24 }}>
+            <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase' }}>Προϊόντα</div>
+            <div style={{ display: 'flex', gap: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#27ae60' }}>{entos}</span>
+                <span style={{ fontSize: 11.5, color: '#6b7684' }}>ΕΝΤΟΣ</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#c0392b' }}>{ektos}</span>
+                <span style={{ fontSize: 11.5, color: '#6b7684' }}>ΕΚΤΟΣ</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#16233f' }}>{products.length}</span>
+                <span style={{ fontSize: 11.5, color: '#6b7684' }}>Σύνολο</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
