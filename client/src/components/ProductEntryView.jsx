@@ -43,7 +43,7 @@ export default function ProductEntryView() {
   }, [products]);
 
   // Προϊόντα χωρίς Barcode — καταχωρούνται επιλέγοντάς τα από λίστα αντί για σάρωση.
-  const noBarcodeProducts = useMemo(() => products.filter((p) => !p.barcode || !p.barcode.trim()), [products]);
+  const noBarcodeProducts = useMemo(() => products.filter((p) => !(p.barcodes && p.barcodes.length)), [products]);
   const noBarcodeFiltered = useMemo(() => {
     const q = noBarcodeQuery.trim().toLowerCase();
     const base = q
@@ -65,7 +65,7 @@ export default function ProductEntryView() {
   function findByBarcode(code) {
     const clean = (code || '').trim();
     if (!clean) return null;
-    return products.find((p) => (p.barcode || '').trim() === clean) || null;
+    return products.find((p) => (p.barcodes || []).some((b) => (b || '').trim() === clean)) || null;
   }
 
   function handleScanResult(code) {

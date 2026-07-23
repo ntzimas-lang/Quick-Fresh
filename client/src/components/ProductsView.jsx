@@ -49,7 +49,7 @@ const REGION_OPTIONS = ['Αθήνα', 'Θεσσαλονίκη', 'Παντού'];
 
 // Στήλες που επεξεργάζονται απευθείας μέσα στον πίνακα (χωρίς να ανοίγει η κάρτα).
 const INLINE_EDITABLE_TEXT_KEYS = new Set([
-  'itemCode', 'barcode', 'descriptionErp', 'descriptionGr', 'descriptionEn',
+  'itemCode', 'descriptionErp', 'descriptionGr', 'descriptionEn',
   'detailedDescriptionGr', 'detailedDescriptionEn'
 ]);
 const INLINE_EDITABLE_NUMBER_KEYS = new Set(['unitsPerMachine']);
@@ -101,6 +101,7 @@ function getColumnValue(p, key) {
   if (key === 'ptk') return p.cost?.ptk ?? null;
   if (key === 'fc') return computeFC(p);
   if (key === 'activeStores') return (p.activeStores || []).join(', ');
+  if (key === 'barcode') return (p.barcodes || []).join(', ');
   return p[key];
 }
 
@@ -175,6 +176,7 @@ export default function ProductsView({ readOnly = false }) {
   const [storeOptions, setStoreOptions] = useState(STORE_CANDIDATES);
   const [sortKey, setSortKey] = useState(() => loadViewState()?.sortKey ?? null);
   const [sortDir, setSortDir] = useState(() => loadViewState()?.sortDir || 'asc');
+  const [barcodeInput, setBarcodeInput] = useState('');
 
   const cardSaveTimer = useRef(null);
   const inlineSaveTimers = useRef({});
@@ -232,6 +234,15 @@ export default function ProductsView({ readOnly = false }) {
 
   function updateField(key, value) {
     applyCardUpdate((prev) => ({ ...prev, [key]: value }));
+  }
+  function addBarcode() {
+    const code = barcodeInput.trim();
+    if (!code) return;
+    applyCardUpdate((prev) => ({ ...prev, barcodes: [...(prev.barcodes || []), code] }));
+    setBarcodeInput('');
+  }
+  function removeBarcode(idx) {
+    applyCardUpdate((prev) => ({ ...prev, barcodes: (prev.barcodes || []).filter((_, i) => i !== idx) }));
   }
   function updateCost(key, value) {
     applyCardUpdate((prev) => ({ ...prev, cost: { ...prev.cost, [key]: value } }));
@@ -518,6 +529,22 @@ export default function ProductsView({ readOnly = false }) {
             </option>
           ))}
         </select>
+      );
+    }
+    if (col.key === 'barcode') {
+      return (
+        <input
+          value={(p.barcodes || []).join(', ')}
+          onClick={stop}
+          placeholder="πολλαπλά, χωρισμένα, με κόμμα"
+          onChange={(e) =>
+            updateProductInline(p.id, (prod) => ({
+              ...prod,
+              barcodes: e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+            }))
+          }
+          style={inlineInputStyle}
+        />
       );
     }
     if (INLINE_EDITABLE_TEXT_KEYS.has(col.key)) {
@@ -817,7 +844,27 @@ export default function ProductsView({ readOnly = false }) {
                   </select>
                 </div>
                 <div className="field"><label>Κωδικός είδους</label><input disabled={readOnly} value={current.itemCode || ''} onChange={(e) => updateField('itemCode', e.target.value)} /></div>
-                <div className="field"><label>Barcode</label><input disabled={readOnly} value={current.barcode || ''} onChange={(e) => updateField('barcode', e.target.value)} /></div>
+                <div className="field">
+                  <label>Barcode</label>
+                  <div className="chip-row">
+                    {(current.barcodes || []).map((code, i) => (
+                      <div className="chip" key={i}>
+                        <span>{code}</span>
+                        {!readOnly && <span className="x" onClick={() => removeBarcode(i)}>✕</span>}
+                      </div>
+                    ))}
+                  </div>
+                  {!readOnly && (
+                    <div className="add-person-row">
+                      <input
+                        placeholder="Barcode + Enter"
+                        value={barcodeInput}
+                        onChange={(e) => setBarcodeInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBarcode(); } }}
+                      />
+                    </div>
+                  )}
+                </div>
                 <div className="field"><label>Περιγραφή είδους ERP</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
                 <div className="field"><label>ΤΕΜ στο μηχάνημα</label><input disabled={readOnly} type="number" value={current.unitsPerMachine ?? ''} onChange={(e) => updateField('unitsPerMachine', e.target.value ? +e.target.value : null)} /></div>
                 <div className="field"><label>Περιγραφή είδους GR</label><input disabled={readOnly} value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
