@@ -160,6 +160,11 @@ const inlineInputStyle = {
   padding: '3px 4px', fontSize: 12.5, fontFamily: 'inherit', color: 'inherit', borderRadius: 4
 };
 
+const thumbBtnStyle = {
+  width: 18, height: 18, borderRadius: 4, border: 'none', background: 'rgba(0,0,0,0.6)',
+  color: '#fff', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
+};
+
 export default function ProductsView({ readOnly = false }) {
   const [products, setProducts] = useState([]);
   const [current, setCurrent] = useState(null);
@@ -315,6 +320,26 @@ export default function ProductsView({ readOnly = false }) {
     if (!file) return;
     const { url } = await upload(file);
     applyCardUpdate((prev) => ({ ...prev, [key]: [...(prev[key] || []), url] }));
+  }
+  function removeImage(key, idx) {
+    if (!window.confirm('Διαγραφή αυτής της φωτογραφίας;')) return;
+    applyCardUpdate((prev) => ({ ...prev, [key]: (prev[key] || []).filter((_, i) => i !== idx) }));
+  }
+  async function downloadImage(url, filename) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      window.open(url, '_blank');
+    }
   }
 
   async function handleDelete() {
@@ -941,7 +966,15 @@ export default function ProductsView({ readOnly = false }) {
                   <div className="image-box">
                     {!readOnly && <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('images365', e.target.files[0])} />}
                     <div className="image-thumbs">
-                      {(current.images365 || []).map((u, i) => <img key={i} src={u} alt="" />)}
+                      {(current.images365 || []).map((u, i) => (
+                        <div key={i} style={{ position: 'relative', display: 'inline-block' }}>
+                          <img src={u} alt="" />
+                          <div style={{ position: 'absolute', top: 2, right: 2, display: 'flex', gap: 2 }}>
+                            <button type="button" onClick={() => downloadImage(u, `${current.itemCode || 'product'}-365-${i + 1}.jpg`)} title="Λήψη" style={thumbBtnStyle}>⬇</button>
+                            {!readOnly && <button type="button" onClick={() => removeImage('images365', i)} title="Διαγραφή" style={{ ...thumbBtnStyle, background: 'rgba(192,57,43,0.85)' }}>✕</button>}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -950,7 +983,15 @@ export default function ProductsView({ readOnly = false }) {
                   <div className="image-box">
                     {!readOnly && <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('imagesPromo', e.target.files[0])} />}
                     <div className="image-thumbs">
-                      {(current.imagesPromo || []).map((u, i) => <img key={i} src={u} alt="" />)}
+                      {(current.imagesPromo || []).map((u, i) => (
+                        <div key={i} style={{ position: 'relative', display: 'inline-block' }}>
+                          <img src={u} alt="" />
+                          <div style={{ position: 'absolute', top: 2, right: 2, display: 'flex', gap: 2 }}>
+                            <button type="button" onClick={() => downloadImage(u, `${current.itemCode || 'product'}-promo-${i + 1}.jpg`)} title="Λήψη" style={thumbBtnStyle}>⬇</button>
+                            {!readOnly && <button type="button" onClick={() => removeImage('imagesPromo', i)} title="Διαγραφή" style={{ ...thumbBtnStyle, background: 'rgba(192,57,43,0.85)' }}>✕</button>}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
