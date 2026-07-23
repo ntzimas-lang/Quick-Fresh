@@ -13,6 +13,14 @@ input[type=number] {
   appearance: textfield;
 }
 
+/* Πίνακας Ελέγχου — οι δύο πρώτες κάρτες (Επαφές, Ληγμένα) πιο μεγάλες/δίπλα-δίπλα,
+   η κάρτα Προϊόντα πιο συμπαγής και τελευταία, σε ολόκληρη τη σειρά. */
+.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.dashboard-card--sm { grid-column: 1 / -1; }
+@media (max-width: 720px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+}
+
 .app { display: flex; height: 100vh; position: relative; }
 
 /* Κουμπί απόκρυψης/επαναφοράς πλαϊνού μενού — χρήσιμο ειδικά σε κινητό, όπου το
