@@ -79,7 +79,7 @@ export default function App() {
               className={'nav-item' + (view === 'products' ? ' active' : '')}
               onClick={() => setView('products')}
             >
-              🛒 Product List
+              🛒 Προϊόντα
             </button>
           )}
           {role !== 'driver' && (

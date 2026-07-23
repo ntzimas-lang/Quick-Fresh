@@ -36,6 +36,7 @@ function defaultProduct(overrides) {
     detailedDescriptionGr: '',
     detailedDescriptionEn: '',
     status: 'ΕΝΤΟΣ',
+    region: '',
     activeOnMachine: 'YES',
     activeStores: [],
     images365: [],
@@ -165,7 +166,7 @@ export const Entries = {
     if (error) throw error;
     return data.map(rowToRecord);
   },
-  async create({ productId, productItemCode, productDescription, store, expiryDate }) {
+  async create({ productId, productItemCode, productDescription, store, expiryDate, quantity }) {
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user;
     const id = newId();
@@ -176,6 +177,7 @@ export const Entries = {
       productDescription: productDescription || '',
       store,
       expiryDate,
+      quantity: quantity === '' || quantity === undefined || quantity === null ? null : Number(quantity),
       enteredBy: user?.id || null,
       enteredByEmail: user?.email || null,
       createdAt: new Date().toISOString()
