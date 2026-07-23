@@ -52,11 +52,17 @@ function badgeStyle(color) {
   return { display: 'inline-block', color: '#fff', background: color, padding: '3px 9px', borderRadius: 10, fontSize: 11.5, fontWeight: 600 };
 }
 
+// Παλιές επαφές είχαν λίστα ονομάτων (people[]) αντί για αριθμό. Μετατρέπουμε
+// μία φορά, κατά τη φόρτωση, σε peopleCount — ώστε μετά να είναι πάντα ένας
+// συγκεκριμένος αριθμός και να μην "ξαναϋπολογίζεται" ενώ ο χρήστης πληκτρολογεί
+// (αυτό προκαλούσε το πρόβλημα που δεν μπορούσες να γράψεις ελεύθερα το νούμερο).
+function normalizeContact(c) {
+  if (c.peopleCount !== undefined && c.peopleCount !== null) return c;
+  return { ...c, peopleCount: Array.isArray(c.people) ? c.people.length : 0 };
+}
+
 function getContactColumnValue(c, key) {
-  if (key === 'peopleCount') {
-    if (c.peopleCount !== undefined && c.peopleCount !== null && c.peopleCount !== '') return c.peopleCount;
-    return Array.isArray(c.people) ? c.people.length : '';
-  }
+  if (key === 'peopleCount') return c.peopleCount ?? '';
   return c[key];
 }
 function getContactFilterText(c, key) {
@@ -115,7 +121,7 @@ export default function ContactsView({ readOnly = false }) {
   }, [sortKey, sortDir]);
 
   useEffect(() => {
-    Contacts.list().then(setContacts);
+    Contacts.list().then((list) => setContacts(list.map(normalizeContact)));
   }, []);
 
   useEffect(() => {
@@ -127,13 +133,13 @@ export default function ContactsView({ readOnly = false }) {
   }, [visibleColumns]);
 
   async function selectContact(id) {
-    const c = contacts.find((x) => x.id === id) || (await Contacts.get(id));
+    const c = contacts.find((x) => x.id === id) || normalizeContact(await Contacts.get(id));
     setCurrent(c);
     setViewMode('card');
   }
 
   async function handleNew() {
-    const c = await Contacts.create({ company: 'Νέα εταιρεία' });
+    const c = normalizeContact(await Contacts.create({ company: 'Νέα εταιρεία' }));
     setContacts((prev) => [...prev, c]);
     setCurrent(c);
     setViewMode('card');

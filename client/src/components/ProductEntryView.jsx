@@ -11,9 +11,11 @@ export default function ProductEntryView() {
   const [notFoundBarcode, setNotFoundBarcode] = useState('');
   const [store, setStore] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+  const [quantity, setQuantity] = useState('1');
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [recentEntries, setRecentEntries] = useState([]);
+  const [noBarcodeQuery, setNoBarcodeQuery] = useState('');
 
   const scannerDivId = 'qf-barcode-scanner-region';
   const html5QrRef = useRef(null);
@@ -39,6 +41,26 @@ export default function ProductEntryView() {
     products.forEach((p) => (p.stores || []).forEach((s) => s && s.name && set.add(s.name)));
     return Array.from(set).sort();
   }, [products]);
+
+  // Προϊόντα χωρίς Barcode — καταχωρούνται επιλέγοντάς τα από λίστα αντί για σάρωση.
+  const noBarcodeProducts = useMemo(() => products.filter((p) => !p.barcode || !p.barcode.trim()), [products]);
+  const noBarcodeFiltered = useMemo(() => {
+    const q = noBarcodeQuery.trim().toLowerCase();
+    const base = q
+      ? noBarcodeProducts.filter((p) =>
+          (p.itemCode || '').toLowerCase().includes(q) ||
+          (p.descriptionErp || '').toLowerCase().includes(q) ||
+          (p.descriptionGr || '').toLowerCase().includes(q)
+        )
+      : noBarcodeProducts;
+    return base.slice(0, 30);
+  }, [noBarcodeProducts, noBarcodeQuery]);
+
+  function selectProductManually(p) {
+    setMatchedProduct(p);
+    setNotFoundBarcode('');
+    setScanError('');
+  }
 
   function findByBarcode(code) {
     const clean = (code || '').trim();
@@ -113,6 +135,8 @@ export default function ProductEntryView() {
     setManualBarcode('');
     setStore('');
     setExpiryDate('');
+    setQuantity('1');
+    setNoBarcodeQuery('');
   }
 
   async function handleSubmit(e) {
@@ -125,7 +149,8 @@ export default function ProductEntryView() {
         productItemCode: matchedProduct.itemCode,
         productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
         store,
-        expiryDate
+        expiryDate,
+        quantity
       });
       setRecentEntries((prev) => [entry, ...prev].slice(0, 8));
       setSavedFlash(true);
@@ -177,6 +202,34 @@ export default function ProductEntryView() {
                   <button className="btn-primary" type="submit">Αναζήτηση</button>
                 </form>
               </div>
+
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #eef1f4' }}>
+                <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
+                  Προϊόντα χωρίς Barcode — επίλεξε από λίστα
+                </label>
+                <input
+                  value={noBarcodeQuery}
+                  onChange={(e) => setNoBarcodeQuery(e.target.value)}
+                  placeholder="Αναζήτηση κωδικού/περιγραφής..."
+                  style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
+                />
+                <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #eef1f4', borderRadius: 8 }}>
+                  {noBarcodeFiltered.length === 0 ? (
+                    <p style={{ padding: 12, fontSize: 12.5, color: '#97a2b0', margin: 0 }}>Δεν βρέθηκαν προϊόντα.</p>
+                  ) : (
+                    noBarcodeFiltered.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => selectProductManually(p)}
+                        style={{ padding: '9px 12px', borderBottom: '1px solid #f1f3f5', cursor: 'pointer', fontSize: 13 }}
+                      >
+                        <strong>{p.itemCode || '—'}</strong>
+                        <span style={{ color: '#6b7684' }}> — {p.descriptionErp || p.descriptionGr || ''}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -205,6 +258,11 @@ export default function ProductEntryView() {
                 </select>
               </div>
 
+              <div className="field" style={{ marginBottom: 14 }}>
+                <label>Ποσότητα</label>
+                <input type="number" min="0" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+              </div>
+
               <div className="field" style={{ marginBottom: 16 }}>
                 <label>Ημερομηνία λήξης</label>
                 <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required />
@@ -226,7 +284,7 @@ export default function ProductEntryView() {
               </div>
               {recentEntries.map((e) => (
                 <div key={e.id} style={{ background: '#fff', border: '1px solid #eef1f4', borderRadius: 8, padding: '10px 12px', marginBottom: 6, fontSize: 13 }}>
-                  <strong>{e.productItemCode}</strong> — {e.store} — λήξη {e.expiryDate}
+                  <strong>{e.productItemCode}</strong> — {e.store} — ποσ. {e.quantity ?? '—'} — λήξη {e.expiryDate}
                 </div>
               ))}
             </div>

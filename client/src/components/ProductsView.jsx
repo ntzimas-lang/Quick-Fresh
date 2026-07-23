@@ -32,6 +32,7 @@ const ALL_COLUMNS = [
   { key: 'detailedDescriptionEn', label: 'Αναλυτική Περιγραφή EN' },
   { key: 'unitsPerMachine', label: 'ΤΕΜ στο μηχάνημα' },
   { key: 'status', label: 'Status' },
+  { key: 'region', label: 'Περιοχή' },
   { key: 'activeOnMachine', label: 'Ενεργό Στο Μηχάνημα' },
   { key: 'activeStores', label: 'Ενεργό Σε Κατάστημα' },
   { key: 'sellingPrice', label: 'Τιμή Πώλησης' },
@@ -42,7 +43,9 @@ const ALL_COLUMNS = [
   { key: 'imagesPromo', label: 'Image - Promo' }
 ];
 
-const DEFAULT_VISIBLE_COLUMNS = ['categoryGr', 'itemCode', 'barcode', 'descriptionErp', 'status', 'images365'];
+const DEFAULT_VISIBLE_COLUMNS = ['categoryGr', 'itemCode', 'barcode', 'descriptionErp', 'status', 'region', 'images365'];
+
+const REGION_OPTIONS = ['Αθήνα', 'Θεσσαλονίκη', 'Παντού'];
 
 // Στήλες που επεξεργάζονται απευθείας μέσα στον πίνακα (χωρίς να ανοίγει η κάρτα).
 const INLINE_EDITABLE_TEXT_KEYS = new Set([
@@ -342,6 +345,20 @@ export default function ProductsView({ readOnly = false }) {
       )
     );
   }
+  function moveColumn(key, direction) {
+    setTableViews((prev) =>
+      prev.map((v) => {
+        if (v.id !== activeViewId) return v;
+        const idx = v.columns.indexOf(key);
+        if (idx === -1) return v;
+        const newIdx = idx + direction;
+        if (newIdx < 0 || newIdx >= v.columns.length) return v;
+        const cols = [...v.columns];
+        [cols[idx], cols[newIdx]] = [cols[newIdx], cols[idx]];
+        return { ...v, columns: cols };
+      })
+    );
+  }
   function addTableView() {
     const name = window.prompt('Όνομα νέου tab πίνακα:');
     if (!name || !name.trim()) return;
@@ -372,7 +389,11 @@ export default function ProductsView({ readOnly = false }) {
     { key: `store:${name}:fcQF`, label: `${name} F.C. Q&F` }
   ]);
   const allColumnDefs = [...ALL_COLUMNS, ...storeColumnDefs];
-  const visibleColumnDefs = allColumnDefs.filter((col) => visibleColumns.includes(col.key));
+  // Η σειρά εμφάνισης ακολουθεί τη σειρά μέσα στο visibleColumns (όχι τη σταθερή σειρά ALL_COLUMNS),
+  // ώστε να δουλεύει η μετακίνηση στηλών δεξιά/αριστερά.
+  const visibleColumnDefs = visibleColumns
+    .map((key) => allColumnDefs.find((col) => col.key === key))
+    .filter(Boolean);
   const filteredProducts = products.filter((p) =>
     visibleColumnDefs.every((col) => {
       const f = (columnFilters[col.key] || '').trim().toLowerCase();
@@ -534,6 +555,19 @@ export default function ProductsView({ readOnly = false }) {
         </select>
       );
     }
+    if (col.key === 'region') {
+      return (
+        <select
+          value={p.region || ''}
+          onClick={stop}
+          onChange={(e) => updateProductInline(p.id, (prod) => ({ ...prod, region: e.target.value }))}
+          style={inlineInputStyle}
+        >
+          <option value="">—</option>
+          {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+      );
+    }
     if (col.key === 'activeOnMachine') {
       return (
         <select
@@ -665,14 +699,28 @@ export default function ProductsView({ readOnly = false }) {
               <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e1e5ea' }}>
                 <tr style={{ color: '#6b7684' }}>
                   <th style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px' }}>#</th>
-                  {visibleColumnDefs.map((col) => (
+                  {visibleColumnDefs.map((col, colIdx) => (
                     <th
                       key={col.key}
-                      onClick={() => toggleSort(col.key)}
-                      style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}
-                      title="Κλικ για ταξινόμηση"
+                      style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', userSelect: 'none' }}
                     >
-                      {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      <span onClick={() => toggleSort(col.key)} style={{ cursor: 'pointer' }} title="Κλικ για ταξινόμηση">
+                        {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </span>
+                      <span style={{ marginLeft: 6, display: 'inline-flex', gap: 1 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); moveColumn(col.key, -1); }}
+                          disabled={colIdx === 0}
+                          title="Μετακίνηση αριστερά"
+                          style={{ border: 'none', background: 'transparent', cursor: colIdx === 0 ? 'default' : 'pointer', fontSize: 10, color: colIdx === 0 ? '#d7dce2' : '#97a2b0', padding: '0 2px' }}
+                        >◀</button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); moveColumn(col.key, 1); }}
+                          disabled={colIdx === visibleColumnDefs.length - 1}
+                          title="Μετακίνηση δεξιά"
+                          style={{ border: 'none', background: 'transparent', cursor: colIdx === visibleColumnDefs.length - 1 ? 'default' : 'pointer', fontSize: 10, color: colIdx === visibleColumnDefs.length - 1 ? '#d7dce2' : '#97a2b0', padding: '0 2px' }}
+                        >▶</button>
+                      </span>
                     </th>
                   ))}
                 </tr>
@@ -724,7 +772,7 @@ export default function ProductsView({ readOnly = false }) {
       {viewMode === 'card' && current && (
         <div className="detail">
           <div className="tabs">
-            <button className={'tab' + (tab === 'info' ? ' active' : '')} onClick={() => setTab('info')}>Product List</button>
+            <button className={'tab' + (tab === 'info' ? ' active' : '')} onClick={() => setTab('info')}>Προϊόντα</button>
             <button className={'tab' + (tab === 'cost' ? ' active' : '')} onClick={() => setTab('cost')}>Cost</button>
             <div className="tab-actions">
               <button className="btn-primary" onClick={() => setViewMode('table')} style={{ background: '#6b7684' }}>← Πίνακας</button>
@@ -797,6 +845,13 @@ export default function ProductsView({ readOnly = false }) {
                   <select disabled={readOnly} value={current.activeOnMachine || 'YES'} onChange={(e) => updateField('activeOnMachine', e.target.value)}>
                     <option value="YES">YES</option>
                     <option value="NO">NO</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Περιοχή</label>
+                  <select disabled={readOnly} value={current.region || ''} onChange={(e) => updateField('region', e.target.value)}>
+                    <option value="">—</option>
+                    {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
                 <div className="field">
