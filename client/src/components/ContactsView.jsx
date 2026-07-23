@@ -201,8 +201,23 @@ export default function ContactsView({ readOnly = false }) {
   function toggleColumn(key) {
     setVisibleColumns((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }
+  function moveColumn(key, direction) {
+    setVisibleColumns((prev) => {
+      const idx = prev.indexOf(key);
+      if (idx === -1) return prev;
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const cols = [...prev];
+      [cols[idx], cols[newIdx]] = [cols[newIdx], cols[idx]];
+      return cols;
+    });
+  }
 
-  const visibleColumnDefs = CONTACT_COLUMNS.filter((col) => visibleColumns.includes(col.key));
+  // Η σειρά εμφάνισης ακολουθεί τη σειρά μέσα στο visibleColumns (όχι τη σταθερή σειρά
+  // CONTACT_COLUMNS), ώστε να δουλεύει η μετακίνηση στηλών δεξιά/αριστερά.
+  const visibleColumnDefs = visibleColumns
+    .map((key) => CONTACT_COLUMNS.find((col) => col.key === key))
+    .filter(Boolean);
   const filteredContacts = contacts.filter((c) =>
     visibleColumnDefs.every((col) => {
       const f = (columnFilters[col.key] || '').trim().toLowerCase();
@@ -359,14 +374,28 @@ export default function ContactsView({ readOnly = false }) {
               <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e1e5ea' }}>
                 <tr style={{ color: '#6b7684' }}>
                   <th style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px' }}>#</th>
-                  {visibleColumnDefs.map((col) => (
+                  {visibleColumnDefs.map((col, colIdx) => (
                     <th
                       key={col.key}
-                      onClick={() => toggleSort(col.key)}
-                      style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}
-                      title="Κλικ για ταξινόμηση"
+                      style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', userSelect: 'none' }}
                     >
-                      {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      <span onClick={() => toggleSort(col.key)} style={{ cursor: 'pointer' }} title="Κλικ για ταξινόμηση">
+                        {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </span>
+                      <span style={{ marginLeft: 6, display: 'inline-flex', gap: 1 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); moveColumn(col.key, -1); }}
+                          disabled={colIdx === 0}
+                          title="Μετακίνηση αριστερά"
+                          style={{ border: 'none', background: 'transparent', cursor: colIdx === 0 ? 'default' : 'pointer', fontSize: 10, color: colIdx === 0 ? '#d7dce2' : '#97a2b0', padding: '0 2px' }}
+                        >◀</button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); moveColumn(col.key, 1); }}
+                          disabled={colIdx === visibleColumnDefs.length - 1}
+                          title="Μετακίνηση δεξιά"
+                          style={{ border: 'none', background: 'transparent', cursor: colIdx === visibleColumnDefs.length - 1 ? 'default' : 'pointer', fontSize: 10, color: colIdx === visibleColumnDefs.length - 1 ? '#d7dce2' : '#97a2b0', padding: '0 2px' }}
+                        >▶</button>
+                      </span>
                     </th>
                   ))}
                 </tr>

@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Entries } from '../api.js';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
 
 function daysDiff(expiryDateStr) {
   const today = new Date();
@@ -73,10 +76,42 @@ export default function ExpiredReportView({ canDelete = false }) {
     return [...rows].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
   }, [entries, storeFilter, search]);
 
+  function exportPDF() {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    // Ενσωμάτωση γραμματοσειράς Unicode — τα βασικά fonts του jsPDF δεν έχουν ελληνικούς χαρακτήρες.
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
+    doc.setFontSize(12);
+    doc.text('Quick & Fresh — Report Ληγμένα', 14, 12);
+    autoTable(doc, {
+      startY: 18,
+      head: [['Κωδικός', 'Περιγραφή', 'Κατάστημα', 'Ποσότητα', 'Ημ. Λήξης', 'Διαφορά', 'Καταχώρησε']],
+      body: filtered.map((e) => {
+        const diff = daysDiff(e.expiryDate);
+        return [
+          e.productItemCode || '',
+          e.productDescription || '',
+          e.store || '',
+          e.quantity ?? '',
+          formatDate(e.expiryDate),
+          diffLabel(diff),
+          e.enteredByEmail || ''
+        ];
+      }),
+      styles: { fontSize: 8, cellPadding: 2, font: 'DejaVuSans' },
+      headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' }
+    });
+    doc.save(`quick-fresh-ligmena-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15 }}>Report Ληγμένα</strong>
+        <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title="Εξαγωγή σε PDF">
+          PDF
+        </button>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
