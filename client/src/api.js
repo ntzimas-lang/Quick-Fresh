@@ -21,6 +21,15 @@ function rowToRecord(row) {
   return { ...row.data, id: row.id };
 }
 
+// Παλιά προϊόντα είχαν ένα μόνο barcode (πεδίο "barcode"). Μερικά προϊόντα
+// έχουν παραπάνω από ένα, οπότε το μοντέλο δεδομένων χρησιμοποιεί πλέον λίστα
+// "barcodes". Εδώ μετατρέπουμε αυτόματα τα παλιά δεδομένα την πρώτη φορά που
+// φορτώνονται, ώστε να μη χαθεί τίποτα.
+function normalizeProduct(p) {
+  if (Array.isArray(p.barcodes)) return p;
+  return { ...p, barcodes: p.barcode ? [p.barcode] : [] };
+}
+
 function defaultProduct(overrides) {
   const id = newId();
   return {
@@ -28,7 +37,7 @@ function defaultProduct(overrides) {
     categoryGr: '',
     categoryEn: '',
     itemCode: '',
-    barcode: '',
+    barcodes: [],
     descriptionErp: '',
     unitsPerMachine: null,
     descriptionGr: '',
@@ -88,12 +97,12 @@ export const Products = {
   async list() {
     const { data, error } = await supabase.from('products').select('*').order('updated_at', { ascending: true });
     if (error) throw error;
-    return data.map(rowToRecord);
+    return data.map(rowToRecord).map(normalizeProduct);
   },
   async get(id) {
     const { data, error } = await supabase.from('products').select('*').eq('id', id).single();
     if (error) throw error;
-    return rowToRecord(data);
+    return normalizeProduct(rowToRecord(data));
   },
   async create(body) {
     const record = defaultProduct(body);
@@ -103,7 +112,7 @@ export const Products = {
       .select()
       .single();
     if (error) throw error;
-    return rowToRecord(data);
+    return normalizeProduct(rowToRecord(data));
   },
   async update(id, body) {
     const record = { ...body, id };
@@ -114,7 +123,7 @@ export const Products = {
       .select()
       .single();
     if (error) throw error;
-    return rowToRecord(data);
+    return normalizeProduct(rowToRecord(data));
   },
   async remove(id) {
     const { error } = await supabase.from('products').delete().eq('id', id);
