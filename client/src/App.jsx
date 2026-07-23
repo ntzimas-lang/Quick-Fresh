@@ -5,13 +5,14 @@ import HistoryView from './components/HistoryView.jsx';
 import ProductEntryView from './components/ProductEntryView.jsx';
 import ExpiredReportView from './components/ExpiredReportView.jsx';
 import UsersView from './components/UsersView.jsx';
+import DashboardView from './components/DashboardView.jsx';
 import Login from './components/Login.jsx';
 import { Auth } from './api.js';
 
 const SIDEBAR_KEY = 'qf_sidebar_open';
 
 export default function App() {
-  const [view, setView] = useState('products');
+  const [view, setView] = useState('dashboard');
   const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
   const [profile, setProfile] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -62,7 +63,7 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
-    if (profile?.role === 'driver' && view === 'products') {
+    if (profile?.role === 'driver' && (view === 'dashboard' || view === 'products')) {
       setView('entry');
     }
   }, [profile]);
@@ -103,6 +104,14 @@ export default function App() {
           </button>
         </div>
         <nav className="nav">
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'dashboard' ? ' active' : '')}
+              onClick={() => setView('dashboard')}
+            >
+              📊 Πίνακας Ελέγχου
+            </button>
+          )}
           <button
             className={'nav-item' + (view === 'entry' ? ' active' : '')}
             onClick={() => setView('entry')}
@@ -163,6 +172,11 @@ export default function App() {
       </aside>
       )}
       <main className="main">
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'dashboard' ? ' active' : '')}>
+            <DashboardView isSuperUser={role === 'super_user'} />
+          </section>
+        )}
         {role !== 'driver' && (
           <section className={'view' + (view === 'products' ? ' active' : '')}>
             <ProductsView readOnly={readOnly} />
