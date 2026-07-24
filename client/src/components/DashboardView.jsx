@@ -1,6 +1,35 @@
 import React, { useEffect, useState } from 'react';
-import { Contacts, Entries } from '../api.js';
+import { Contacts, Entries, SalesDaily, SalesProducts } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
+
+const SALES_LINE_COLORS = { net: '#2f8f8a', tx: '#c98a1f', avgTicket: '#7a4fc9' };
+
+function isoWeekKey(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = (d.getDay() + 6) % 7; // Δευτέρα = 0
+  d.setDate(d.getDate() - day + 3);
+  const firstThursday = new Date(d.getFullYear(), 0, 4);
+  const diff = d - firstThursday;
+  const week = 1 + Math.round(diff / (7 * 86400000));
+  return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+// Μετατρέπει μια σειρά τιμών σε σημεία SVG polyline, κανονικοποιημένα 0-100
+// ώστε πολλές καμπύλες με διαφορετική κλίμακα να χωράνε στο ίδιο γράφημα.
+function trendPoints(series, width = 360, height = 95, topPad = 8) {
+  if (!series.length) return '';
+  const lo = Math.min(...series);
+  const hi = Math.max(...series);
+  const n = series.length;
+  return series
+    .map((v, i) => {
+      const x = n > 1 ? (i * width) / (n - 1) : width / 2;
+      const frac = hi !== lo ? (v - lo) / (hi - lo) : 0.5;
+      const y = topPad + (1 - frac) * (height - topPad * 1.5);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
 
 const CONTACT_STATUS_COLORS = {
   'Έκλεισε': '#27ae60',
@@ -37,11 +66,15 @@ export default function DashboardView() {
   const [error, setError] = useState('');
   const [contacts, setContacts] = useState([]);
   const [entries, setEntries] = useState([]);
+  const [salesDaily, setSalesDaily] = useState([]);
+  const [salesProducts, setSalesProducts] = useState([]);
 
   useEffect(() => {
     Promise.all([
       Contacts.list().then(setContacts),
-      Entries.list().then(setEntries)
+      Entries.list().then(setEntries),
+      SalesDaily.list().then(setSalesDaily),
+      SalesProducts.list().then(setSalesProducts)
     ])
       .then(() => setLoading(false))
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
@@ -96,6 +129,48 @@ export default function DashboardView() {
   });
   const statusOrder = ['Έκλεισε', 'Ενδιαφέρεται', 'Δεν Ενδιαφέρεται', ''];
   const statusLabelKeys = { 'Έκλεισε': 'c_status_closed', 'Ενδιαφέρεται': 'c_status_interested', 'Δεν Ενδιαφέρεται': 'c_status_not_interested' };
+
+  // --- Πωλήσεις ---------------------------------------------------------
+  // KPIs — καθαρά ποσά, χωρίς ΦΠΑ (η στήλη netSales έχει ήδη αφαιρέσει τον φόρο).
+  const salesTx = salesDaily.reduce((s, r) => s + (r.transactions || 0), 0);
+  const salesItems = salesDaily.reduce((s, r) => s + (r.itemCount || 0), 0);
+  const salesNet = salesDaily.reduce((s, r) => s + (r.netSales || 0), 0);
+  const avgTicket = salesTx ? salesNet / salesTx : 0;
+  const avgBasket = salesTx ? salesItems / salesTx : 0;
+
+  // Τάση ανά εβδομάδα, 3 καμπύλες μαζί (καθαρές πωλήσεις / συναλλαγές / μέσο ταλόν).
+  const weekMap = {};
+  salesDaily.forEach((r) => {
+    if (!r.date) return;
+    const wk = isoWeekKey(r.date);
+    if (!weekMap[wk]) weekMap[wk] = { tx: 0, net: 0 };
+    weekMap[wk].tx += r.transactions || 0;
+    weekMap[wk].net += r.netSales || 0;
+  });
+  const weekKeys = Object.keys(weekMap).sort();
+  const weekNet = weekKeys.map((k) => weekMap[k].net);
+  const weekTx = weekKeys.map((k) => weekMap[k].tx);
+  const weekAvgTicket = weekKeys.map((k) => (weekMap[k].tx ? weekMap[k].net / weekMap[k].tx : 0));
+
+  // Μόνο η πιο πρόσφατη "παρτίδα" ανά κατάστημα (ώστε να μη διπλομετράμε παλιά uploads).
+  const latestBatchByStore = {};
+  salesProducts.forEach((p) => {
+    const cur = latestBatchByStore[p.store];
+    if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStore[p.store] = p.uploadedAt;
+  });
+  const latestProducts = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
+
+  const categoryTotals = {};
+  latestProducts.forEach((p) => {
+    const key = p.cat1 || '—';
+    categoryTotals[key] = (categoryTotals[key] || 0) + (p.netRevenue || 0);
+  });
+  const categoryBreakdown = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxCategory = categoryBreakdown.length ? categoryBreakdown[0][1] : 1;
+
+  const topProducts = [...latestProducts].sort((a, b) => (b.netRevenue || 0) - (a.netRevenue || 0)).slice(0, 5);
+
+  const hasSalesData = salesDaily.length > 0 || salesProducts.length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -219,7 +294,91 @@ export default function DashboardView() {
             </div>
           </div>
 
-          {/* 2. Επαφές ανά Status — κάτω, σε πλήρες πλάτος */}
+          {/* 2. Πωλήσεις — καθαρά ποσά (χωρίς ΦΠΑ), από τα uploads στο πεδίο "Πωλήσεις" */}
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
+            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+              {t('d_sales_title')}
+            </div>
+            {!hasSalesData ? (
+              <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_empty')}</p>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 22 }}>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#16233f' }}>€{salesNet.toFixed(0)}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_net')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#2f8f8a' }}>{salesTx}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_tx')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#c98a1f' }}>€{avgTicket.toFixed(2)}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_avg_ticket')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#7a4fc9' }}>{avgBasket.toFixed(2)}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_avg_basket')}</div>
+                  </div>
+                </div>
+
+                {weekKeys.length > 1 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
+                      <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_sales_trend_title')}</span>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684' }}>
+                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
+                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
+                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.avgTicket, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_avg_ticket')}</span>
+                      </div>
+                    </div>
+                    <svg viewBox="0 0 360 105" style={{ width: '100%', height: 150 }}>
+                      <polyline points={trendPoints(weekNet)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
+                      <polyline points={trendPoints(weekTx)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
+                      <polyline points={trendPoints(weekAvgTicket)} fill="none" stroke={SALES_LINE_COLORS.avgTicket} strokeWidth="2" strokeDasharray="1,3" />
+                    </svg>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 260px', minWidth: 240 }}>
+                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+                      {t('d_sales_by_category')}
+                    </div>
+                    {categoryBreakdown.length === 0 ? (
+                      <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                    ) : (
+                      categoryBreakdown.map(([cat, val]) => (
+                        <Bar key={cat} label={cat} value={Math.round(val)} max={maxCategory} color="#2f8f8a" />
+                      ))
+                    )}
+                  </div>
+                  <div style={{ flex: '1 1 300px', minWidth: 260 }}>
+                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+                      {t('d_sales_top_products')}
+                    </div>
+                    {topProducts.length === 0 ? (
+                      <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                        <tbody>
+                          {topProducts.map((p) => (
+                            <tr key={p.id} style={{ borderTop: '1px solid #eef1f4' }}>
+                              <td style={{ padding: '6px 0' }}>{p.productName}</td>
+                              <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684' }}>{p.sold} {t('d_pieces_abbr')}</td>
+                              <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f' }}>€{p.netRevenue.toFixed(0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 3. Επαφές ανά Status — κάτω, σε πλήρες πλάτος */}
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_contacts_by_status')}
