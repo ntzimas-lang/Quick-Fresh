@@ -170,14 +170,6 @@ export default function App() {
             onClick={() => setView('expired')}
           >
             <span>{t('nav_expired')}</span>
-            {(alertCounts.expired + alertCounts.soon) > 0 && (
-              <span
-                className="nav-badge"
-                style={{ background: alertCounts.expired > 0 ? '#c0392b' : '#e0a500' }}
-              >
-                {alertCounts.expired + alertCounts.soon}
-              </span>
-            )}
           </button>
           {role !== 'driver' && (
             <button
