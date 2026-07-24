@@ -243,6 +243,57 @@ export const SalesProducts = {
   }
 };
 
+export const Destructions = {
+  async list() {
+    const { data, error } = await supabase.from('destructions').select('*').order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  // Καταγράφει την καταστροφή ΚΑΙ αφαιρεί αυτόματα τυχόν καταχωρήσεις "Ληγμένα"
+  // (product_entries) για το ίδιο προϊόν στο ίδιο κατάστημα — δεν έχει νόημα να
+  // συνεχίζει να εμφανίζεται ως "λήγει" κάτι που μόλις καταστράφηκε.
+  async create({ productId, productItemCode, productDescription, store, quantity, reason }) {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const id = newId();
+    const record = {
+      id,
+      productId,
+      productItemCode: productItemCode || '',
+      productDescription: productDescription || '',
+      store,
+      quantity: quantity === '' || quantity === undefined || quantity === null ? null : Number(quantity),
+      reason: reason || '',
+      destroyedBy: user?.id || null,
+      destroyedByEmail: user?.email || null,
+      createdAt: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('destructions')
+      .insert({ id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+
+    let removedEntries = 0;
+    if (productId && store) {
+      const { data: removed, error: removeError } = await supabase
+        .from('product_entries')
+        .delete()
+        .eq('data->>productId', productId)
+        .eq('data->>store', store)
+        .select();
+      if (!removeError && removed) removedEntries = removed.length;
+    }
+
+    return { record: rowToRecord(data), removedEntries };
+  },
+  async remove(id) {
+    const { error } = await supabase.from('destructions').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const History = {
   async list(limit = 300) {
     const { data, error } = await supabase

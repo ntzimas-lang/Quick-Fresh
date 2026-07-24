@@ -4,6 +4,8 @@ import ContactsView from './components/ContactsView.jsx';
 import HistoryView from './components/HistoryView.jsx';
 import ProductEntryView from './components/ProductEntryView.jsx';
 import ExpiredReportView from './components/ExpiredReportView.jsx';
+import DestructionView from './components/DestructionView.jsx';
+import DestructionsReportView from './components/DestructionsReportView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import SalesView from './components/SalesView.jsx';
@@ -172,6 +174,18 @@ export default function App() {
           >
             <span>{t('nav_expired')}</span>
           </button>
+          <button
+            className={'nav-item' + (view === 'destruction' ? ' active' : '')}
+            onClick={() => setView('destruction')}
+          >
+            <span>{t('nav_destruction')}</span>
+          </button>
+          <button
+            className={'nav-item' + (view === 'destructionsReport' ? ' active' : '')}
+            onClick={() => setView('destructionsReport')}
+          >
+            <span>{t('nav_destructions_report')}</span>
+          </button>
           {role !== 'driver' && (
             <button
               className={'nav-item' + (view === 'contacts' ? ' active' : '')}
@@ -256,6 +270,12 @@ export default function App() {
         </section>
         <section className={'view' + (view === 'expired' ? ' active' : '')}>
           <ExpiredReportView canDelete={role === 'super_user'} />
+        </section>
+        <section className={'view' + (view === 'destruction' ? ' active' : '')}>
+          <DestructionView />
+        </section>
+        <section className={'view' + (view === 'destructionsReport' ? ' active' : '')}>
+          <DestructionsReportView canDelete={role === 'super_user'} />
         </section>
         {role !== 'driver' && (
           <section className={'view' + (view === 'history' ? ' active' : '')}>
