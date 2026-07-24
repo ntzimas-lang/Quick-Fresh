@@ -205,6 +205,44 @@ export const Entries = {
   }
 };
 
+export const SalesDaily = {
+  async list() {
+    const { data, error } = await supabase.from('sales_daily').select('*');
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  // rows: [{ id, ...fields }] — id = `${date}|${store}` ώστε το ξαναανέβασμα μιας
+  // περιόδου που επικαλύπτεται να κάνει update, όχι διπλή καταχώρηση.
+  async upsertMany(rows) {
+    if (!rows.length) return [];
+    const payload = rows.map((r) => ({ id: r.id, data: r, updated_at: new Date().toISOString() }));
+    const { data, error } = await supabase.from('sales_daily').upsert(payload, { onConflict: 'id' }).select();
+    if (error) throw error;
+    return data.map(rowToRecord);
+  }
+};
+
+export const SalesProducts = {
+  async list() {
+    const { data, error } = await supabase.from('sales_products').select('*');
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  // Κάθε upload είναι μία "παρτίδα" (batchId) — κρατάμε το ιστορικό, το Dashboard
+  // χρησιμοποιεί μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα.
+  async insertBatch(rows) {
+    if (!rows.length) return [];
+    const payload = rows.map((r) => ({ id: newId(), data: r }));
+    const { data, error } = await supabase.from('sales_products').insert(payload).select();
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async removeBatch(batchId) {
+    const { error } = await supabase.from('sales_products').delete().eq('data->>batchId', batchId);
+    if (error) throw error;
+  }
+};
+
 export const History = {
   async list(limit = 300) {
     const { data, error } = await supabase

@@ -6,6 +6,7 @@ import ProductEntryView from './components/ProductEntryView.jsx';
 import ExpiredReportView from './components/ExpiredReportView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
+import SalesView from './components/SalesView.jsx';
 import Login from './components/Login.jsx';
 import { Auth, Entries } from './api.js';
 import { useLanguage } from './LanguageContext.jsx';
@@ -195,6 +196,14 @@ export default function App() {
               {t('nav_history')}
             </button>
           )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'sales' ? ' active' : '')}
+              onClick={() => setView('sales')}
+            >
+              {t('nav_sales')}
+            </button>
+          )}
           <button
             className="nav-item lang-toggle"
             onClick={() => setLang(lang === 'el' ? 'en' : 'el')}
@@ -251,6 +260,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'history' ? ' active' : '')}>
             <HistoryView />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'sales' ? ' active' : '')}>
+            <SalesView canDelete={role === 'super_user'} />
           </section>
         )}
         {role === 'super_user' && (
