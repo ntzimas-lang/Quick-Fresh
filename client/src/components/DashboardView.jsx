@@ -81,7 +81,7 @@ export default function DashboardView() {
     soonStoreMap[key][bucket] += e.qty;
     soonStoreMap[key].total += e.qty;
   });
-  const soonStoreBreakdown = Object.entries(soonStoreMap).sort((a, b) => b[1].total - a[1].total).slice(0, 8);
+  const soonStoreBreakdown = Object.entries(soonStoreMap).sort((a, b) => b[1].total - a[1].total);
 
   const statusGroups = {};
   contacts.forEach((c) => {
@@ -162,10 +162,31 @@ export default function DashboardView() {
                             <span style={{ fontSize: 13 }}>{store}</span>
                             <strong style={{ fontSize: 13 }}>{s.total} {t('d_pieces_abbr')}</strong>
                           </div>
-                          <div style={{ display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden', background: '#f1f3f5' }}>
-                            {s.today > 0 && <div title={`${t('d_bucket_today')}: ${s.today}`} style={{ width: pctToday + '%', background: '#c0392b' }} />}
-                            {s.d1_3 > 0 && <div title={`${t('d_bucket_1_3')}: ${s.d1_3}`} style={{ width: pct1_3 + '%', background: '#e0703a' }} />}
-                            {s.d4_7 > 0 && <div title={`${t('d_bucket_4_7')}: ${s.d4_7}`} style={{ width: pct4_7 + '%', background: '#c98a1f' }} />}
+                          <div style={{ display: 'flex', height: 20, borderRadius: 5, overflow: 'hidden', background: '#f1f3f5' }}>
+                            {s.today > 0 && (
+                              <div
+                                title={`${t('d_bucket_today')}: ${s.today}`}
+                                style={{ width: pctToday + '%', background: '#c0392b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >
+                                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.today}</span>
+                              </div>
+                            )}
+                            {s.d1_3 > 0 && (
+                              <div
+                                title={`${t('d_bucket_1_3')}: ${s.d1_3}`}
+                                style={{ width: pct1_3 + '%', background: '#e0703a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >
+                                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.d1_3}</span>
+                              </div>
+                            )}
+                            {s.d4_7 > 0 && (
+                              <div
+                                title={`${t('d_bucket_4_7')}: ${s.d4_7}`}
+                                style={{ width: pct4_7 + '%', background: '#c98a1f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >
+                                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.d4_7}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
