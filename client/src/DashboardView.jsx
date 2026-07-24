@@ -72,24 +72,22 @@ export default function DashboardView() {
   const bucket4_7 = soonEntries.filter((e) => e.diff >= 4 && e.diff <= 7).reduce((s, e) => s + e.qty, 0);
   const maxBucket = Math.max(bucketToday, bucket1_3, bucket4_7, 1);
 
-  // Ανά κατάστημα: σύνολο τεμαχίων + σύνθεση (Σήμερα / 1-3 / 4-7 ημέρες) στην ίδια γραμμή.
-  const soonStoreMap = {};
-  soonEntries.forEach((e) => {
-    const key = e.store || '—';
-    if (!soonStoreMap[key]) soonStoreMap[key] = { today: 0, d1_3: 0, d4_7: 0, total: 0 };
-    const bucket = e.diff === 0 ? 'today' : e.diff <= 3 ? 'd1_3' : 'd4_7';
-    soonStoreMap[key][bucket] += e.qty;
-    soonStoreMap[key].total += e.qty;
-  });
-  const soonStoreBreakdown = Object.entries(soonStoreMap).sort((a, b) => b[1].total - a[1].total);
-
-  // Σύνολο τεμαχίων ΑΝΑ κατάστημα, από ΟΛΕΣ τις καταχωρήσεις (όχι μόνο όσες λήγουν σύντομα) —
-  // ώστε δίπλα στο υποσύνολο "λήγουν ≤7 ημέρες" να φαίνεται και το πραγματικό σύνολο του καταστήματος.
-  const storeTotalMap = {};
+  // Ανά κατάστημα: ΟΛΑ τα προϊόντα του καταστήματος (όχι μόνο όσα λήγουν σύντομα),
+  // με σύνθεση Ληγμένα / Σήμερα / 1-3 / 4-7 ημέρες / >7 ημέρες στην ίδια γραμμή.
+  const storeFullMap = {};
   entryDiffs.forEach((e) => {
     const key = e.store || '—';
-    storeTotalMap[key] = (storeTotalMap[key] || 0) + e.qty;
+    if (!storeFullMap[key]) storeFullMap[key] = { expired: 0, today: 0, d1_3: 0, d4_7: 0, rest: 0, total: 0 };
+    let bucket;
+    if (e.diff < 0) bucket = 'expired';
+    else if (e.diff === 0) bucket = 'today';
+    else if (e.diff <= 3) bucket = 'd1_3';
+    else if (e.diff <= 7) bucket = 'd4_7';
+    else bucket = 'rest';
+    storeFullMap[key][bucket] += e.qty;
+    storeFullMap[key].total += e.qty;
   });
+  const storeBreakdown = Object.entries(storeFullMap).sort((a, b) => b[1].total - a[1].total);
 
   const statusGroups = {};
   contacts.forEach((c) => {
@@ -135,46 +133,55 @@ export default function DashboardView() {
               <div style={{ fontSize: 13.5, color: '#16233f', fontWeight: 700, marginBottom: 14 }}>
                 {t('d_soon_analysis_title')}
               </div>
-              {soonQty === 0 ? (
+              {totalQty === 0 ? (
                 <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_no_soon')}</p>
               ) : (
                 <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                   <div style={{ flex: '1 1 260px', minWidth: 240 }}>
-                    <Bar label={t('d_bucket_today')} value={bucketToday} max={maxBucket} color="#c0392b" />
-                    <Bar label={t('d_bucket_1_3')} value={bucket1_3} max={maxBucket} color="#e0703a" />
-                    <Bar label={t('d_bucket_4_7')} value={bucket4_7} max={maxBucket} color="#c98a1f" />
+                    {soonQty === 0 ? (
+                      <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_no_soon')}</p>
+                    ) : (
+                      <>
+                        <Bar label={t('d_bucket_today')} value={bucketToday} max={maxBucket} color="#c0392b" />
+                        <Bar label={t('d_bucket_1_3')} value={bucket1_3} max={maxBucket} color="#e0703a" />
+                        <Bar label={t('d_bucket_4_7')} value={bucket4_7} max={maxBucket} color="#c98a1f" />
+                      </>
+                    )}
                   </div>
                   <div style={{ flex: '1 1 300px', minWidth: 260 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                        <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
-                          {t('d_by_store_soon')}
-                        </span>
-                        <span style={{ fontSize: 12, color: '#16233f', fontWeight: 600 }}>
-                          · {t('d_store_total_label')}: {totalQty} {t('d_pieces_abbr')}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, fontSize: 10.5, color: '#6b7684' }}>
+                      <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                        {t('d_by_store_soon')}
+                      </span>
+                      <div style={{ display: 'flex', gap: 10, fontSize: 10.5, color: '#6b7684', flexWrap: 'wrap' }}>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#7a1f1f', marginRight: 3 }} />{t('d_expired_title')}</span>
                         <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#c0392b', marginRight: 3 }} />{t('d_bucket_today')}</span>
                         <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#e0703a', marginRight: 3 }} />{t('d_bucket_1_3')}</span>
                         <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#c98a1f', marginRight: 3 }} />{t('d_bucket_4_7')}</span>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#b9c3d6', marginRight: 3 }} />{t('d_bucket_rest')}</span>
                       </div>
                     </div>
-                    {soonStoreBreakdown.map(([store, s]) => {
+                    {storeBreakdown.map(([store, s]) => {
+                      const pctExpired = s.total ? Math.round((s.expired / s.total) * 100) : 0;
                       const pctToday = s.total ? Math.round((s.today / s.total) * 100) : 0;
                       const pct1_3 = s.total ? Math.round((s.d1_3 / s.total) * 100) : 0;
-                      const pct4_7 = s.total ? Math.max(0, 100 - pctToday - pct1_3) : 0;
+                      const pct4_7 = s.total ? Math.round((s.d4_7 / s.total) * 100) : 0;
+                      const pctRest = s.total ? Math.max(0, 100 - pctExpired - pctToday - pct1_3 - pct4_7) : 0;
                       return (
                         <div key={store} style={{ marginBottom: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                             <span style={{ fontSize: 13 }}>{store}</span>
-                            <span style={{ fontSize: 13 }}>
-                              <strong>{s.total}</strong> {t('d_pieces_abbr')} {t('d_bucket_soon_suffix')}
-                              <span style={{ color: '#97a2b0', margin: '0 4px' }}>·</span>
-                              <strong>{storeTotalMap[store] || 0}</strong> {t('d_pieces_abbr')} {t('d_store_total_label')}
-                            </span>
+                            <strong style={{ fontSize: 13 }}>{s.total} {t('d_pieces_abbr')}</strong>
                           </div>
                           <div style={{ display: 'flex', height: 20, borderRadius: 5, overflow: 'hidden', background: '#f1f3f5' }}>
+                            {s.expired > 0 && (
+                              <div
+                                title={`${t('d_expired_title')}: ${s.expired}`}
+                                style={{ width: pctExpired + '%', background: '#7a1f1f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >
+                                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.expired}</span>
+                              </div>
+                            )}
                             {s.today > 0 && (
                               <div
                                 title={`${t('d_bucket_today')}: ${s.today}`}
@@ -197,6 +204,14 @@ export default function DashboardView() {
                                 style={{ width: pct4_7 + '%', background: '#c98a1f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.d4_7}</span>
+                              </div>
+                            )}
+                            {s.rest > 0 && (
+                              <div
+                                title={`${t('d_bucket_rest')}: ${s.rest}`}
+                                style={{ width: pctRest + '%', background: '#b9c3d6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >
+                                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#16233f', textShadow: '0 1px 1px rgba(255,255,255,0.35)' }}>{s.rest}</span>
                               </div>
                             )}
                           </div>
