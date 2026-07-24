@@ -68,6 +68,11 @@ input[type=number] {
 .hidden { display: none !important; }
 
 .tabs { display: flex; align-items: center; gap: 4px; background: #fff; border-bottom: 1px solid #e1e5ea; padding: 0 16px; position: sticky; top: 0; z-index: 5; }
+/* Όταν το πλαϊνό μενού είναι κρυμμένο, το κουμπί ☰ επιπλέει πάνω-αριστερά και
+   μπορεί να καλύψει τον τίτλο/tabs κάθε σελίδας (π.χ. "Προϊόντα"). Αντί να
+   καλύπτει το περιεχόμενο, δίνουμε στο main λίγο χώρο από πάνω ώστε το κουμπί
+   να έχει τη δική του γραμμή και να μην κρύβει τίποτα. */
+.main-collapsed { padding-top: 42px; }
 .tab { border: none; background: transparent; padding: 14px 16px; font-size: 13.5px; cursor: pointer; color: #6b7684; border-bottom: 2px solid transparent; }
 .tab.active { color: #16233f; border-bottom-color: #2f8f8a; font-weight: 600; }
 .tab-actions { margin-left: auto; display: flex; gap: 8px; padding: 10px 0; }

@@ -171,7 +171,7 @@ export default function App() {
         </div>
       </aside>
       )}
-      <main className="main">
+      <main className={'main' + (!sidebarOpen ? ' main-collapsed' : '')}>
         {role !== 'driver' && (
           <section className={'view' + (view === 'dashboard' ? ' active' : '')}>
             <DashboardView isSuperUser={role === 'super_user'} />
