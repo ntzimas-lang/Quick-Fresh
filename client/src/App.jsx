@@ -5,6 +5,7 @@ import HistoryView from './components/HistoryView.jsx';
 import ProductEntryView from './components/ProductEntryView.jsx';
 import ExpiredReportView from './components/ExpiredReportView.jsx';
 import DestructionsReportView from './components/DestructionsReportView.jsx';
+import StoreEquipmentView from './components/StoreEquipmentView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import SalesView from './components/SalesView.jsx';
@@ -75,7 +76,7 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
-    if (profile?.role === 'driver' && (view === 'dashboard' || view === 'products')) {
+    if (profile?.role === 'driver' && view === 'products') {
       setView('entry');
     }
   }, [profile]);
@@ -153,14 +154,12 @@ export default function App() {
           </button>
         </div>
         <nav className="nav">
-          {role !== 'driver' && (
-            <button
-              className={'nav-item' + (view === 'dashboard' ? ' active' : '')}
-              onClick={() => setView('dashboard')}
-            >
-              {t('nav_dashboard')}
-            </button>
-          )}
+          <button
+            className={'nav-item' + (view === 'dashboard' ? ' active' : '')}
+            onClick={() => setView('dashboard')}
+          >
+            {t('nav_dashboard')}
+          </button>
           <button
             className={'nav-item' + (view === 'entry' ? ' active' : '')}
             onClick={() => setView('entry')}
@@ -193,6 +192,14 @@ export default function App() {
               onClick={() => setView('products')}
             >
               {t('nav_products')}
+            </button>
+          )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'storeEquipment' ? ' active' : '')}
+              onClick={() => setView('storeEquipment')}
+            >
+              {t('nav_store_equipment')}
             </button>
           )}
           {role !== 'driver' && (
@@ -243,11 +250,9 @@ export default function App() {
       </aside>
       )}
       <main className={'main' + (!sidebarOpen ? ' main-collapsed' : '')}>
-        {role !== 'driver' && (
-          <section className={'view' + (view === 'dashboard' ? ' active' : '')}>
-            <DashboardView isSuperUser={role === 'super_user'} />
-          </section>
-        )}
+        <section className={'view' + (view === 'dashboard' ? ' active' : '')}>
+          <DashboardView isSuperUser={role === 'super_user'} isDriver={role === 'driver'} />
+        </section>
         {role !== 'driver' && (
           <section className={'view' + (view === 'products' ? ' active' : '')}>
             <ProductsView readOnly={readOnly} />
@@ -256,6 +261,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'contacts' ? ' active' : '')}>
             <ContactsView readOnly={readOnly} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'storeEquipment' ? ' active' : '')}>
+            <StoreEquipmentView readOnly={readOnly} />
           </section>
         )}
         <section className={'view' + (view === 'entry' ? ' active' : '')}>

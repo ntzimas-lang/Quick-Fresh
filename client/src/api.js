@@ -294,6 +294,40 @@ export const Destructions = {
   }
 };
 
+export const StoreEquipment = {
+  async list() {
+    const { data, error } = await supabase.from('store_equipment').select('*').order('updated_at', { ascending: true });
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async create(body) {
+    const id = newId();
+    const record = { id, store: '', fridgeNo: '', picoNo: '', ...body, id };
+    const { data, error } = await supabase
+      .from('store_equipment')
+      .insert({ id: record.id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async update(id, body) {
+    const record = { ...body, id };
+    const { data, error } = await supabase
+      .from('store_equipment')
+      .update({ data: record, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async remove(id) {
+    const { error } = await supabase.from('store_equipment').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const History = {
   async list(limit = 300) {
     const { data, error } = await supabase
