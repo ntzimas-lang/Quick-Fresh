@@ -4,9 +4,12 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
+import { useLanguage } from '../LanguageContext.jsx';
 
 const STORE_CANDIDATES = ['DEMO', 'Plaisio', 'Novibet', 'Kryoneri', 'Nestle', 'AIA', 'Metlen', 'ACS Courier'];
 
+// Οι κατηγορίες είναι δεδομένα προϊόντος (όχι κείμενο διεπαφής) — παραμένουν ίδιες
+// ανεξάρτητα από τη γλώσσα της εφαρμογής.
 const CATEGORIES = [
   { gr: 'THREPSIS ΓΕΥΜΑΤΑ', en: 'THREPSIS MAIN DISHES' },
   { gr: 'ΑΝΑΨΥΚΤΙΚΑ - ΝΕΡΑ', en: 'SODA - WATER' },
@@ -20,31 +23,35 @@ const CATEGORIES = [
   { gr: 'ΡΟΦΗΜΑΤΑ', en: 'COFFEE' }
 ];
 
-const ALL_COLUMNS = [
-  { key: 'categoryGr', label: 'Κατηγορία GR' },
-  { key: 'categoryEn', label: 'Κατηγορία EN' },
-  { key: 'itemCode', label: 'Κωδικός είδους' },
-  { key: 'barcode', label: 'Barcode' },
-  { key: 'descriptionErp', label: 'Περιγραφή είδους ERP' },
-  { key: 'descriptionGr', label: 'Περιγραφή είδους GR' },
-  { key: 'descriptionEn', label: 'Περιγραφή είδους EN' },
-  { key: 'detailedDescriptionGr', label: 'Αναλυτική Περιγραφή GR' },
-  { key: 'detailedDescriptionEn', label: 'Αναλυτική Περιγραφή EN' },
-  { key: 'unitsPerMachine', label: 'ΤΕΜ στο μηχάνημα' },
-  { key: 'status', label: 'Status' },
-  { key: 'region', label: 'Περιοχή' },
-  { key: 'activeOnMachine', label: 'Ενεργό Στο Μηχάνημα' },
-  { key: 'activeStores', label: 'Ενεργό Σε Κατάστημα' },
-  { key: 'sellingPrice', label: 'Τιμή Πώλησης' },
-  { key: 'vatPercent', label: 'ΦΠΑ %' },
-  { key: 'ptk', label: 'ΠΤΚ' },
-  { key: 'fc', label: 'F.C.' },
-  { key: 'images365', label: 'Image - 365' },
-  { key: 'imagesPromo', label: 'Image - Promo' }
-];
+// Οι ετικέτες των στηλών ΕΙΝΑΙ κείμενο διεπαφής — μεταφράζονται μέσω t().
+function buildAllColumns(t) {
+  return [
+    { key: 'categoryGr', label: t('p_col_categoryGr') },
+    { key: 'categoryEn', label: t('p_col_categoryEn') },
+    { key: 'itemCode', label: t('p_col_itemCode') },
+    { key: 'barcode', label: t('p_col_barcode') },
+    { key: 'descriptionErp', label: t('p_col_descriptionErp') },
+    { key: 'descriptionGr', label: t('p_col_descriptionGr') },
+    { key: 'descriptionEn', label: t('p_col_descriptionEn') },
+    { key: 'detailedDescriptionGr', label: t('p_col_detailedDescriptionGr') },
+    { key: 'detailedDescriptionEn', label: t('p_col_detailedDescriptionEn') },
+    { key: 'unitsPerMachine', label: t('p_col_unitsPerMachine') },
+    { key: 'status', label: t('p_col_status') },
+    { key: 'region', label: t('p_col_region') },
+    { key: 'activeOnMachine', label: t('p_col_activeOnMachine') },
+    { key: 'activeStores', label: t('p_col_activeStores') },
+    { key: 'sellingPrice', label: t('p_col_sellingPrice') },
+    { key: 'vatPercent', label: t('p_col_vatPercent') },
+    { key: 'ptk', label: t('p_col_ptk') },
+    { key: 'fc', label: t('p_col_fc') },
+    { key: 'images365', label: t('p_col_images365') },
+    { key: 'imagesPromo', label: t('p_col_imagesPromo') }
+  ];
+}
 
 const DEFAULT_VISIBLE_COLUMNS = ['categoryGr', 'itemCode', 'barcode', 'descriptionErp', 'status', 'region', 'images365'];
 
+// Η περιοχή είναι δεδομένο προϊόντος (τοποθεσία) — δεν μεταφράζεται.
 const REGION_OPTIONS = ['Αθήνα', 'Θεσσαλονίκη', 'Παντού'];
 
 // Στήλες που επεξεργάζονται απευθείας μέσα στον πίνακα (χωρίς να ανοίγει η κάρτα).
@@ -166,6 +173,8 @@ const thumbBtnStyle = {
 };
 
 export default function ProductsView({ readOnly = false }) {
+  const { t } = useLanguage();
+  const ALL_COLUMNS = buildAllColumns(t);
   const [products, setProducts] = useState([]);
   const [current, setCurrent] = useState(null);
   const [tab, setTab] = useState('info');
@@ -289,7 +298,7 @@ export default function ProductsView({ readOnly = false }) {
     return updatedList;
   }
   async function addStore() {
-    const name = window.prompt('Όνομα καταστήματος (θα προστεθεί σε όλα τα προϊόντα):');
+    const name = window.prompt(t('p_add_store_prompt'));
     if (!name || !name.trim()) return;
     await addStoreEverywhere(name);
   }
@@ -305,14 +314,14 @@ export default function ProductsView({ readOnly = false }) {
     });
   }
   async function addStoreOption() {
-    const name = window.prompt('Όνομα καταστήματος (θα προστεθεί σε όλα τα προϊόντα):');
+    const name = window.prompt(t('p_add_store_prompt'));
     if (!name || !name.trim()) return;
     const trimmed = name.trim();
     await addStoreEverywhere(trimmed);
     applyCardUpdate((prev) => (prev.activeStores.includes(trimmed) ? prev : { ...prev, activeStores: [...prev.activeStores, trimmed] }));
   }
   function removeStoreOption(name) {
-    if (!window.confirm(`Αφαίρεση καταστήματος "${name}" από τη λίστα;`)) return;
+    if (!window.confirm(`${t('p_remove_store_confirm_prefix')} "${name}" ${t('p_remove_store_confirm_suffix')}`)) return;
     setStoreOptions((prev) => prev.filter((n) => n !== name));
   }
 
@@ -322,7 +331,7 @@ export default function ProductsView({ readOnly = false }) {
     applyCardUpdate((prev) => ({ ...prev, [key]: [...(prev[key] || []), url] }));
   }
   function removeImage(key, idx) {
-    if (!window.confirm('Διαγραφή αυτής της φωτογραφίας;')) return;
+    if (!window.confirm(t('p_remove_photo_confirm'))) return;
     applyCardUpdate((prev) => ({ ...prev, [key]: (prev[key] || []).filter((_, i) => i !== idx) }));
   }
   async function downloadImage(url, filename) {
@@ -343,7 +352,7 @@ export default function ProductsView({ readOnly = false }) {
   }
 
   async function handleDelete() {
-    if (!window.confirm('Διαγραφή προϊόντος;')) return;
+    if (!window.confirm(t('p_delete_product_confirm'))) return;
     await Products.remove(current.id);
     setProducts((list) => list.filter((p) => p.id !== current.id));
     setCurrent(null);
@@ -396,7 +405,7 @@ export default function ProductsView({ readOnly = false }) {
     );
   }
   function addTableView() {
-    const name = window.prompt('Όνομα νέου tab πίνακα:');
+    const name = window.prompt(t('p_new_view_prompt'));
     if (!name || !name.trim()) return;
     const id = 'view-' + Date.now();
     setTableViews((prev) => [...prev, { id, name: name.trim(), columns: activeView.columns }]);
@@ -404,13 +413,13 @@ export default function ProductsView({ readOnly = false }) {
   }
   function renameTableView(id) {
     const existing = tableViews.find((v) => v.id === id);
-    const name = window.prompt('Νέο όνομα tab:', existing ? existing.name : '');
+    const name = window.prompt(t('p_rename_view_prompt'), existing ? existing.name : '');
     if (!name || !name.trim()) return;
     setTableViews((prev) => prev.map((v) => (v.id === id ? { ...v, name: name.trim() } : v)));
   }
   function removeTableView(id) {
     if (tableViews.length === 1) return;
-    if (!window.confirm('Διαγραφή αυτού του tab πίνακα;')) return;
+    if (!window.confirm(t('p_delete_view_confirm'))) return;
     setTableViews((prev) => prev.filter((v) => v.id !== id));
     if (activeViewId === id) setActiveViewId(tableViews.find((v) => v.id !== id)?.id || tableViews[0].id);
   }
@@ -419,10 +428,10 @@ export default function ProductsView({ readOnly = false }) {
   const visibleColumns = activeView.columns;
 
   const storeColumnDefs = storeOptions.flatMap((name) => [
-    { key: `store:${name}:price`, label: `${name} Τιμή Store` },
-    { key: `store:${name}:fc`, label: `${name} F.C. Store` },
-    { key: `store:${name}:priceQF`, label: `${name} Τιμή Q&F` },
-    { key: `store:${name}:fcQF`, label: `${name} F.C. Q&F` }
+    { key: `store:${name}:price`, label: `${name} ${t('p_store_price_suffix')}` },
+    { key: `store:${name}:fc`, label: `${name} ${t('p_store_fc_suffix')}` },
+    { key: `store:${name}:priceQF`, label: `${name} ${t('p_store_priceQF_suffix')}` },
+    { key: `store:${name}:fcQF`, label: `${name} ${t('p_store_fcQF_suffix')}` }
   ]);
   const allColumnDefs = [...ALL_COLUMNS, ...storeColumnDefs];
   // Η σειρά εμφάνισης ακολουθεί τη σειρά μέσα στο visibleColumns (όχι τη σταθερή σειρά ALL_COLUMNS),
@@ -561,7 +570,7 @@ export default function ProductsView({ readOnly = false }) {
         <input
           value={(p.barcodes || []).join(', ')}
           onClick={stop}
-          placeholder="πολλαπλά, χωρισμένα, με κόμμα"
+          placeholder={t('p_barcode_placeholder')}
           onChange={(e) =>
             updateProductInline(p.id, (prod) => ({
               ...prod,
@@ -690,18 +699,18 @@ export default function ProductsView({ readOnly = false }) {
     <div className="detail-pane" style={{ width: '100%' }}>
       {viewMode !== 'card' && (
         <div className="tabs" style={{ position: 'sticky', top: 0 }}>
-          <button className={'tab' + (viewMode === 'table' ? ' active' : '')} onClick={() => setViewMode('table')}>Πίνακας</button>
-          <button className={'tab' + (viewMode === 'card' ? ' active' : '')} onClick={() => { if (current) setViewMode('card'); }}>Κάρτα</button>
+          <button className={'tab' + (viewMode === 'table' ? ' active' : '')} onClick={() => setViewMode('table')}>{t('common_table')}</button>
+          <button className={'tab' + (viewMode === 'card' ? ' active' : '')} onClick={() => { if (current) setViewMode('card'); }}>{t('common_card')}</button>
           {viewMode === 'table' && (
             <div className="tab-actions" style={{ position: 'relative' }}>
-              <button className="btn-primary" style={{ background: '#1e7d45' }} onClick={exportExcel} title="Εξαγωγή σε Excel">
+              <button className="btn-primary" style={{ background: '#1e7d45' }} onClick={exportExcel} title={t('common_export_excel')}>
                 Excel
               </button>
-              <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title="Εξαγωγή σε PDF">
+              <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title={t('common_export_pdf')}>
                 PDF
               </button>
               <button className="btn-primary" style={{ background: '#6b7684' }} onClick={() => setShowColPicker((v) => !v)}>
-                Στήλες ({visibleColumns.length})
+                {t('common_columns')} ({visibleColumns.length})
               </button>
               {showColPicker && (
                 <div style={{ position: 'absolute', right: 0, top: '110%', width: 260, background: '#fff', border: '1px solid #e1e5ea', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 20, padding: '8px 0', maxHeight: 320, overflowY: 'auto' }}>
@@ -731,7 +740,7 @@ export default function ProductsView({ readOnly = false }) {
                   fontWeight: activeViewId === v.id ? 600 : 400,
                   borderBottom: activeViewId === v.id ? '2px solid #2f8f8a' : '2px solid transparent'
                 }}
-                title="Διπλό κλικ για μετονομασία"
+                title={t('common_rename_hint')}
               >
                 {v.name}
               </button>
@@ -740,7 +749,7 @@ export default function ProductsView({ readOnly = false }) {
               )}
             </div>
           ))}
-          <button onClick={addTableView} style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', padding: '8px 8px', fontSize: 14 }} title="Νέο tab πίνακα">+</button>
+          <button onClick={addTableView} style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', padding: '8px 8px', fontSize: 14 }} title={t('p_new_view_title')}>+</button>
         </div>
       )}
 
@@ -756,20 +765,20 @@ export default function ProductsView({ readOnly = false }) {
                       key={col.key}
                       style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', userSelect: 'none' }}
                     >
-                      <span onClick={() => toggleSort(col.key)} style={{ cursor: 'pointer' }} title="Κλικ για ταξινόμηση">
+                      <span onClick={() => toggleSort(col.key)} style={{ cursor: 'pointer' }} title={t('common_sort_hint')}>
                         {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                       </span>
                       <span style={{ marginLeft: 6, display: 'inline-flex', gap: 1 }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); moveColumn(col.key, -1); }}
                           disabled={colIdx === 0}
-                          title="Μετακίνηση αριστερά"
+                          title={t('common_move_left')}
                           style={{ border: 'none', background: 'transparent', cursor: colIdx === 0 ? 'default' : 'pointer', fontSize: 10, color: colIdx === 0 ? '#d7dce2' : '#97a2b0', padding: '0 2px' }}
                         >◀</button>
                         <button
                           onClick={(e) => { e.stopPropagation(); moveColumn(col.key, 1); }}
                           disabled={colIdx === visibleColumnDefs.length - 1}
-                          title="Μετακίνηση δεξιά"
+                          title={t('common_move_right')}
                           style={{ border: 'none', background: 'transparent', cursor: colIdx === visibleColumnDefs.length - 1 ? 'default' : 'pointer', fontSize: 10, color: colIdx === visibleColumnDefs.length - 1 ? '#d7dce2' : '#97a2b0', padding: '0 2px' }}
                         >▶</button>
                       </span>
@@ -783,7 +792,7 @@ export default function ProductsView({ readOnly = false }) {
                       <input
                         value={columnFilters[col.key] || ''}
                         onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.key]: e.target.value }))}
-                        placeholder="Φίλτρο..."
+                        placeholder={t('common_filter_placeholder')}
                         style={{ width: '100%', fontSize: 12, padding: '4px 6px', borderRadius: 4, border: '1px solid #e1e5ea' }}
                       />
                     </th>
@@ -812,26 +821,26 @@ export default function ProductsView({ readOnly = false }) {
             <p style={{ fontSize: 12, color: '#97a2b0' }}>
               # {filteredProducts.length}{filteredProducts.length !== products.length ? ` / ${products.length}` : ''}
             </p>
-            {!readOnly && <button className="btn-primary" onClick={handleNew}>+ Νέο</button>}
+            {!readOnly && <button className="btn-primary" onClick={handleNew}>{t('common_new')}</button>}
           </div>
         </div>
       )}
 
       {viewMode === 'card' && !current && (
-        <div className="empty-state">Επίλεξε ή δημιούργησε ένα προϊόν</div>
+        <div className="empty-state">{t('p_empty_state')}</div>
       )}
 
       {viewMode === 'card' && current && (
         <div className="detail">
           <div className="tabs">
-            <button className={'tab' + (tab === 'info' ? ' active' : '')} onClick={() => setTab('info')}>Προϊόντα</button>
-            <button className={'tab' + (tab === 'cost' ? ' active' : '')} onClick={() => setTab('cost')}>Cost</button>
+            <button className={'tab' + (tab === 'info' ? ' active' : '')} onClick={() => setTab('info')}>{t('p_tab_info')}</button>
+            <button className={'tab' + (tab === 'cost' ? ' active' : '')} onClick={() => setTab('cost')}>{t('p_tab_cost')}</button>
             <div className="tab-actions">
-              <button className="btn-primary" onClick={() => setViewMode('table')} style={{ background: '#6b7684' }}>← Πίνακας</button>
+              <button className="btn-primary" onClick={() => setViewMode('table')} style={{ background: '#6b7684' }}>{t('common_back_to_table')}</button>
               <span style={{ fontSize: 12, color: savedFlash ? '#2f8f8a' : '#97a2b0', alignSelf: 'center', minWidth: 110 }}>
-                {readOnly ? 'Μόνο για ανάγνωση' : savedFlash ? 'Αποθηκεύτηκε ✓' : 'Αυτόματη αποθήκευση'}
+                {readOnly ? t('common_readonly') : savedFlash ? t('common_saved') : t('common_autosave')}
               </span>
-              {!readOnly && <button className="btn-danger" onClick={handleDelete}>Διαγραφή</button>}
+              {!readOnly && <button className="btn-danger" onClick={handleDelete}>{t('common_delete')}</button>}
             </div>
           </div>
 
@@ -839,7 +848,7 @@ export default function ProductsView({ readOnly = false }) {
             <div className="tab-panel active">
               <div className="grid-2">
                 <div className="field">
-                  <label>Κατηγορία GR</label>
+                  <label>{t('p_col_categoryGr')}</label>
                   <select
                     disabled={readOnly}
                     value={current.categoryGr || ''}
@@ -854,7 +863,7 @@ export default function ProductsView({ readOnly = false }) {
                   </select>
                 </div>
                 <div className="field">
-                  <label>Κατηγορία EN</label>
+                  <label>{t('p_col_categoryEn')}</label>
                   <select
                     disabled={readOnly}
                     value={current.categoryEn || ''}
@@ -868,9 +877,9 @@ export default function ProductsView({ readOnly = false }) {
                     {CATEGORIES.map((c) => <option key={c.en} value={c.en}>{c.en}</option>)}
                   </select>
                 </div>
-                <div className="field"><label>Κωδικός είδους</label><input disabled={readOnly} value={current.itemCode || ''} onChange={(e) => updateField('itemCode', e.target.value)} /></div>
+                <div className="field"><label>{t('p_col_itemCode')}</label><input disabled={readOnly} value={current.itemCode || ''} onChange={(e) => updateField('itemCode', e.target.value)} /></div>
                 <div className="field">
-                  <label>Barcode</label>
+                  <label>{t('p_col_barcode')}</label>
                   <div className="chip-row">
                     {(current.barcodes || []).map((code, i) => (
                       <div className="chip" key={i}>
@@ -882,7 +891,7 @@ export default function ProductsView({ readOnly = false }) {
                   {!readOnly && (
                     <div className="add-person-row">
                       <input
-                        placeholder="Barcode + Enter"
+                        placeholder={t('p_barcode_add_placeholder')}
                         value={barcodeInput}
                         onChange={(e) => setBarcodeInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBarcode(); } }}
@@ -890,18 +899,18 @@ export default function ProductsView({ readOnly = false }) {
                     </div>
                   )}
                 </div>
-                <div className="field"><label>Περιγραφή είδους ERP</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
-                <div className="field"><label>ΤΕΜ στο μηχάνημα</label><input disabled={readOnly} type="number" value={current.unitsPerMachine ?? ''} onChange={(e) => updateField('unitsPerMachine', e.target.value ? +e.target.value : null)} /></div>
-                <div className="field"><label>Περιγραφή είδους GR</label><input disabled={readOnly} value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
-                <div className="field"><label>Περιγραφή είδους EN</label><input disabled={readOnly} value={current.descriptionEn || ''} onChange={(e) => updateField('descriptionEn', e.target.value)} /></div>
+                <div className="field"><label>{t('p_col_descriptionErp')}</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
+                <div className="field"><label>{t('p_col_unitsPerMachine')}</label><input disabled={readOnly} type="number" value={current.unitsPerMachine ?? ''} onChange={(e) => updateField('unitsPerMachine', e.target.value ? +e.target.value : null)} /></div>
+                <div className="field"><label>{t('p_col_descriptionGr')}</label><input disabled={readOnly} value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
+                <div className="field"><label>{t('p_col_descriptionEn')}</label><input disabled={readOnly} value={current.descriptionEn || ''} onChange={(e) => updateField('descriptionEn', e.target.value)} /></div>
               </div>
               <div className="grid-2">
-                <div className="field"><label>Αναλυτική Περιγραφή είδους GR</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionGr || ''} onChange={(e) => updateField('detailedDescriptionGr', e.target.value)} /></div>
-                <div className="field"><label>Αναλυτική Περιγραφή είδους EN</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionEn || ''} onChange={(e) => updateField('detailedDescriptionEn', e.target.value)} /></div>
+                <div className="field"><label>{t('p_col_detailedDescriptionGr')}</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionGr || ''} onChange={(e) => updateField('detailedDescriptionGr', e.target.value)} /></div>
+                <div className="field"><label>{t('p_col_detailedDescriptionEn')}</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionEn || ''} onChange={(e) => updateField('detailedDescriptionEn', e.target.value)} /></div>
               </div>
               <div className="grid-3">
                 <div className="field">
-                  <label>Status</label>
+                  <label>{t('p_col_status')}</label>
                   <select
                     disabled={readOnly}
                     value={current.status || 'ΕΝΤΟΣ'}
@@ -913,21 +922,21 @@ export default function ProductsView({ readOnly = false }) {
                   </select>
                 </div>
                 <div className="field">
-                  <label>Ενεργό Στο Μηχάνημα</label>
+                  <label>{t('p_col_activeOnMachine')}</label>
                   <select disabled={readOnly} value={current.activeOnMachine || 'YES'} onChange={(e) => updateField('activeOnMachine', e.target.value)}>
                     <option value="YES">YES</option>
                     <option value="NO">NO</option>
                   </select>
                 </div>
                 <div className="field">
-                  <label>Περιοχή</label>
+                  <label>{t('p_col_region')}</label>
                   <select disabled={readOnly} value={current.region || ''} onChange={(e) => updateField('region', e.target.value)}>
                     <option value="">—</option>
                     {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
                 <div className="field">
-                  <label>Ενεργό Σε Κατάστημα</label>
+                  <label>{t('p_col_activeStores')}</label>
                   <div className="chip-row">
                     {storeOptions.map((name) => {
                       const on = (current.activeStores || []).includes(name);
@@ -944,7 +953,7 @@ export default function ProductsView({ readOnly = false }) {
                             <span
                               onClick={() => removeStoreOption(name)}
                               style={{ position: 'absolute', right: 4, fontSize: 10, cursor: 'pointer', color: on ? '#fff' : '#6b7684', opacity: 0.6 }}
-                              title="Αφαίρεση από τη λίστα"
+                              title={t('common_delete')}
                             >
                               ✕
                             </span>
@@ -954,7 +963,7 @@ export default function ProductsView({ readOnly = false }) {
                     })}
                     {!readOnly && (
                       <div className="chip clickable off" onClick={addStoreOption} style={{ borderStyle: 'dashed' }}>
-                        + Κατάστημα
+                        {t('p_add_store_chip')}
                       </div>
                     )}
                   </div>
@@ -962,7 +971,7 @@ export default function ProductsView({ readOnly = false }) {
               </div>
               <div className="grid-2">
                 <div className="field">
-                  <label>Image - 365</label>
+                  <label>{t('p_col_images365')}</label>
                   <div className="image-box">
                     {!readOnly && <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('images365', e.target.files[0])} />}
                     <div className="image-thumbs">
@@ -970,8 +979,8 @@ export default function ProductsView({ readOnly = false }) {
                         <div key={i} style={{ position: 'relative', display: 'inline-block' }}>
                           <img src={u} alt="" />
                           <div style={{ position: 'absolute', top: 2, right: 2, display: 'flex', gap: 2 }}>
-                            <button type="button" onClick={() => downloadImage(u, `${current.itemCode || 'product'}-365-${i + 1}.jpg`)} title="Λήψη" style={thumbBtnStyle}>⬇</button>
-                            {!readOnly && <button type="button" onClick={() => removeImage('images365', i)} title="Διαγραφή" style={{ ...thumbBtnStyle, background: 'rgba(192,57,43,0.85)' }}>✕</button>}
+                            <button type="button" onClick={() => downloadImage(u, `${current.itemCode || 'product'}-365-${i + 1}.jpg`)} title={t('common_download')} style={thumbBtnStyle}>⬇</button>
+                            {!readOnly && <button type="button" onClick={() => removeImage('images365', i)} title={t('common_delete')} style={{ ...thumbBtnStyle, background: 'rgba(192,57,43,0.85)' }}>✕</button>}
                           </div>
                         </div>
                       ))}
@@ -979,7 +988,7 @@ export default function ProductsView({ readOnly = false }) {
                   </div>
                 </div>
                 <div className="field">
-                  <label>Image - Promo</label>
+                  <label>{t('p_col_imagesPromo')}</label>
                   <div className="image-box">
                     {!readOnly && <input type="file" accept="image/*" className="image-input" onChange={(e) => handleImageUpload('imagesPromo', e.target.files[0])} />}
                     <div className="image-thumbs">
@@ -987,8 +996,8 @@ export default function ProductsView({ readOnly = false }) {
                         <div key={i} style={{ position: 'relative', display: 'inline-block' }}>
                           <img src={u} alt="" />
                           <div style={{ position: 'absolute', top: 2, right: 2, display: 'flex', gap: 2 }}>
-                            <button type="button" onClick={() => downloadImage(u, `${current.itemCode || 'product'}-promo-${i + 1}.jpg`)} title="Λήψη" style={thumbBtnStyle}>⬇</button>
-                            {!readOnly && <button type="button" onClick={() => removeImage('imagesPromo', i)} title="Διαγραφή" style={{ ...thumbBtnStyle, background: 'rgba(192,57,43,0.85)' }}>✕</button>}
+                            <button type="button" onClick={() => downloadImage(u, `${current.itemCode || 'product'}-promo-${i + 1}.jpg`)} title={t('common_download')} style={thumbBtnStyle}>⬇</button>
+                            {!readOnly && <button type="button" onClick={() => removeImage('imagesPromo', i)} title={t('common_delete')} style={{ ...thumbBtnStyle, background: 'rgba(192,57,43,0.85)' }}>✕</button>}
                           </div>
                         </div>
                       ))}
@@ -1003,11 +1012,11 @@ export default function ProductsView({ readOnly = false }) {
             <div className="tab-panel active">
               <div className="section-bar teal">General Cost</div>
               <div className="cost-grid">
-                <div className="cost-field"><label>Τιμή Πώλησης</label><input disabled={readOnly} type="number" step="0.01" value={cost.sellingPrice ?? ''} onChange={(e) => updateCost('sellingPrice', parseFloat(e.target.value) || 0)} /></div>
-                <div className="cost-field"><label>ΦΠΑ %</label><input disabled={readOnly} type="number" step="1" value={cost.vatPercent ?? 13} onChange={(e) => updateCost('vatPercent', parseFloat(e.target.value) || 0)} /></div>
-                <div className="cost-field"><label>ΠΤΚ (κόστος)</label><input disabled={readOnly} type="number" step="0.01" value={cost.ptk ?? ''} onChange={(e) => updateCost('ptk', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>{t('p_col_sellingPrice')}</label><input disabled={readOnly} type="number" step="0.01" value={cost.sellingPrice ?? ''} onChange={(e) => updateCost('sellingPrice', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>{t('p_col_vatPercent')}</label><input disabled={readOnly} type="number" step="1" value={cost.vatPercent ?? 13} onChange={(e) => updateCost('vatPercent', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>{t('p_cost_ptk_label')}</label><input disabled={readOnly} type="number" step="0.01" value={cost.ptk ?? ''} onChange={(e) => updateCost('ptk', parseFloat(e.target.value) || 0)} /></div>
                 <div className="readonly-value teal" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <label style={{ fontSize: 11, marginBottom: 4 }}>F.C.</label>
+                  <label style={{ fontSize: 11, marginBottom: 4 }}>{t('p_col_fc')}</label>
                   {fmtPct(fc)}
                 </div>
               </div>
@@ -1016,11 +1025,11 @@ export default function ProductsView({ readOnly = false }) {
               <table className="stores-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', paddingLeft: 12 }}>Κατάστημα</th>
-                    <th>Τιμή Πώλησης Store</th>
-                    <th>F.C. Store</th>
-                    <th>Τιμή Πώλησης Q&amp;F</th>
-                    <th>F.C. Q&amp;F</th>
+                    <th style={{ textAlign: 'left', paddingLeft: 12 }}>{t('p_stores_col_store')}</th>
+                    <th>{t('p_stores_col_price_store')}</th>
+                    <th>{t('p_stores_col_fc_store')}</th>
+                    <th>{t('p_stores_col_price_qf')}</th>
+                    <th>{t('p_stores_col_fc_qf')}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -1043,7 +1052,7 @@ export default function ProductsView({ readOnly = false }) {
                   })}
                 </tbody>
               </table>
-              {!readOnly && <button className="btn-primary" style={{ background: '#6b7684', marginTop: 10 }} onClick={addStore}>+ Κατάστημα</button>}
+              {!readOnly && <button className="btn-primary" style={{ background: '#6b7684', marginTop: 10 }} onClick={addStore}>{t('p_add_store_chip')}</button>}
             </div>
           )}
         </div>

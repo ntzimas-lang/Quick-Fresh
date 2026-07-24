@@ -13,9 +13,14 @@ function daysDiff(expiryDateStr) {
   return Math.round(diffMs / 86400000);
 }
 
-function diffLabel(diff) {
-  if (diff < 0) return `Έληξε πριν ${Math.abs(diff)} ${Math.abs(diff) === 1 ? 'ημέρα' : 'ημέρες'}`;
-  if (diff === 0) return 'Λήγει σήμερα';
+function diffLabel(diff, t, lang) {
+  if (diff < 0) {
+    const days = Math.abs(diff);
+    if (lang === 'en') return `Expired ${days} day${days === 1 ? '' : 's'} ago`;
+    return `Έληξε πριν ${days} ${days === 1 ? 'ημέρα' : 'ημέρες'}`;
+  }
+  if (diff === 0) return t('r_diff_today');
+  if (lang === 'en') return `in ${diff} day${diff === 1 ? '' : 's'}`;
   return `σε ${diff} ${diff === 1 ? 'ημέρα' : 'ημέρες'}`;
 }
 
@@ -31,7 +36,7 @@ function formatDate(dateStr) {
 }
 
 export default function ExpiredReportView({ canDelete = false }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -46,16 +51,16 @@ export default function ExpiredReportView({ canDelete = false }) {
     setLoading(true);
     Entries.list()
       .then((rows) => { setEntries(rows); setLoading(false); })
-      .catch((err) => { setError(err.message || 'Σφάλμα φόρτωσης'); setLoading(false); });
+      .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
   }
 
   async function handleDelete(id) {
-    if (!confirm('Διαγραφή αυτής της καταχώρησης;')) return;
+    if (!confirm(t('r_delete_confirm'))) return;
     try {
       await Entries.remove(id);
       setEntries((prev) => prev.filter((e) => e.id !== id));
     } catch (err) {
-      alert('Σφάλμα διαγραφής: ' + (err.message || err));
+      alert(t('r_delete_error_prefix') + ' ' + (err.message || err));
     }
   }
 
@@ -85,10 +90,10 @@ export default function ExpiredReportView({ canDelete = false }) {
     doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
     doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(12);
-    doc.text('Quick & Fresh — Report Ληγμένα', 14, 12);
+    doc.text(`Quick & Fresh — ${t('title_expired')}`, 14, 12);
     autoTable(doc, {
       startY: 18,
-      head: [['Κωδικός', 'Περιγραφή', 'Κατάστημα', 'Ποσότητα', 'Ημ. Λήξης', 'Διαφορά', 'Καταχώρησε']],
+      head: [[t('r_col_itemCode'), t('r_col_description'), t('r_col_store'), t('r_col_quantity'), t('r_col_expiry'), t('r_col_diff'), t('r_col_createdBy')]],
       body: filtered.map((e) => {
         const diff = daysDiff(e.expiryDate);
         return [
@@ -97,7 +102,7 @@ export default function ExpiredReportView({ canDelete = false }) {
           e.store || '',
           e.quantity ?? '',
           formatDate(e.expiryDate),
-          diffLabel(diff),
+          diffLabel(diff, t, lang),
           e.enteredByEmail || ''
         ];
       }),
@@ -111,38 +116,38 @@ export default function ExpiredReportView({ canDelete = false }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15 }}>{t('title_expired')}</strong>
-        <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title="Εξαγωγή σε PDF">
+        <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title={t('common_export_pdf')}>
           PDF
         </button>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Αναζήτηση κωδικού/περιγραφής..."
+          placeholder={t('r_search_placeholder_specific')}
           style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13, width: 220 }}
         />
         <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}>
-          <option value="all">Όλα τα καταστήματα</option>
+          <option value="all">{t('r_all_stores')}</option>
           {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
         {loading ? (
-          <p style={{ color: '#97a2b0' }}>Φόρτωση...</p>
+          <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>
         ) : error ? (
           <p style={{ color: '#c0392b' }}>{error}</p>
         ) : filtered.length === 0 ? (
-          <p style={{ color: '#97a2b0' }}>Δεν υπάρχουν καταχωρήσεις.</p>
+          <p style={{ color: '#97a2b0' }}>{t('r_no_results')}</p>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff', borderRadius: 8, overflow: 'hidden' }}>
             <thead>
               <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
-                <th style={{ padding: '10px 12px' }}>Κωδικός</th>
-                <th style={{ padding: '10px 12px' }}>Περιγραφή</th>
-                <th style={{ padding: '10px 12px' }}>Κατάστημα</th>
-                <th style={{ padding: '10px 12px' }}>Ποσότητα</th>
-                <th style={{ padding: '10px 12px' }}>Ημ. Λήξης</th>
-                <th style={{ padding: '10px 12px' }}>Διαφορά</th>
-                <th style={{ padding: '10px 12px' }}>Καταχώρησε</th>
+                <th style={{ padding: '10px 12px' }}>{t('r_col_itemCode')}</th>
+                <th style={{ padding: '10px 12px' }}>{t('r_col_description')}</th>
+                <th style={{ padding: '10px 12px' }}>{t('r_col_store')}</th>
+                <th style={{ padding: '10px 12px' }}>{t('r_col_quantity')}</th>
+                <th style={{ padding: '10px 12px' }}>{t('r_col_expiry')}</th>
+                <th style={{ padding: '10px 12px' }}>{t('r_col_diff')}</th>
+                <th style={{ padding: '10px 12px' }}>{t('r_col_createdBy')}</th>
                 {canDelete && <th style={{ padding: '10px 12px' }}></th>}
               </tr>
             </thead>
@@ -158,13 +163,13 @@ export default function ExpiredReportView({ canDelete = false }) {
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{formatDate(e.expiryDate)}</td>
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                       <span style={{ color: '#fff', background: diffColor(diff), padding: '3px 9px', borderRadius: 10, fontSize: 11.5, fontWeight: 600 }}>
-                        {diffLabel(diff)}
+                        {diffLabel(diff, t, lang)}
                       </span>
                     </td>
                     <td style={{ padding: '10px 12px', color: '#6b7684' }}>{e.enteredByEmail || '—'}</td>
                     {canDelete && (
                       <td style={{ padding: '10px 12px' }}>
-                        <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDelete(e.id)}>Διαγραφή</button>
+                        <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDelete(e.id)}>{t('common_delete')}</button>
                       </td>
                     )}
                   </tr>

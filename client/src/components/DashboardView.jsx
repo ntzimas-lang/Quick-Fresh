@@ -31,11 +31,11 @@ export default function DashboardView() {
       Entries.list().then(setEntries)
     ])
       .then(() => setLoading(false))
-      .catch((err) => { setError(err.message || 'Σφάλμα φόρτωσης'); setLoading(false); });
+      .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
   }, []);
 
   if (loading) {
-    return <div style={{ padding: 20, color: '#97a2b0' }}>Φόρτωση...</div>;
+    return <div style={{ padding: 20, color: '#97a2b0' }}>{t('d_loading')}</div>;
   }
   if (error) {
     return <div style={{ padding: 20, color: '#c0392b' }}>{error}</div>;
@@ -69,6 +69,7 @@ export default function DashboardView() {
     statusGroups[key] = (statusGroups[key] || 0) + 1;
   });
   const statusOrder = ['Έκλεισε', 'Ενδιαφέρεται', 'Δεν Ενδιαφέρεται', ''];
+  const statusLabelKeys = { 'Έκλεισε': 'c_status_closed', 'Ενδιαφέρεται': 'c_status_interested', 'Δεν Ενδιαφέρεται': 'c_status_not_interested' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -81,10 +82,10 @@ export default function DashboardView() {
           {/* 1. Επαφές ανά Status — μεγαλύτερη έμφαση, με μπάρες ποσοστού */}
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
-              Επαφές ανά Status
+              {t('d_contacts_by_status')}
             </div>
             {contacts.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>Καμία επαφή.</p>
+              <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_no_contacts')}</p>
             ) : (
               statusOrder.map((key) => {
                 const count = statusGroups[key] || 0;
@@ -93,7 +94,7 @@ export default function DashboardView() {
                 return (
                   <div key={key || 'none'} style={{ marginBottom: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                      <span style={{ fontSize: 16, fontWeight: 600 }}>{key || 'Χωρίς status'}</span>
+                      <span style={{ fontSize: 16, fontWeight: 600 }}>{key ? t(statusLabelKeys[key]) : t('d_no_status')}</span>
                       <span style={{ fontSize: 16, fontWeight: 700 }}>
                         {count} <span style={{ fontSize: 12.5, color: '#97a2b0', fontWeight: 400 }}>({pct}%)</span>
                       </span>
@@ -110,26 +111,26 @@ export default function DashboardView() {
           {/* 2. Ληγμένα — μεγαλύτερη έμφαση, σε τεμάχια + ανάλυση ανά κατάστημα */}
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
-              Ληγμένα
+              {t('d_expired_title')}
             </div>
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: storeBreakdown.length ? 20 : 0 }}>
               <div>
                 <div style={{ fontSize: 36, fontWeight: 700, color: '#c0392b' }}>{expiredQty}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Τεμάχια Ληγμένα</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_expired_pieces')}</div>
               </div>
               <div>
                 <div style={{ fontSize: 36, fontWeight: 700, color: '#c98a1f' }}>{soonQty}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Τεμάχια λήγουν ≤ 7 ημέρες</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_soon_pieces')}</div>
               </div>
               <div>
                 <div style={{ fontSize: 36, fontWeight: 700, color: '#16233f' }}>{totalQty}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Σύνολο τεμαχίων</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_total_pieces')}</div>
               </div>
             </div>
             {storeBreakdown.length > 0 && (
               <div>
                 <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, marginBottom: 10 }}>
-                  Ανά κατάστημα (ληγμένα + λήγουν σύντομα)
+                  {t('d_by_store')}
                 </div>
                 {storeBreakdown.map(([store, q]) => {
                   const pct = maxStoreQty ? Math.round((q / maxStoreQty) * 100) : 0;
@@ -137,7 +138,7 @@ export default function DashboardView() {
                     <div key={store} style={{ marginBottom: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span style={{ fontSize: 13 }}>{store}</span>
-                        <strong style={{ fontSize: 13 }}>{q} τεμ.</strong>
+                        <strong style={{ fontSize: 13 }}>{q} {t('d_pieces_abbr')}</strong>
                       </div>
                       <div style={{ height: 8, background: '#f1f3f5', borderRadius: 4, overflow: 'hidden' }}>
                         <div style={{ width: pct + '%', height: '100%', background: '#c0392b' }} />
@@ -151,7 +152,7 @@ export default function DashboardView() {
 
           {/* 3. Προϊόντα — πιο συμπαγής κάρτα, τελευταία */}
           <div className="dashboard-card--sm" style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 24 }}>
-            <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase' }}>Προϊόντα</div>
+            <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_products_title')}</div>
             <div style={{ display: 'flex', gap: 20 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#27ae60' }}>{entos}</span>
@@ -163,7 +164,7 @@ export default function DashboardView() {
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#16233f' }}>{products.length}</span>
-                <span style={{ fontSize: 11.5, color: '#6b7684' }}>Σύνολο</span>
+                <span style={{ fontSize: 11.5, color: '#6b7684' }}>{t('d_products_total')}</span>
               </div>
             </div>
           </div>

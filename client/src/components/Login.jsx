@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Auth } from '../api.js';
+import { useLanguage } from '../LanguageContext.jsx';
 
 export default function Login() {
+  const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,7 +16,7 @@ export default function Login() {
     try {
       await Auth.signIn(email.trim(), password);
     } catch (err) {
-      setError('Λάθος email ή κωδικός.');
+      setError(t('l_error'));
     } finally {
       setLoading(false);
     }
@@ -28,16 +30,16 @@ export default function Login() {
           <div style={{ fontWeight: 600, fontSize: 16, color: '#16233f' }}>Quick &amp; Fresh</div>
         </div>
         <div className="field" style={{ marginBottom: 14 }}>
-          <label>Email</label>
+          <label>{t('l_email')}</label>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
         </div>
         <div className="field" style={{ marginBottom: 14 }}>
-          <label>Κωδικός</label>
+          <label>{t('l_password')}</label>
           <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         {error && <p style={{ color: '#c0392b', fontSize: 12.5, marginBottom: 12 }}>{error}</p>}
         <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
-          {loading ? 'Σύνδεση...' : 'Σύνδεση'}
+          {loading ? t('l_logging_in') : t('l_login_button')}
         </button>
       </form>
     </div>

@@ -111,7 +111,7 @@ export default function ProductEntryView() {
         () => { /* ignore per-frame scan errors */ }
       );
     } catch (err) {
-      setScanError('Δεν ήταν δυνατή η πρόσβαση στην κάμερα: ' + (err && err.message ? err.message : String(err)));
+      setScanError(t('e_camera_error_prefix') + ' ' + (err && err.message ? err.message : String(err)));
       setScanning(false);
     }
   }
@@ -159,7 +159,7 @@ export default function ProductEntryView() {
       setTimeout(() => setSavedFlash(false), 1500);
       resetSelection();
     } catch (err) {
-      setScanError('Σφάλμα αποθήκευσης: ' + (err && err.message ? err.message : String(err)));
+      setScanError(t('e_save_error_prefix') + ' ' + (err && err.message ? err.message : String(err)));
     } finally {
       setSaving(false);
     }
@@ -177,13 +177,13 @@ export default function ProductEntryView() {
             <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18, marginBottom: 16 }}>
               {!scanning ? (
                 <button className="btn-primary" style={{ width: '100%' }} onClick={startScan} disabled={loadingProducts}>
-                  📷 Σάρωση Barcode
+                  📷 {t('e_scan_button')}
                 </button>
               ) : (
                 <div>
                   <div id={scannerDivId} style={{ width: '100%', borderRadius: 8, overflow: 'hidden' }} />
                   <button className="btn-danger" style={{ width: '100%', marginTop: 10 }} onClick={stopScan}>
-                    Ακύρωση σάρωσης
+                    {t('e_cancel_scan')}
                   </button>
                 </div>
               )}
@@ -192,32 +192,32 @@ export default function ProductEntryView() {
 
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #eef1f4' }}>
                 <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
-                  Ή καταχώρησε barcode χειροκίνητα
+                  {t('e_manual_barcode')}
                 </label>
                 <form onSubmit={handleManualLookup} style={{ display: 'flex', gap: 8 }}>
                   <input
                     value={manualBarcode}
                     onChange={(e) => setManualBarcode(e.target.value)}
-                    placeholder="π.χ. 5201234567890"
+                    placeholder={t('e_barcode_example')}
                     style={{ flex: 1, padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5 }}
                   />
-                  <button className="btn-primary" type="submit">Αναζήτηση</button>
+                  <button className="btn-primary" type="submit">{t('e_search_button')}</button>
                 </form>
               </div>
 
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #eef1f4' }}>
                 <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
-                  Προϊόντα χωρίς Barcode — επίλεξε από λίστα
+                  {t('e_no_barcode_search')}
                 </label>
                 <input
                   value={noBarcodeQuery}
                   onChange={(e) => setNoBarcodeQuery(e.target.value)}
-                  placeholder="Αναζήτηση κωδικού/περιγραφής..."
+                  placeholder={t('e_no_barcode_placeholder')}
                   style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
                 />
                 <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #eef1f4', borderRadius: 8 }}>
                   {noBarcodeFiltered.length === 0 ? (
-                    <p style={{ padding: 12, fontSize: 12.5, color: '#97a2b0', margin: 0 }}>Δεν βρέθηκαν προϊόντα.</p>
+                    <p style={{ padding: 12, fontSize: 12.5, color: '#97a2b0', margin: 0 }}>{t('e_no_products_found')}</p>
                   ) : (
                     noBarcodeFiltered.map((p) => (
                       <div
@@ -238,43 +238,43 @@ export default function ProductEntryView() {
           {notFoundBarcode && (
             <div style={{ background: '#fdf1ef', border: '1px solid #e3b3ac', borderRadius: 10, padding: 16, marginBottom: 16 }}>
               <p style={{ margin: 0, color: '#c0392b', fontSize: 13.5 }}>
-                Δεν βρέθηκε προϊόν με barcode: <strong>{notFoundBarcode}</strong>
+                {t('e_not_found_prefix')} <strong>{notFoundBarcode}</strong>
               </p>
-              <button className="btn-danger" style={{ marginTop: 10 }} onClick={resetSelection}>Δοκίμασε ξανά</button>
+              <button className="btn-danger" style={{ marginTop: 10 }} onClick={resetSelection}>{t('e_try_again')}</button>
             </div>
           )}
 
           {matchedProduct && (
             <form onSubmit={handleSubmit} style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18 }}>
               <div style={{ background: '#eef7f6', border: '1px solid #cfe8e5', borderRadius: 8, padding: 12, marginBottom: 16 }}>
-                <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Προϊόν</div>
+                <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('e_product_label')}</div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#16233f' }}>{matchedProduct.itemCode}</div>
                 <div style={{ fontSize: 13, color: '#3a4353' }}>{matchedProduct.descriptionErp || matchedProduct.descriptionGr}</div>
               </div>
 
               <div className="field" style={{ marginBottom: 14 }}>
-                <label>Κατάστημα</label>
+                <label>{t('e_store_label')}</label>
                 <select value={store} onChange={(e) => setStore(e.target.value)} required>
-                  <option value="">— Επίλεξε —</option>
+                  <option value="">{t('common_select_placeholder')}</option>
                   {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
 
               <div className="field" style={{ marginBottom: 14 }}>
-                <label>Ποσότητα</label>
+                <label>{t('e_quantity_label')}</label>
                 <input type="number" min="0" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
               </div>
 
               <div className="field" style={{ marginBottom: 16 }}>
-                <label>Ημερομηνία λήξης</label>
+                <label>{t('e_expiry_label')}</label>
                 <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required />
               </div>
 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn-primary" type="submit" style={{ flex: 1 }} disabled={saving}>
-                  {saving ? 'Αποθήκευση...' : savedFlash ? 'Αποθηκεύτηκε ✓' : 'Καταχώρηση'}
+                  {saving ? t('e_saving') : savedFlash ? t('common_saved') : t('e_submit_button')}
                 </button>
-                <button className="btn-danger" type="button" onClick={resetSelection}>Άκυρο</button>
+                <button className="btn-danger" type="button" onClick={resetSelection}>{t('common_cancel')}</button>
               </div>
             </form>
           )}
@@ -282,11 +282,11 @@ export default function ProductEntryView() {
           {recentEntries.length > 0 && (
             <div style={{ marginTop: 22 }}>
               <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
-                Τελευταίες καταχωρήσεις (αυτή τη συνεδρία)
+                {t('e_recent_entries')}
               </div>
               {recentEntries.map((e) => (
                 <div key={e.id} style={{ background: '#fff', border: '1px solid #eef1f4', borderRadius: 8, padding: '10px 12px', marginBottom: 6, fontSize: 13 }}>
-                  <strong>{e.productItemCode}</strong> — {e.store} — ποσ. {e.quantity ?? '—'} — λήξη {e.expiryDate}
+                  <strong>{e.productItemCode}</strong> — {e.store} — {t('e_quantity_label').toLowerCase()}: {e.quantity ?? '—'} — {t('e_expiry_label').toLowerCase()}: {e.expiryDate}
                 </div>
               ))}
             </div>
