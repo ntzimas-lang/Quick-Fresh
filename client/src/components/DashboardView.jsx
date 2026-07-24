@@ -153,18 +153,20 @@ export default function DashboardView({ isDriver = false } = {}) {
   const avgTicket = salesTx ? salesNet / salesTx : 0;
   const avgBasket = salesTx ? salesItems / salesTx : 0;
 
-  // Τάση ανά μήνα, 3 καμπύλες μαζί (καθαρές πωλήσεις / συναλλαγές / μέσο ταλόν).
+  // Τάση ανά μήνα (καθαρές πωλήσεις / συναλλαγές / μέσο καλάθι).
   const monthMap = {};
   salesDaily.forEach((r) => {
     if (!r.date) return;
     const mk = monthKey(r.date);
-    if (!monthMap[mk]) monthMap[mk] = { tx: 0, net: 0 };
+    if (!monthMap[mk]) monthMap[mk] = { tx: 0, net: 0, items: 0 };
     monthMap[mk].tx += r.transactions || 0;
     monthMap[mk].net += r.netSales || 0;
+    monthMap[mk].items += r.itemCount || 0;
   });
   const monthKeys = Object.keys(monthMap).sort();
   const monthNet = monthKeys.map((k) => monthMap[k].net);
   const monthTx = monthKeys.map((k) => monthMap[k].tx);
+  const monthAvgBasket = monthKeys.map((k) => (monthMap[k].tx ? monthMap[k].items / monthMap[k].tx : 0));
   const netCoords = trendCoords(monthNet);
   const txCoords = trendCoords(monthTx);
 
@@ -370,6 +372,22 @@ export default function DashboardView({ isDriver = false } = {}) {
                     </svg>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#97a2b0', marginTop: 4 }}>
                       {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
+                    </div>
+                  </div>
+                )}
+
+                {monthKeys.length > 0 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+                      {t('d_sales_avg_basket_trend_title')}
+                    </div>
+                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                      {monthKeys.map((k, i) => (
+                        <div key={k} style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: '#7a4fc9' }}>{monthAvgBasket[i].toFixed(2)}</div>
+                          <div style={{ fontSize: 10.5, color: '#97a2b0' }}>{monthLabel(k, lang)}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
