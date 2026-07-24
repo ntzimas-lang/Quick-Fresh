@@ -55,6 +55,13 @@ input[type=number] {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 
+/* Κουμπί εναλλαγής γλώσσας διεπαφής (Ελληνικά/English) στο πλαϊνό μενού. */
+.lang-toggle { margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); border-radius: 0; padding-top: 14px; }
+.lang-badge {
+  background: rgba(255,255,255,0.12); color: #fff; font-size: 11px; font-weight: 700;
+  padding: 3px 8px; border-radius: 10px; letter-spacing: 0.3px; flex-shrink: 0;
+}
+
 /* Main */
 .main { flex: 1; overflow: hidden; }
 .view { display: none; height: 100%; }

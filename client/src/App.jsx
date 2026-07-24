@@ -8,6 +8,7 @@ import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import Login from './components/Login.jsx';
 import { Auth, Entries } from './api.js';
+import { useLanguage } from './LanguageContext.jsx';
 
 const SIDEBAR_KEY = 'qf_sidebar_open';
 const SOON_DAYS = 7; // πόσες ημέρες πριν τη λήξη θεωρείται "επικείμενη λήξη" για το badge
@@ -20,6 +21,7 @@ function daysDiff(expiryDateStr) {
 }
 
 export default function App() {
+  const { lang, setLang, t } = useLanguage();
   const [view, setView] = useState('dashboard');
   const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
   const [profile, setProfile] = useState(null);
@@ -126,7 +128,7 @@ export default function App() {
         <button
           className="sidebar-toggle"
           onClick={() => setSidebarOpen(true)}
-          title="Εμφάνιση μενού"
+          title={t('show_menu')}
         >
           ☰
         </button>
@@ -139,7 +141,7 @@ export default function App() {
           <button
             className="sidebar-toggle sidebar-toggle--inline"
             onClick={() => setSidebarOpen(false)}
-            title="Απόκρυψη μενού"
+            title={t('hide_menu')}
           >
             ‹
           </button>
@@ -150,20 +152,20 @@ export default function App() {
               className={'nav-item' + (view === 'dashboard' ? ' active' : '')}
               onClick={() => setView('dashboard')}
             >
-              📊 Πίνακας Ελέγχου
+              {t('nav_dashboard')}
             </button>
           )}
           <button
             className={'nav-item' + (view === 'entry' ? ' active' : '')}
             onClick={() => setView('entry')}
           >
-            📷 Καταχώρηση Ληγμένων
+            {t('nav_entry')}
           </button>
           <button
             className={'nav-item' + (view === 'expired' ? ' active' : '')}
             onClick={() => setView('expired')}
           >
-            <span>⏰ Report Ληγμένα</span>
+            <span>{t('nav_expired')}</span>
             {(alertCounts.expired + alertCounts.soon) > 0 && (
               <span
                 className="nav-badge"
@@ -181,7 +183,7 @@ export default function App() {
               className={'nav-item' + (view === 'contacts' ? ' active' : '')}
               onClick={() => setView('contacts')}
             >
-              👤 Αρχείο Επικοινωνίας
+              {t('nav_contacts')}
             </button>
           )}
           {role !== 'driver' && (
@@ -189,7 +191,7 @@ export default function App() {
               className={'nav-item' + (view === 'products' ? ' active' : '')}
               onClick={() => setView('products')}
             >
-              🛒 Προϊόντα
+              {t('nav_products')}
             </button>
           )}
           {role !== 'driver' && (
@@ -197,28 +199,36 @@ export default function App() {
               className={'nav-item' + (view === 'history' ? ' active' : '')}
               onClick={() => setView('history')}
             >
-              🕒 Ιστορικό
+              {t('nav_history')}
             </button>
           )}
+          <button
+            className="nav-item lang-toggle"
+            onClick={() => setLang(lang === 'el' ? 'en' : 'el')}
+            title={t('language')}
+          >
+            <span>🌐 {t('language')}</span>
+            <span className="lang-badge">{lang === 'el' ? 'ΕΛ / En' : 'El / ΕΝ'}</span>
+          </button>
           {role === 'super_user' && (
             <button
               className={'nav-item' + (view === 'users' ? ' active' : '')}
               onClick={() => setView('users')}
             >
-              👥 Χρήστες
+              {t('nav_users')}
             </button>
           )}
         </nav>
         <div style={{ marginTop: 'auto', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 11.5, color: '#b9c3d6' }}>
           <div style={{ marginBottom: 6 }}>{profile?.email || session.user.email}</div>
           <div style={{ marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.3, color: '#7fd6cf' }}>
-            {role === 'super_user' ? 'Super User' : role === 'driver' ? 'Οδηγός' : 'Viewer'}
+            {role === 'super_user' ? t('role_super_user') : role === 'driver' ? t('role_driver') : t('role_viewer')}
           </div>
           <button
             onClick={() => Auth.signOut()}
             style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.25)', color: '#fff', borderRadius: 6, padding: '6px 10px', fontSize: 11.5, cursor: 'pointer', width: '100%' }}
           >
-            Αποσύνδεση
+            {t('logout')}
           </button>
         </div>
       </aside>
