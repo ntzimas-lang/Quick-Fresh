@@ -167,10 +167,12 @@ export default function DashboardView({ isDriver = false } = {}) {
   const monthNet = monthKeys.map((k) => monthMap[k].net);
   const monthTx = monthKeys.map((k) => monthMap[k].tx);
   const monthAvgBasket = monthKeys.map((k) => (monthMap[k].tx ? monthMap[k].items / monthMap[k].tx : 0));
+  const monthAvgTicket = monthKeys.map((k) => (monthMap[k].tx ? monthMap[k].net / monthMap[k].tx : 0));
   const netCoords = trendCoords(monthNet);
   const txCoords = trendCoords(monthTx);
 
-  // Μόνο η πιο πρόσφατη "παρτίδα" ανά κατάστημα (ώστε να μη διπλομετράμε παλιά uploads).
+  // Μόνο η πιο πρόσφατη "παρτίδα" ανά κατάστημα (ώστε να μη διπλομετράμε παλιά uploads) —
+  // χρησιμοποιείται για την κατηγοριοποίηση (τρέχουσα εικόνα, όχι ιστορικό ανά μήνα).
   const latestBatchByStore = {};
   salesProducts.forEach((p) => {
     const cur = latestBatchByStore[p.store];
@@ -186,7 +188,38 @@ export default function DashboardView({ isDriver = false } = {}) {
   const categoryBreakdown = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxCategory = categoryBreakdown.length ? categoryBreakdown[0][1] : 1;
 
-  const topProducts = [...latestProducts].sort((a, b) => (b.netRevenue || 0) - (a.netRevenue || 0)).slice(0, 5);
+  // Top 5 προϊόντα ανά μήνα: ομαδοποίηση των uploads με βάση τον μήνα μεταφόρτωσης,
+  // κρατώντας μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα ΜΕΣΑ σε κάθε μήνα
+  // (ώστε επαναληπτικά uploads του ίδιου μήνα να μην διπλομετρηθούν).
+  const latestBatchByStoreMonth = {};
+  salesProducts.forEach((p) => {
+    if (!p.uploadedAt) return;
+    const key = monthKey(p.uploadedAt) + '|' + p.store;
+    const cur = latestBatchByStoreMonth[key];
+    if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStoreMonth[key] = p.uploadedAt;
+  });
+  const monthlyProducts = salesProducts.filter((p) => {
+    if (!p.uploadedAt) return false;
+    const key = monthKey(p.uploadedAt) + '|' + p.store;
+    return p.uploadedAt === latestBatchByStoreMonth[key];
+  });
+  const productMonthTotals = {};
+  monthlyProducts.forEach((p) => {
+    const mk = monthKey(p.uploadedAt);
+    if (!productMonthTotals[mk]) productMonthTotals[mk] = {};
+    const name = p.productName || '—';
+    if (!productMonthTotals[mk][name]) productMonthTotals[mk][name] = { sold: 0, netRevenue: 0 };
+    productMonthTotals[mk][name].sold += p.sold || 0;
+    productMonthTotals[mk][name].netRevenue += p.netRevenue || 0;
+  });
+  const productMonthKeys = Object.keys(productMonthTotals).sort().reverse();
+  const topProductsByMonth = productMonthKeys.map((mk) => ({
+    monthKey: mk,
+    products: Object.entries(productMonthTotals[mk])
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.netRevenue - a.netRevenue)
+      .slice(0, 5)
+  }));
 
   const hasSalesData = salesDaily.length > 0 || salesProducts.length > 0;
 
@@ -198,7 +231,152 @@ export default function DashboardView({ isDriver = false } = {}) {
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, background: '#f9fafb' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* 1. Ληγμένα — πρώτη, σε πλήρες πλάτος, με μεγαλύτερη ανάλυση για όσα λήγουν σε 7 ημέρες */}
+          {/* 1. Πωλήσεις — καθαρά ποσά (χωρίς ΦΠΑ), από τα uploads στο πεδίο "Πωλήσεις" */}
+          {!isDriver && (
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
+            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+              {t('d_sales_title')}
+            </div>
+            {!hasSalesData ? (
+              <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_empty')}</p>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 22 }}>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#16233f' }}>€{salesNet.toFixed(0)}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_net')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#2f8f8a' }}>{salesTx}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_tx')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#c98a1f' }}>€{avgTicket.toFixed(2)}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_avg_ticket')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 700, color: '#7a4fc9' }}>{avgBasket.toFixed(2)}</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_avg_basket')}</div>
+                  </div>
+                </div>
+
+                {monthKeys.length > 1 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
+                      <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_sales_trend_title')}</span>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684' }}>
+                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
+                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
+                      </div>
+                    </div>
+                    <svg viewBox="0 0 360 110" style={{ width: '100%', height: 160 }}>
+                      <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
+                      <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
+                      {netCoords.map((c, i) => (
+                        <g key={'net' + i}>
+                          <circle cx={c.x} cy={c.y} r="3" fill={SALES_LINE_COLORS.net} />
+                          <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.net}>
+                            {formatEuro(c.value)}
+                          </text>
+                        </g>
+                      ))}
+                      {txCoords.map((c, i) => (
+                        <g key={'tx' + i}>
+                          <circle cx={c.x} cy={c.y} r="3" fill={SALES_LINE_COLORS.tx} />
+                          <text x={c.x} y={c.y + 16} textAnchor="middle" fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
+                            {Math.round(c.value)}
+                          </text>
+                        </g>
+                      ))}
+                    </svg>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#97a2b0', marginTop: 4 }}>
+                      {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
+                    </div>
+                  </div>
+                )}
+
+                {monthKeys.length > 0 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+                      {t('d_sales_monthly_kpi_title')}
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 480 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #eef1f4' }}>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#97a2b0', fontWeight: 700 }}>{t('d_month')}</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#97a2b0', fontWeight: 700 }}>{t('d_sales_net')}</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#97a2b0', fontWeight: 700 }}>{t('d_sales_tx')}</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#97a2b0', fontWeight: 700 }}>{t('d_sales_avg_ticket')}</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#97a2b0', fontWeight: 700 }}>{t('d_sales_avg_basket')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {monthKeys.map((k, i) => (
+                            <tr key={k} style={{ borderTop: '1px solid #eef1f4' }}>
+                              <td style={{ padding: '7px 8px', fontWeight: 600 }}>{monthLabel(k, lang)}</td>
+                              <td style={{ padding: '7px 8px', textAlign: 'right', color: '#16233f', fontWeight: 700 }}>{formatEuro(monthNet[i])}</td>
+                              <td style={{ padding: '7px 8px', textAlign: 'right', color: '#2f8f8a' }}>{monthTx[i]}</td>
+                              <td style={{ padding: '7px 8px', textAlign: 'right', color: '#c98a1f' }}>€{monthAvgTicket[i].toFixed(2)}</td>
+                              <td style={{ padding: '7px 8px', textAlign: 'right', color: '#7a4fc9' }}>{monthAvgBasket[i].toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: categoryBreakdown.length ? 22 : 0 }}>
+                  <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+                    {t('d_sales_by_category')}
+                  </div>
+                  {categoryBreakdown.length === 0 ? (
+                    <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                  ) : (
+                    <div style={{ maxWidth: 420 }}>
+                      {categoryBreakdown.map(([cat, val]) => (
+                        <Bar key={cat} label={cat} value={Math.round(val)} max={maxCategory} color="#2f8f8a" />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18 }}>
+                  <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+                    {t('d_sales_top_products_monthly_title')}
+                  </div>
+                  {topProductsByMonth.length === 0 ? (
+                    <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                      {topProductsByMonth.map(({ monthKey: mk, products }) => (
+                        <div key={mk} style={{ flex: '1 1 260px', minWidth: 240 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 8 }}>
+                            {monthLabel(mk, lang)}
+                          </div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                            <tbody>
+                              {products.map((p) => (
+                                <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                  <td style={{ padding: '6px 0' }}>{p.name}</td>
+                                  <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
+                                  <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>€{p.netRevenue.toFixed(0)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          )}
+
+          {/* 2. Ληγμένα */}
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_expired_title')}
@@ -311,125 +489,6 @@ export default function DashboardView({ isDriver = false } = {}) {
               )}
             </div>
           </div>
-
-          {/* 2. Πωλήσεις — καθαρά ποσά (χωρίς ΦΠΑ), από τα uploads στο πεδίο "Πωλήσεις" */}
-          {!isDriver && (
-          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
-              {t('d_sales_title')}
-            </div>
-            {!hasSalesData ? (
-              <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_empty')}</p>
-            ) : (
-              <>
-                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 22 }}>
-                  <div>
-                    <div style={{ fontSize: 30, fontWeight: 700, color: '#16233f' }}>€{salesNet.toFixed(0)}</div>
-                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_net')}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 30, fontWeight: 700, color: '#2f8f8a' }}>{salesTx}</div>
-                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_tx')}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 30, fontWeight: 700, color: '#c98a1f' }}>€{avgTicket.toFixed(2)}</div>
-                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_avg_ticket')}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 30, fontWeight: 700, color: '#7a4fc9' }}>{avgBasket.toFixed(2)}</div>
-                    <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_avg_basket')}</div>
-                  </div>
-                </div>
-
-                {monthKeys.length > 1 && (
-                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
-                      <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_sales_trend_title')}</span>
-                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684' }}>
-                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
-                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
-                      </div>
-                    </div>
-                    <svg viewBox="0 0 360 110" style={{ width: '100%', height: 160 }}>
-                      <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
-                      <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
-                      {netCoords.map((c, i) => (
-                        <g key={'net' + i}>
-                          <circle cx={c.x} cy={c.y} r="3" fill={SALES_LINE_COLORS.net} />
-                          <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.net}>
-                            {formatEuro(c.value)}
-                          </text>
-                        </g>
-                      ))}
-                      {txCoords.map((c, i) => (
-                        <g key={'tx' + i}>
-                          <circle cx={c.x} cy={c.y} r="3" fill={SALES_LINE_COLORS.tx} />
-                          <text x={c.x} y={c.y + 16} textAnchor="middle" fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
-                            {Math.round(c.value)}
-                          </text>
-                        </g>
-                      ))}
-                    </svg>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#97a2b0', marginTop: 4 }}>
-                      {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
-                    </div>
-                  </div>
-                )}
-
-                {monthKeys.length > 0 && (
-                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
-                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
-                      {t('d_sales_avg_basket_trend_title')}
-                    </div>
-                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                      {monthKeys.map((k, i) => (
-                        <div key={k} style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: 20, fontWeight: 700, color: '#7a4fc9' }}>{monthAvgBasket[i].toFixed(2)}</div>
-                          <div style={{ fontSize: 10.5, color: '#97a2b0' }}>{monthLabel(k, lang)}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
-                  <div style={{ flex: '1 1 260px', minWidth: 240 }}>
-                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
-                      {t('d_sales_by_category')}
-                    </div>
-                    {categoryBreakdown.length === 0 ? (
-                      <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
-                    ) : (
-                      categoryBreakdown.map(([cat, val]) => (
-                        <Bar key={cat} label={cat} value={Math.round(val)} max={maxCategory} color="#2f8f8a" />
-                      ))
-                    )}
-                  </div>
-                  <div style={{ flex: '1 1 300px', minWidth: 260 }}>
-                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
-                      {t('d_sales_top_products')}
-                    </div>
-                    {topProducts.length === 0 ? (
-                      <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
-                    ) : (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                        <tbody>
-                          {topProducts.map((p) => (
-                            <tr key={p.id} style={{ borderTop: '1px solid #eef1f4' }}>
-                              <td style={{ padding: '6px 0' }}>{p.productName}</td>
-                              <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684' }}>{p.sold} {t('d_pieces_abbr')}</td>
-                              <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f' }}>€{p.netRevenue.toFixed(0)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-          )}
 
           {/* 3. Επαφές ανά Status — κάτω, σε πλήρες πλάτος */}
           {!isDriver && (
