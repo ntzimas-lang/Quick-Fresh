@@ -226,6 +226,7 @@ export const translations = {
     d_no_soon: 'Δεν λήγει τίποτα μέσα στις επόμενες 7 ημέρες.',
     d_today_pieces: 'Λήγουν σήμερα',
     d_store_total_label: 'Σύνολο τεμαχίων',
+    d_bucket_soon_suffix: 'λήγουν ≤7 ημ.',
 
     // Login
     l_email: 'Email',
@@ -450,6 +451,7 @@ export const translations = {
     d_no_soon: 'Nothing is expiring in the next 7 days.',
     d_today_pieces: 'Expiring today',
     d_store_total_label: 'Total pieces',
+    d_bucket_soon_suffix: 'expiring ≤7 days',
 
     l_email: 'Email',
     l_password: 'Password',
