@@ -137,7 +137,7 @@ export default function DashboardView() {
                     <Bar label={t('d_bucket_4_7')} value={bucket4_7} max={maxBucket} color="#c98a1f" />
                   </div>
                   <div style={{ flex: '1 1 300px', minWidth: 260 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
                         {t('d_by_store_soon')}
                       </div>
@@ -146,6 +146,9 @@ export default function DashboardView() {
                         <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#e0703a', marginRight: 3 }} />{t('d_bucket_1_3')}</span>
                         <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#c98a1f', marginRight: 3 }} />{t('d_bucket_4_7')}</span>
                       </div>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#16233f', fontWeight: 600, marginBottom: 12 }}>
+                      {t('d_store_total_label')}: {totalQty} {t('d_pieces_abbr')}
                     </div>
                     {soonStoreBreakdown.map(([store, s]) => {
                       const pctToday = s.total ? Math.round((s.today / s.total) * 100) : 0;

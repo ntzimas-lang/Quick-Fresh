@@ -154,6 +154,14 @@ export default function ExpiredReportView({ canDelete = false }) {
             onChange={(e) => setFromDate(e.target.value)}
             style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}
           />
+          {fromDate && (
+            <button
+              type="button"
+              onClick={() => setFromDate('')}
+              title={t('common_cancel')}
+              style={{ border: 'none', background: '#eef1f4', color: '#6b7684', borderRadius: '50%', width: 18, height: 18, fontSize: 11, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+            >✕</button>
+          )}
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6b7684' }}>
           {t('r_to_date')}
@@ -163,6 +171,14 @@ export default function ExpiredReportView({ canDelete = false }) {
             onChange={(e) => setToDate(e.target.value)}
             style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}
           />
+          {toDate && (
+            <button
+              type="button"
+              onClick={() => setToDate('')}
+              title={t('common_cancel')}
+              style={{ border: 'none', background: '#eef1f4', color: '#6b7684', borderRadius: '50%', width: 18, height: 18, fontSize: 11, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+            >✕</button>
+          )}
         </label>
         <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}>
           <option value="all">{t('r_all_stores')}</option>
