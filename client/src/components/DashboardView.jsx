@@ -44,11 +44,24 @@ export default function DashboardView() {
   const entos = products.filter((p) => (p.status || 'ΕΝΤΟΣ') !== 'ΕΚΤΟΣ').length;
   const ektos = products.length - entos;
 
-  const expiredCount = entries.filter((e) => daysDiff(e.expiryDate) < 0).length;
-  const expiringSoonCount = entries.filter((e) => {
-    const d = daysDiff(e.expiryDate);
-    return d >= 0 && d <= 7;
-  }).length;
+  // Μετράμε τεμάχια (ποσότητα) αντί για αριθμό καταχωρήσεων — μία καταχώρηση
+  // μπορεί να αντιπροσωπεύει πολλά τεμάχια. Χωρίς ποσότητα, θεωρούμε 1 τεμάχιο.
+  function entryQty(e) {
+    const q = Number(e.quantity);
+    return Number.isFinite(q) && q > 0 ? q : 1;
+  }
+  const entryDiffs = entries.map((e) => ({ ...e, diff: daysDiff(e.expiryDate), qty: entryQty(e) }));
+  const expiredQty = entryDiffs.filter((e) => e.diff < 0).reduce((sum, e) => sum + e.qty, 0);
+  const soonQty = entryDiffs.filter((e) => e.diff >= 0 && e.diff <= 7).reduce((sum, e) => sum + e.qty, 0);
+  const totalQty = entryDiffs.reduce((sum, e) => sum + e.qty, 0);
+
+  const storeQtyMap = {};
+  entryDiffs.filter((e) => e.diff <= 7).forEach((e) => {
+    const key = e.store || '—';
+    storeQtyMap[key] = (storeQtyMap[key] || 0) + e.qty;
+  });
+  const storeBreakdown = Object.entries(storeQtyMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const maxStoreQty = storeBreakdown.length ? storeBreakdown[0][1] : 0;
 
   const statusGroups = {};
   contacts.forEach((c) => {
@@ -94,25 +107,46 @@ export default function DashboardView() {
             )}
           </div>
 
-          {/* 2. Ληγμένα — μεγαλύτερη έμφαση */}
+          {/* 2. Ληγμένα — μεγαλύτερη έμφαση, σε τεμάχια + ανάλυση ανά κατάστημα */}
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               Ληγμένα
             </div>
-            <div style={{ display: 'flex', gap: 24 }}>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: storeBreakdown.length ? 20 : 0 }}>
               <div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: '#c0392b' }}>{expiredCount}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Έχουν λήξει</div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#c0392b' }}>{expiredQty}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Τεμάχια Ληγμένα</div>
               </div>
               <div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: '#c98a1f' }}>{expiringSoonCount}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Λήγουν ≤ 7 ημέρες</div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#c98a1f' }}>{soonQty}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Τεμάχια λήγουν ≤ 7 ημέρες</div>
               </div>
               <div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: '#16233f' }}>{entries.length}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Σύνολο καταχωρήσεων</div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#16233f' }}>{totalQty}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>Σύνολο τεμαχίων</div>
               </div>
             </div>
+            {storeBreakdown.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, marginBottom: 10 }}>
+                  Ανά κατάστημα (ληγμένα + λήγουν σύντομα)
+                </div>
+                {storeBreakdown.map(([store, q]) => {
+                  const pct = maxStoreQty ? Math.round((q / maxStoreQty) * 100) : 0;
+                  return (
+                    <div key={store} style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 13 }}>{store}</span>
+                        <strong style={{ fontSize: 13 }}>{q} τεμ.</strong>
+                      </div>
+                      <div style={{ height: 8, background: '#f1f3f5', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ width: pct + '%', height: '100%', background: '#c0392b' }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* 3. Προϊόντα — πιο συμπαγής κάρτα, τελευταία */}
