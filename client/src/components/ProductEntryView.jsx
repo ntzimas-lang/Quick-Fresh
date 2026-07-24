@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Products, Entries } from '../api.js';
+import { Products, Entries, Destructions } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const METHODS = [
@@ -7,6 +7,11 @@ const METHODS = [
   { key: 'manual', icon: '⌨️', labelKey: 'e_method_manual' },
   { key: 'no-barcode', icon: '📋', labelKey: 'e_method_no_barcode' },
   { key: 'description', icon: '🔎', labelKey: 'e_method_description' }
+];
+
+const ENTRY_MODES = [
+  { key: 'expiry', icon: '⏰', labelKey: 'e_mode_expiry', color: '#2f8f8a', bg: '#eef7f6' },
+  { key: 'destruction', icon: '🗑️', labelKey: 'e_mode_destruction', color: '#c0392b', bg: '#fdecea' }
 ];
 
 // Placeholder που παίρνει αυτόματα ένα προϊόν όταν δημιουργείται από τα "Προϊόντα"
@@ -19,6 +24,7 @@ export default function ProductEntryView() {
   const { t } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [entryMode, setEntryMode] = useState('expiry');
   const [method, setMethod] = useState('scan');
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState('');
@@ -28,6 +34,7 @@ export default function ProductEntryView() {
   const [store, setStore] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [recentEntries, setRecentEntries] = useState([]);
@@ -166,6 +173,13 @@ export default function ProductEntryView() {
     setMethod(key);
   }
 
+  function selectEntryMode(key) {
+    if (entryMode === key) return;
+    if (scanning) stopScan();
+    setEntryMode(key);
+    resetSelection();
+  }
+
   function handleManualLookup(e) {
     e.preventDefault();
     handleScanResult(manualBarcode);
@@ -178,24 +192,38 @@ export default function ProductEntryView() {
     setStore('');
     setExpiryDate('');
     setQuantity('1');
+    setReason('');
     setNoBarcodeQuery('');
     setDescQuery('');
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!matchedProduct || !store || !expiryDate) return;
+    if (!matchedProduct || !store) return;
+    if (entryMode === 'expiry' && !expiryDate) return;
     setSaving(true);
     try {
-      const entry = await Entries.create({
-        productId: matchedProduct.id,
-        productItemCode: matchedProduct.itemCode,
-        productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
-        store,
-        expiryDate,
-        quantity
-      });
-      setRecentEntries((prev) => [entry, ...prev].slice(0, 8));
+      if (entryMode === 'expiry') {
+        const entry = await Entries.create({
+          productId: matchedProduct.id,
+          productItemCode: matchedProduct.itemCode,
+          productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
+          store,
+          expiryDate,
+          quantity
+        });
+        setRecentEntries((prev) => [{ ...entry, type: 'expiry' }, ...prev].slice(0, 8));
+      } else {
+        const { record, removedEntries } = await Destructions.create({
+          productId: matchedProduct.id,
+          productItemCode: matchedProduct.itemCode,
+          productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
+          store,
+          quantity,
+          reason
+        });
+        setRecentEntries((prev) => [{ ...record, removedEntries, type: 'destruction' }, ...prev].slice(0, 8));
+      }
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
       resetSelection();
@@ -206,6 +234,8 @@ export default function ProductEntryView() {
     }
   }
 
+  const activeMode = ENTRY_MODES.find((m) => m.key === entryMode);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', flexShrink: 0 }}>
@@ -213,6 +243,26 @@ export default function ProductEntryView() {
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: '#f9fafb' }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 16 }}>
+            {ENTRY_MODES.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => selectEntryMode(m.key)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  padding: '10px 8px', borderRadius: 10,
+                  border: entryMode === m.key ? `2px solid ${m.color}` : '1px solid #e1e5ea',
+                  background: entryMode === m.key ? m.bg : '#fff', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 700, color: entryMode === m.key ? '#16233f' : '#6b7684'
+                }}
+              >
+                <span style={{ fontSize: 16 }}>{m.icon}</span>
+                {t(m.labelKey)}
+              </button>
+            ))}
+          </div>
 
           {!matchedProduct && !notFoundBarcode && (
             <div style={{ marginBottom: 16 }}>
@@ -225,8 +275,8 @@ export default function ProductEntryView() {
                     style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                       padding: '12px 8px', borderRadius: 10,
-                      border: method === m.key ? '2px solid #2f8f8a' : '1px solid #e1e5ea',
-                      background: method === m.key ? '#eef7f6' : '#fff', cursor: 'pointer',
+                      border: method === m.key ? `2px solid ${activeMode.color}` : '1px solid #e1e5ea',
+                      background: method === m.key ? activeMode.bg : '#fff', cursor: 'pointer',
                       fontSize: 12, fontWeight: 600, color: method === m.key ? '#16233f' : '#6b7684'
                     }}
                   >
@@ -240,7 +290,7 @@ export default function ProductEntryView() {
                 {method === 'scan' && (
                   <div>
                     {!scanning ? (
-                      <button className="btn-primary" style={{ width: '100%' }} onClick={startScan} disabled={loadingProducts}>
+                      <button className="btn-primary" style={{ width: '100%', background: activeMode.color }} onClick={startScan} disabled={loadingProducts}>
                         📷 {t('e_scan_button')}
                       </button>
                     ) : (
@@ -268,7 +318,7 @@ export default function ProductEntryView() {
                         autoFocus
                         style={{ flex: 1, padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5 }}
                       />
-                      <button className="btn-primary" type="submit">{t('e_search_button')}</button>
+                      <button className="btn-primary" type="submit" style={{ background: activeMode.color }}>{t('e_search_button')}</button>
                     </form>
                     {scanError && <p style={{ color: '#c0392b', fontSize: 12.5, marginTop: 10 }}>{scanError}</p>}
                   </div>
@@ -350,7 +400,7 @@ export default function ProductEntryView() {
 
           {matchedProduct && (
             <form onSubmit={handleSubmit} style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18 }}>
-              <div style={{ background: '#eef7f6', border: '1px solid #cfe8e5', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+              <div style={{ background: activeMode.bg, border: `1px solid ${activeMode.color}55`, borderRadius: 8, padding: 12, marginBottom: 16 }}>
                 <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('e_product_label')}</div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#16233f' }}>{matchedProduct.itemCode}</div>
                 <div style={{ fontSize: 13, color: '#3a4353' }}>{matchedProduct.descriptionErp || matchedProduct.descriptionGr}</div>
@@ -369,14 +419,24 @@ export default function ProductEntryView() {
                 <input type="number" min="0" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
               </div>
 
-              <div className="field" style={{ marginBottom: 16 }}>
-                <label>{t('e_expiry_label')}</label>
-                <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required />
-              </div>
+              {entryMode === 'expiry' ? (
+                <div className="field" style={{ marginBottom: 16 }}>
+                  <label>{t('e_expiry_label')}</label>
+                  <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required />
+                </div>
+              ) : (
+                <>
+                  <div className="field" style={{ marginBottom: 8 }}>
+                    <label>{t('x_reason_label')}</label>
+                    <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('x_reason_placeholder')} />
+                  </div>
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 16px' }}>{t('x_auto_remove_hint')}</p>
+                </>
+              )}
 
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-primary" type="submit" style={{ flex: 1 }} disabled={saving}>
-                  {saving ? t('e_saving') : savedFlash ? t('common_saved') : t('e_submit_button')}
+                <button className="btn-primary" type="submit" style={{ flex: 1, background: activeMode.color }} disabled={saving}>
+                  {saving ? t('e_saving') : savedFlash ? t('common_saved') : entryMode === 'expiry' ? t('e_submit_button') : t('x_submit_button')}
                 </button>
                 <button className="btn-danger" type="button" onClick={resetSelection}>{t('common_cancel')}</button>
               </div>
@@ -390,7 +450,20 @@ export default function ProductEntryView() {
               </div>
               {recentEntries.map((e) => (
                 <div key={e.id} style={{ background: '#fff', border: '1px solid #eef1f4', borderRadius: 8, padding: '10px 12px', marginBottom: 6, fontSize: 13 }}>
-                  <strong>{e.productItemCode}</strong> — {e.store} — {t('e_quantity_label').toLowerCase()}: {e.quantity ?? '—'} — {t('e_expiry_label').toLowerCase()}: {e.expiryDate}
+                  {e.type === 'destruction' ? (
+                    <>
+                      <span style={{ marginRight: 4 }}>🗑️</span>
+                      <strong>{e.productItemCode}</strong> — {e.store} — {t('e_quantity_label').toLowerCase()}: {e.quantity ?? '—'}
+                      {e.removedEntries > 0 && (
+                        <span style={{ color: '#2f8f8a' }}> · {t('x_removed_from_expired').replace('{n}', e.removedEntries)}</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ marginRight: 4 }}>⏰</span>
+                      <strong>{e.productItemCode}</strong> — {e.store} — {t('e_quantity_label').toLowerCase()}: {e.quantity ?? '—'} — {t('e_expiry_label').toLowerCase()}: {e.expiryDate}
+                    </>
+                  )}
                 </div>
               ))}
             </div>
