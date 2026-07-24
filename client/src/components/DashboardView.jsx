@@ -176,7 +176,6 @@ export default function DashboardView() {
                           <div style={{ display: 'flex', height: 20, borderRadius: 5, overflow: 'hidden', background: '#f1f3f5' }}>
                             {s.expired > 0 && (
                               <div
-                                title={`${t('d_expired_title')}: ${s.expired}`}
                                 style={{ width: pctExpired + '%', background: '#7a1f1f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.expired}</span>
@@ -184,7 +183,6 @@ export default function DashboardView() {
                             )}
                             {s.today > 0 && (
                               <div
-                                title={`${t('d_bucket_today')}: ${s.today}`}
                                 style={{ width: pctToday + '%', background: '#c0392b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.today}</span>
@@ -192,7 +190,6 @@ export default function DashboardView() {
                             )}
                             {s.d1_3 > 0 && (
                               <div
-                                title={`${t('d_bucket_1_3')}: ${s.d1_3}`}
                                 style={{ width: pct1_3 + '%', background: '#e0703a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.d1_3}</span>
@@ -200,7 +197,6 @@ export default function DashboardView() {
                             )}
                             {s.d4_7 > 0 && (
                               <div
-                                title={`${t('d_bucket_4_7')}: ${s.d4_7}`}
                                 style={{ width: pct4_7 + '%', background: '#c98a1f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,0.35)' }}>{s.d4_7}</span>
@@ -208,7 +204,6 @@ export default function DashboardView() {
                             )}
                             {s.rest > 0 && (
                               <div
-                                title={`${t('d_bucket_rest')}: ${s.rest}`}
                                 style={{ width: pctRest + '%', background: '#b9c3d6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#16233f', textShadow: '0 1px 1px rgba(255,255,255,0.35)' }}>{s.rest}</span>
