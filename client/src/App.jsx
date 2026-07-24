@@ -7,9 +7,17 @@ import ExpiredReportView from './components/ExpiredReportView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import Login from './components/Login.jsx';
-import { Auth } from './api.js';
+import { Auth, Entries } from './api.js';
 
 const SIDEBAR_KEY = 'qf_sidebar_open';
+const SOON_DAYS = 7; // πόσες ημέρες πριν τη λήξη θεωρείται "επικείμενη λήξη" για το badge
+
+function daysDiff(expiryDateStr) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = new Date(expiryDateStr + 'T00:00:00');
+  return Math.round((expiry.getTime() - today.getTime()) / 86400000);
+}
 
 export default function App() {
   const [view, setView] = useState('dashboard');
@@ -68,6 +76,39 @@ export default function App() {
     }
   }, [profile]);
 
+  // Badge στο μενού για "Report Ληγμένα" — δείχνει πόσα έχουν ήδη λήξει ή λήγουν
+  // σύντομα, ώστε να μη χρειάζεται να μπαίνεις χειροκίνητα για να το δεις.
+  const [alertCounts, setAlertCounts] = useState({ expired: 0, soon: 0 });
+
+  async function refreshAlertCounts() {
+    try {
+      const list = await Entries.list();
+      let expired = 0;
+      let soon = 0;
+      list.forEach((e) => {
+        if (!e.expiryDate) return;
+        const d = daysDiff(e.expiryDate);
+        if (d < 0) expired += 1;
+        else if (d <= SOON_DAYS) soon += 1;
+      });
+      setAlertCounts({ expired, soon });
+    } catch (e) {
+      // αν αποτύχει, απλά δεν δείχνουμε badge — δεν χρειάζεται να ενοχλήσουμε τον χρήστη
+    }
+  }
+
+  useEffect(() => {
+    if (session && session.user) {
+      refreshAlertCounts();
+      const interval = setInterval(refreshAlertCounts, 5 * 60 * 1000);
+      return () => clearInterval(interval);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session && session.user) refreshAlertCounts();
+  }, [view]);
+
   if (session === undefined) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#97a2b0' }}>Φόρτωση...</div>;
   }
@@ -122,7 +163,18 @@ export default function App() {
             className={'nav-item' + (view === 'expired' ? ' active' : '')}
             onClick={() => setView('expired')}
           >
-            ⏰ Report Ληγμένα
+            <span>⏰ Report Ληγμένα</span>
+            {(alertCounts.expired + alertCounts.soon) > 0 && (
+              <span
+                className="nav-badge"
+                style={{ background: alertCounts.expired > 0 ? '#c0392b' : '#e0a500' }}
+                title={alertCounts.expired > 0
+                  ? `${alertCounts.expired} έχουν λήξει, ${alertCounts.soon} λήγουν σύντομα`
+                  : `${alertCounts.soon} λήγουν σύντομα`}
+              >
+                {alertCounts.expired + alertCounts.soon}
+              </span>
+            )}
           </button>
           {role !== 'driver' && (
             <button
