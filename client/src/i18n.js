@@ -147,6 +147,11 @@ export const translations = {
     e_camera_error_prefix: 'Δεν ήταν δυνατή η πρόσβαση στην κάμερα:',
     e_save_error_prefix: 'Σφάλμα αποθήκευσης:',
     e_barcode_example: 'π.χ. 5201234567890',
+    e_method_scan: 'Σκανάρισμα Barcode',
+    e_method_manual: 'Χειροκίνητη καταχώρηση',
+    e_method_no_barcode: 'Χωρίς Barcode',
+    e_method_description: 'Αναζήτηση με περιγραφή',
+    e_description_placeholder: 'Αναζήτηση με περιγραφή, κωδικό...',
 
     // Report Ληγμένα
     r_search_placeholder: 'Αναζήτηση...',
@@ -368,6 +373,11 @@ export const translations = {
     e_camera_error_prefix: 'Could not access the camera:',
     e_save_error_prefix: 'Save error:',
     e_barcode_example: 'e.g. 5201234567890',
+    e_method_scan: 'Scan Barcode',
+    e_method_manual: 'Manual Entry',
+    e_method_no_barcode: 'No Barcode',
+    e_method_description: 'Search by Description',
+    e_description_placeholder: 'Search by description, code...',
 
     r_search_placeholder: 'Search...',
     r_filter_all: 'All',
