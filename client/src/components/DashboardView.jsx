@@ -70,7 +70,7 @@ function Bar({ label, value, max, color }) {
   );
 }
 
-export default function DashboardView() {
+export default function DashboardView({ isDriver = false } = {}) {
   const { t, lang } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -80,15 +80,20 @@ export default function DashboardView() {
   const [salesProducts, setSalesProducts] = useState([]);
 
   useEffect(() => {
-    Promise.all([
-      Contacts.list().then(setContacts),
-      Entries.list().then(setEntries),
-      SalesDaily.list().then(setSalesDaily),
-      SalesProducts.list().then(setSalesProducts)
-    ])
+    // Ο Οδηγός βλέπει μόνο την κάρτα Ληγμένα — δεν χρειάζεται να φορτώσουμε
+    // Επαφές/Πωλήσεις γι' αυτόν, ώστε να μην κάνουμε άσκοπα requests.
+    const tasks = isDriver
+      ? [Entries.list().then(setEntries)]
+      : [
+          Contacts.list().then(setContacts),
+          Entries.list().then(setEntries),
+          SalesDaily.list().then(setSalesDaily),
+          SalesProducts.list().then(setSalesProducts)
+        ];
+    Promise.all(tasks)
       .then(() => setLoading(false))
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
-  }, []);
+  }, [isDriver]);
 
   if (loading) {
     return <div style={{ padding: 20, color: '#97a2b0' }}>{t('d_loading')}</div>;
@@ -306,6 +311,7 @@ export default function DashboardView() {
           </div>
 
           {/* 2. Πωλήσεις — καθαρά ποσά (χωρίς ΦΠΑ), από τα uploads στο πεδίο "Πωλήσεις" */}
+          {!isDriver && (
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_sales_title')}
@@ -405,8 +411,10 @@ export default function DashboardView() {
               </>
             )}
           </div>
+          )}
 
           {/* 3. Επαφές ανά Status — κάτω, σε πλήρες πλάτος */}
+          {!isDriver && (
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_contacts_by_status')}
@@ -434,6 +442,7 @@ export default function DashboardView() {
               })
             )}
           </div>
+          )}
         </div>
       </div>
     </div>
