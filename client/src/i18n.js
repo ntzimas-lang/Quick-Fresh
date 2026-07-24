@@ -250,8 +250,11 @@ export const translations = {
     d_sales_avg_basket: 'Μέσο καλάθι',
     d_sales_trend_title: 'Τάσεις ανά μήνα',
     d_sales_avg_basket_trend_title: 'Μέσο καλάθι ανά μήνα',
+    d_sales_monthly_kpi_title: 'Στοιχεία ανά μήνα',
+    d_month: 'Μήνας',
     d_sales_by_category: 'Καθαρές πωλήσεις ανά κατηγορία',
     d_sales_top_products: 'Top 5 προϊόντα (καθαρός τζίρος)',
+    d_sales_top_products_monthly_title: 'Top 5 προϊόντα ανά μήνα (καθαρός τζίρος)',
     d_sales_no_products: 'Δεν υπάρχουν ακόμα δεδομένα προϊόντων.',
 
     // Πεδίο "Πωλήσεις" — upload
@@ -533,8 +536,11 @@ export const translations = {
     d_sales_avg_basket: 'Avg. basket',
     d_sales_trend_title: 'Monthly trends',
     d_sales_avg_basket_trend_title: 'Avg basket by month',
+    d_sales_monthly_kpi_title: 'Figures by month',
+    d_month: 'Month',
     d_sales_by_category: 'Net sales by category',
     d_sales_top_products: 'Top 5 products (net revenue)',
+    d_sales_top_products_monthly_title: 'Top 5 products by month (net revenue)',
     d_sales_no_products: 'No product data yet.',
 
     sales_daily_title: 'Daily Sales Summary',
