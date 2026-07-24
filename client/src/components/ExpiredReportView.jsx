@@ -35,6 +35,27 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+const REPORT_COLUMNS = [
+  { key: 'itemCode', labelKey: 'r_col_itemCode' },
+  { key: 'description', labelKey: 'r_col_description' },
+  { key: 'store', labelKey: 'r_col_store' },
+  { key: 'quantity', labelKey: 'r_col_quantity' },
+  { key: 'expiry', labelKey: 'r_col_expiry' },
+  { key: 'diff', labelKey: 'r_col_diff' },
+  { key: 'createdBy', labelKey: 'r_col_createdBy' }
+];
+
+function getRowValue(e, key) {
+  if (key === 'itemCode') return e.productItemCode || '';
+  if (key === 'description') return e.productDescription || '';
+  if (key === 'store') return e.store || '';
+  if (key === 'quantity') return e.quantity ?? null;
+  if (key === 'expiry') return e.expiryDate || '';
+  if (key === 'diff') return daysDiff(e.expiryDate);
+  if (key === 'createdBy') return e.enteredByEmail || '';
+  return '';
+}
+
 export default function ExpiredReportView({ canDelete = false }) {
   const { t, lang } = useLanguage();
   const [entries, setEntries] = useState([]);
@@ -44,6 +65,25 @@ export default function ExpiredReportView({ canDelete = false }) {
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  function getRowFilterText(e, key) {
+    if (key === 'expiry') return formatDate(e.expiryDate);
+    if (key === 'diff') return diffLabel(daysDiff(e.expiryDate), t, lang);
+    const v = getRowValue(e, key);
+    return v === null || v === undefined ? '' : String(v);
+  }
 
   useEffect(() => {
     load();
@@ -101,8 +141,37 @@ export default function ExpiredReportView({ canDelete = false }) {
     }
     if (fromDate) rows = rows.filter((e) => e.expiryDate && e.expiryDate >= fromDate);
     if (toDate) rows = rows.filter((e) => e.expiryDate && e.expiryDate <= toDate);
-    return [...rows].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
-  }, [entries, storeFilter, search, fromDate, toDate]);
+    rows = rows.filter((e) =>
+      REPORT_COLUMNS.every((col) => {
+        const f = (columnFilters[col.key] || '').trim().toLowerCase();
+        if (!f) return true;
+        return getRowFilterText(e, col.key).toLowerCase().includes(f);
+      })
+    );
+    const sorted = [...rows];
+    if (sortKey) {
+      sorted.sort((a, b) => {
+        let av = getRowValue(a, sortKey);
+        let bv = getRowValue(b, sortKey);
+        const aEmpty = av === null || av === undefined || av === '';
+        const bEmpty = bv === null || bv === undefined || bv === '';
+        if (aEmpty && bEmpty) return 0;
+        if (aEmpty) return 1;
+        if (bEmpty) return -1;
+        if (typeof av === 'number' && typeof bv === 'number') {
+          return sortDir === 'asc' ? av - bv : bv - av;
+        }
+        av = String(av).toLowerCase();
+        bv = String(bv).toLowerCase();
+        if (av < bv) return sortDir === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+    } else {
+      sorted.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+    }
+    return sorted;
+  }, [entries, storeFilter, search, fromDate, toDate, columnFilters, sortKey, sortDir, t, lang]);
 
   function exportPDF() {
     const doc = new jsPDF({ orientation: 'landscape' });
@@ -216,14 +285,31 @@ export default function ExpiredReportView({ canDelete = false }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff', borderRadius: 8, overflow: 'hidden' }}>
             <thead>
               <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
-                <th style={{ padding: '10px 12px' }}>{t('r_col_itemCode')}</th>
-                <th style={{ padding: '10px 12px' }}>{t('r_col_description')}</th>
-                <th style={{ padding: '10px 12px' }}>{t('r_col_store')}</th>
-                <th style={{ padding: '10px 12px' }}>{t('r_col_quantity')}</th>
-                <th style={{ padding: '10px 12px' }}>{t('r_col_expiry')}</th>
-                <th style={{ padding: '10px 12px' }}>{t('r_col_diff')}</th>
-                <th style={{ padding: '10px 12px' }}>{t('r_col_createdBy')}</th>
+                {REPORT_COLUMNS.map((col) => (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key)}
+                    title={t('common_sort_hint')}
+                    style={{ padding: '10px 12px', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                  >
+                    {t(col.labelKey)}
+                    {sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </th>
+                ))}
                 {canDelete && <th style={{ padding: '10px 12px' }}></th>}
+              </tr>
+              <tr style={{ background: '#fff', borderBottom: '1px solid #eef1f4' }}>
+                {REPORT_COLUMNS.map((col) => (
+                  <th key={col.key} style={{ padding: '4px 12px', fontWeight: 400 }}>
+                    <input
+                      value={columnFilters[col.key] || ''}
+                      onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.key]: e.target.value }))}
+                      placeholder={t('common_filter_placeholder')}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', borderRadius: 4, border: '1px solid #e1e5ea', fontSize: 12 }}
+                    />
+                  </th>
+                ))}
+                {canDelete && <th style={{ padding: '4px 12px' }}></th>}
               </tr>
             </thead>
             <tbody>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { History } from '../api.js';
+import { History, Profiles } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const ACTION_COLORS = { INSERT: '#2f8f8a', UPDATE: '#c98a1f', DELETE: '#c0392b' };
@@ -45,6 +45,7 @@ export default function HistoryView() {
   const ACTION_LABELS = buildActionLabels(t);
   const TABLE_LABELS = buildTableLabels(t);
   const [entries, setEntries] = useState([]);
+  const [driverEmails, setDriverEmails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tableFilter, setTableFilter] = useState('all');
   const [error, setError] = useState('');
@@ -53,9 +54,22 @@ export default function HistoryView() {
     History.list()
       .then((rows) => { setEntries(rows); setLoading(false); })
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
+    // Ο ρόλος Οδηγός δεν πρέπει να εμφανίζεται στο ιστορικό — αν η φόρτωση των
+    // χρηστών αποτύχει (π.χ. λόγω δικαιωμάτων), απλά δεν φιλτράρουμε τίποτα.
+    Profiles.list()
+      .then((rows) => {
+        const emails = new Set(
+          rows.filter((p) => p.role === 'driver').map((p) => (p.email || '').toLowerCase())
+        );
+        setDriverEmails(emails);
+      })
+      .catch(() => setDriverEmails(new Set()));
   }, []);
 
-  const filtered = tableFilter === 'all' ? entries : entries.filter((e) => e.table_name === tableFilter);
+  const visibleEntries = driverEmails
+    ? entries.filter((e) => !driverEmails.has((e.user_email || '').toLowerCase()))
+    : entries;
+  const filtered = tableFilter === 'all' ? visibleEntries : visibleEntries.filter((e) => e.table_name === tableFilter);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
