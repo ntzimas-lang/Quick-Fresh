@@ -72,13 +72,16 @@ export default function DashboardView() {
   const bucket4_7 = soonEntries.filter((e) => e.diff >= 4 && e.diff <= 7).reduce((s, e) => s + e.qty, 0);
   const maxBucket = Math.max(bucketToday, bucket1_3, bucket4_7, 1);
 
+  // Ανά κατάστημα: σύνολο τεμαχίων + σύνθεση (Σήμερα / 1-3 / 4-7 ημέρες) στην ίδια γραμμή.
   const soonStoreMap = {};
   soonEntries.forEach((e) => {
     const key = e.store || '—';
-    soonStoreMap[key] = (soonStoreMap[key] || 0) + e.qty;
+    if (!soonStoreMap[key]) soonStoreMap[key] = { today: 0, d1_3: 0, d4_7: 0, total: 0 };
+    const bucket = e.diff === 0 ? 'today' : e.diff <= 3 ? 'd1_3' : 'd4_7';
+    soonStoreMap[key][bucket] += e.qty;
+    soonStoreMap[key].total += e.qty;
   });
-  const soonStoreBreakdown = Object.entries(soonStoreMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const maxSoonStoreQty = soonStoreBreakdown.length ? soonStoreBreakdown[0][1] : 0;
+  const soonStoreBreakdown = Object.entries(soonStoreMap).sort((a, b) => b[1].total - a[1].total).slice(0, 8);
 
   const statusGroups = {};
   contacts.forEach((c) => {
@@ -107,6 +110,10 @@ export default function DashboardView() {
                 <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_expired_pieces')}</div>
               </div>
               <div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#e0703a' }}>{bucketToday}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_today_pieces')}</div>
+              </div>
+              <div>
                 <div style={{ fontSize: 36, fontWeight: 700, color: '#c98a1f' }}>{soonQty}</div>
                 <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_soon_pieces')}</div>
               </div>
@@ -129,13 +136,35 @@ export default function DashboardView() {
                     <Bar label={t('d_bucket_1_3')} value={bucket1_3} max={maxBucket} color="#e0703a" />
                     <Bar label={t('d_bucket_4_7')} value={bucket4_7} max={maxBucket} color="#c98a1f" />
                   </div>
-                  <div style={{ flex: '1 1 260px', minWidth: 240 }}>
-                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase' }}>
-                      {t('d_by_store_soon')}
+                  <div style={{ flex: '1 1 300px', minWidth: 260 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                        {t('d_by_store_soon')}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, fontSize: 10.5, color: '#6b7684' }}>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#c0392b', marginRight: 3 }} />{t('d_bucket_today')}</span>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#e0703a', marginRight: 3 }} />{t('d_bucket_1_3')}</span>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#c98a1f', marginRight: 3 }} />{t('d_bucket_4_7')}</span>
+                      </div>
                     </div>
-                    {soonStoreBreakdown.map(([store, q]) => (
-                      <Bar key={store} label={store} value={q} max={maxSoonStoreQty} color="#c98a1f" />
-                    ))}
+                    {soonStoreBreakdown.map(([store, s]) => {
+                      const pctToday = s.total ? Math.round((s.today / s.total) * 100) : 0;
+                      const pct1_3 = s.total ? Math.round((s.d1_3 / s.total) * 100) : 0;
+                      const pct4_7 = s.total ? Math.max(0, 100 - pctToday - pct1_3) : 0;
+                      return (
+                        <div key={store} style={{ marginBottom: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ fontSize: 13 }}>{store}</span>
+                            <strong style={{ fontSize: 13 }}>{s.total} {t('d_pieces_abbr')}</strong>
+                          </div>
+                          <div style={{ display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden', background: '#f1f3f5' }}>
+                            {s.today > 0 && <div title={`${t('d_bucket_today')}: ${s.today}`} style={{ width: pctToday + '%', background: '#c0392b' }} />}
+                            {s.d1_3 > 0 && <div title={`${t('d_bucket_1_3')}: ${s.d1_3}`} style={{ width: pct1_3 + '%', background: '#e0703a' }} />}
+                            {s.d4_7 > 0 && <div title={`${t('d_bucket_4_7')}: ${s.d4_7}`} style={{ width: pct4_7 + '%', background: '#c98a1f' }} />}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

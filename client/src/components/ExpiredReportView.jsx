@@ -72,6 +72,23 @@ export default function ExpiredReportView({ canDelete = false }) {
     return Array.from(set).sort();
   }, [entries]);
 
+  // Σύνοψη σε τεμάχια (ίδια λογική με τον Πίνακα Ελέγχου) — υπολογίζεται πάντα από
+  // όλες τις καταχωρήσεις, όχι μόνο από τις φιλτραρισμένες, ώστε να ταιριάζει με το badge.
+  const summary = useMemo(() => {
+    let expired = 0, today = 0, soon = 0, total = 0;
+    entries.forEach((e) => {
+      if (!e.expiryDate) return;
+      const q = Number(e.quantity);
+      const qty = Number.isFinite(q) && q > 0 ? q : 1;
+      const d = daysDiff(e.expiryDate);
+      total += qty;
+      if (d < 0) expired += qty;
+      else if (d === 0) { today += qty; soon += qty; }
+      else if (d <= 7) soon += qty;
+    });
+    return { expired, today, soon, total };
+  }, [entries]);
+
   const filtered = useMemo(() => {
     let rows = entries;
     if (storeFilter !== 'all') rows = rows.filter((e) => e.store === storeFilter);
@@ -152,6 +169,26 @@ export default function ExpiredReportView({ canDelete = false }) {
           {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
+      {!loading && !error && (
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', padding: '14px 20px', background: '#fff', borderBottom: '1px solid #e1e5ea', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>{summary.expired}</div>
+            <div style={{ fontSize: 11.5, color: '#6b7684' }}>{t('d_expired_pieces')}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#e0703a' }}>{summary.today}</div>
+            <div style={{ fontSize: 11.5, color: '#6b7684' }}>{t('d_today_pieces')}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>{summary.soon}</div>
+            <div style={{ fontSize: 11.5, color: '#6b7684' }}>{t('d_soon_pieces')}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{summary.total}</div>
+            <div style={{ fontSize: 11.5, color: '#6b7684' }}>{t('d_total_pieces')}</div>
+          </div>
+        </div>
+      )}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
         {loading ? (
           <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>
