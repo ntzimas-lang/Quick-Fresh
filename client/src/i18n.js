@@ -224,6 +224,8 @@ export const translations = {
     d_bucket_4_7: '4-7 ημέρες',
     d_by_store_soon: 'Ανά κατάστημα',
     d_no_soon: 'Δεν λήγει τίποτα μέσα στις επόμενες 7 ημέρες.',
+    d_today_pieces: 'Λήγουν σήμερα',
+    d_store_total_label: 'Σύνολο τεμαχίων',
 
     // Login
     l_email: 'Email',
@@ -446,6 +448,8 @@ export const translations = {
     d_bucket_4_7: '4-7 days',
     d_by_store_soon: 'By store',
     d_no_soon: 'Nothing is expiring in the next 7 days.',
+    d_today_pieces: 'Expiring today',
+    d_store_total_label: 'Total pieces',
 
     l_email: 'Email',
     l_password: 'Password',

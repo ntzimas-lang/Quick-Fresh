@@ -89,9 +89,13 @@ export default function App() {
       let soon = 0;
       list.forEach((e) => {
         if (!e.expiryDate) return;
+        // Μετράμε τεμάχια (ποσότητα), όχι αριθμό καταχωρήσεων — ίδια λογική με τον
+        // Πίνακα Ελέγχου, ώστε ο αριθμός στο badge να ταιριάζει με αυτόν εκεί.
+        const q = Number(e.quantity);
+        const qty = Number.isFinite(q) && q > 0 ? q : 1;
         const d = daysDiff(e.expiryDate);
-        if (d < 0) expired += 1;
-        else if (d <= SOON_DAYS) soon += 1;
+        if (d < 0) expired += qty;
+        else if (d <= SOON_DAYS) soon += qty;
       });
       setAlertCounts({ expired, soon });
     } catch (e) {
