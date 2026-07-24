@@ -225,8 +225,8 @@ export default function DashboardView({ isDriver = false } = {}) {
 
           {/* 1. Πωλήσεις — καθαρά ποσά (χωρίς ΦΠΑ), από τα uploads στο πεδίο "Πωλήσεις" */}
           {!isDriver && (
-          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#2f8f8a', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22, overflow: 'hidden' }}>
+            <div style={{ margin: '-22px -22px 16px', padding: '14px 22px', background: '#2f8f8a', color: '#fff', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', borderRadius: '12px 12px 0 0' }}>
               {t('d_sales_title')}
             </div>
             {!hasSalesData ? (
@@ -376,8 +376,8 @@ export default function DashboardView({ isDriver = false } = {}) {
           )}
 
           {/* 2. Ληγμένα */}
-          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#c0392b', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22, overflow: 'hidden' }}>
+            <div style={{ margin: '-22px -22px 16px', padding: '14px 22px', background: '#c0392b', color: '#fff', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', borderRadius: '12px 12px 0 0' }}>
               {t('d_expired_title')}
             </div>
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 22 }}>
@@ -491,8 +491,8 @@ export default function DashboardView({ isDriver = false } = {}) {
 
           {/* 3. Επαφές ανά Status — κάτω, σε πλήρες πλάτος */}
           {!isDriver && (
-          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#7a4fc9', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22, overflow: 'hidden' }}>
+            <div style={{ margin: '-22px -22px 16px', padding: '14px 22px', background: '#7a4fc9', color: '#fff', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', borderRadius: '12px 12px 0 0' }}>
               {t('d_contacts_by_status')}
             </div>
             {contacts.length === 0 ? (
