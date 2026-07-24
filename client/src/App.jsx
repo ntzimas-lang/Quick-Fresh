@@ -174,9 +174,6 @@ export default function App() {
               <span
                 className="nav-badge"
                 style={{ background: alertCounts.expired > 0 ? '#c0392b' : '#e0a500' }}
-                title={alertCounts.expired > 0
-                  ? `${alertCounts.expired} έχουν λήξει, ${alertCounts.soon} λήγουν σύντομα`
-                  : `${alertCounts.soon} λήγουν σύντομα`}
               >
                 {alertCounts.expired + alertCounts.soon}
               </span>
