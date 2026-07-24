@@ -171,25 +171,8 @@ export default function DashboardView({ isDriver = false } = {}) {
   const netCoords = trendCoords(monthNet);
   const txCoords = trendCoords(monthTx);
 
-  // Μόνο η πιο πρόσφατη "παρτίδα" ανά κατάστημα (ώστε να μη διπλομετράμε παλιά uploads) —
-  // χρησιμοποιείται για την κατηγοριοποίηση (τρέχουσα εικόνα, όχι ιστορικό ανά μήνα).
-  const latestBatchByStore = {};
-  salesProducts.forEach((p) => {
-    const cur = latestBatchByStore[p.store];
-    if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStore[p.store] = p.uploadedAt;
-  });
-  const latestProducts = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
-
-  const categoryTotals = {};
-  latestProducts.forEach((p) => {
-    const key = p.cat1 || '—';
-    categoryTotals[key] = (categoryTotals[key] || 0) + (p.netRevenue || 0);
-  });
-  const categoryBreakdown = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxCategory = categoryBreakdown.length ? categoryBreakdown[0][1] : 1;
-
-  // Top 5 προϊόντα ανά μήνα: ομαδοποίηση των uploads με βάση τον μήνα μεταφόρτωσης,
-  // κρατώντας μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα ΜΕΣΑ σε κάθε μήνα
+  // Top 5 προϊόντα + κατηγορίες ανά μήνα: ομαδοποίηση των uploads με βάση τον μήνα
+  // μεταφόρτωσης, κρατώντας μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα ΜΕΣΑ σε κάθε μήνα
   // (ώστε επαναληπτικά uploads του ίδιου μήνα να μην διπλομετρηθούν).
   const latestBatchByStoreMonth = {};
   salesProducts.forEach((p) => {
@@ -204,6 +187,7 @@ export default function DashboardView({ isDriver = false } = {}) {
     return p.uploadedAt === latestBatchByStoreMonth[key];
   });
   const productMonthTotals = {};
+  const categoryMonthTotals = {};
   monthlyProducts.forEach((p) => {
     const mk = monthKey(p.uploadedAt);
     if (!productMonthTotals[mk]) productMonthTotals[mk] = {};
@@ -211,6 +195,10 @@ export default function DashboardView({ isDriver = false } = {}) {
     if (!productMonthTotals[mk][name]) productMonthTotals[mk][name] = { sold: 0, netRevenue: 0 };
     productMonthTotals[mk][name].sold += p.sold || 0;
     productMonthTotals[mk][name].netRevenue += p.netRevenue || 0;
+
+    if (!categoryMonthTotals[mk]) categoryMonthTotals[mk] = {};
+    const cat = p.cat1 || '—';
+    categoryMonthTotals[mk][cat] = (categoryMonthTotals[mk][cat] || 0) + (p.netRevenue || 0);
   });
   const productMonthKeys = Object.keys(productMonthTotals).sort().reverse();
   const topProductsByMonth = productMonthKeys.map((mk) => ({
@@ -220,6 +208,10 @@ export default function DashboardView({ isDriver = false } = {}) {
       .sort((a, b) => b.netRevenue - a.netRevenue)
       .slice(0, 5)
   }));
+  const categoryBreakdownByMonth = productMonthKeys.map((mk) => {
+    const categories = Object.entries(categoryMonthTotals[mk] || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return { monthKey: mk, categories, max: categories.length ? categories[0][1] : 1 };
+  });
 
   const hasSalesData = salesDaily.length > 0 || salesProducts.length > 0;
 
@@ -234,7 +226,7 @@ export default function DashboardView({ isDriver = false } = {}) {
           {/* 1. Πωλήσεις — καθαρά ποσά (χωρίς ΦΠΑ), από τα uploads στο πεδίο "Πωλήσεις" */}
           {!isDriver && (
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+            <div style={{ fontSize: 14, color: '#2f8f8a', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_sales_title')}
             </div>
             {!hasSalesData ? (
@@ -327,16 +319,23 @@ export default function DashboardView({ isDriver = false } = {}) {
                   </div>
                 )}
 
-                <div style={{ marginBottom: categoryBreakdown.length ? 22 : 0 }}>
+                <div style={{ marginBottom: 22 }}>
                   <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
-                    {t('d_sales_by_category')}
+                    {t('d_sales_by_category_monthly_title')}
                   </div>
-                  {categoryBreakdown.length === 0 ? (
+                  {categoryBreakdownByMonth.length === 0 ? (
                     <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
                   ) : (
-                    <div style={{ maxWidth: 420 }}>
-                      {categoryBreakdown.map(([cat, val]) => (
-                        <Bar key={cat} label={cat} value={Math.round(val)} max={maxCategory} color="#2f8f8a" />
+                    <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                      {categoryBreakdownByMonth.map(({ monthKey: mk, categories, max }) => (
+                        <div key={mk} style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 420 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 8 }}>
+                            {monthLabel(mk, lang)}
+                          </div>
+                          {categories.map(([cat, val]) => (
+                            <Bar key={cat} label={cat} value={Math.round(val)} max={max} color="#2f8f8a" />
+                          ))}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -378,7 +377,7 @@ export default function DashboardView({ isDriver = false } = {}) {
 
           {/* 2. Ληγμένα */}
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+            <div style={{ fontSize: 14, color: '#c0392b', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_expired_title')}
             </div>
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 22 }}>
@@ -493,7 +492,7 @@ export default function DashboardView({ isDriver = false } = {}) {
           {/* 3. Επαφές ανά Status — κάτω, σε πλήρες πλάτος */}
           {!isDriver && (
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+            <div style={{ fontSize: 14, color: '#7a4fc9', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_contacts_by_status')}
             </div>
             {contacts.length === 0 ? (
