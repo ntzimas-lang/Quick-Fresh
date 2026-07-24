@@ -2,10 +2,24 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Products, Entries } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
+const METHODS = [
+  { key: 'scan', icon: '📷', labelKey: 'e_method_scan' },
+  { key: 'manual', icon: '⌨️', labelKey: 'e_method_manual' },
+  { key: 'no-barcode', icon: '📋', labelKey: 'e_method_no_barcode' },
+  { key: 'description', icon: '🔎', labelKey: 'e_method_description' }
+];
+
+// Placeholder που παίρνει αυτόματα ένα προϊόν όταν δημιουργείται από τα "Προϊόντα"
+// χωρίς να συμπληρωθεί ακόμα — δεν έχει νόημα να εμφανίζεται στις λίστες αναζήτησης εδώ.
+function isUnfinishedPlaceholder(p) {
+  return p.descriptionGr === 'Νέο προϊόν' && !p.itemCode && !p.descriptionErp;
+}
+
 export default function ProductEntryView() {
   const { t } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [method, setMethod] = useState('scan');
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState('');
   const [manualBarcode, setManualBarcode] = useState('');
@@ -18,6 +32,7 @@ export default function ProductEntryView() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [recentEntries, setRecentEntries] = useState([]);
   const [noBarcodeQuery, setNoBarcodeQuery] = useState('');
+  const [descQuery, setDescQuery] = useState('');
 
   const scannerDivId = 'qf-barcode-scanner-region';
   const html5QrRef = useRef(null);
@@ -45,7 +60,11 @@ export default function ProductEntryView() {
   }, [products]);
 
   // Προϊόντα χωρίς Barcode — καταχωρούνται επιλέγοντάς τα από λίστα αντί για σάρωση.
-  const noBarcodeProducts = useMemo(() => products.filter((p) => !(p.barcodes && p.barcodes.length)), [products]);
+  // Εξαιρούνται τα ανολοκλήρωτα "Νέο προϊόν" placeholders.
+  const noBarcodeProducts = useMemo(
+    () => products.filter((p) => !(p.barcodes && p.barcodes.length) && !isUnfinishedPlaceholder(p)),
+    [products]
+  );
   const noBarcodeFiltered = useMemo(() => {
     const q = noBarcodeQuery.trim().toLowerCase();
     const base = q
@@ -57,6 +76,21 @@ export default function ProductEntryView() {
       : noBarcodeProducts;
     return base.slice(0, 30);
   }, [noBarcodeProducts, noBarcodeQuery]);
+
+  // Αναζήτηση με περιγραφή — σε όλα τα προϊόντα (με ή χωρίς barcode).
+  const descFiltered = useMemo(() => {
+    const q = descQuery.trim().toLowerCase();
+    if (!q) return [];
+    return products
+      .filter((p) => !isUnfinishedPlaceholder(p))
+      .filter((p) =>
+        (p.itemCode || '').toLowerCase().includes(q) ||
+        (p.descriptionErp || '').toLowerCase().includes(q) ||
+        (p.descriptionGr || '').toLowerCase().includes(q) ||
+        (p.descriptionEn || '').toLowerCase().includes(q)
+      )
+      .slice(0, 30);
+  }, [products, descQuery]);
 
   function selectProductManually(p) {
     setMatchedProduct(p);
@@ -126,6 +160,12 @@ export default function ProductEntryView() {
     setScanning(false);
   }
 
+  function selectMethod(key) {
+    if (method === key) return;
+    if (scanning) stopScan();
+    setMethod(key);
+  }
+
   function handleManualLookup(e) {
     e.preventDefault();
     handleScanResult(manualBarcode);
@@ -139,6 +179,7 @@ export default function ProductEntryView() {
     setExpiryDate('');
     setQuantity('1');
     setNoBarcodeQuery('');
+    setDescQuery('');
   }
 
   async function handleSubmit(e) {
@@ -174,63 +215,126 @@ export default function ProductEntryView() {
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
 
           {!matchedProduct && !notFoundBarcode && (
-            <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18, marginBottom: 16 }}>
-              {!scanning ? (
-                <button className="btn-primary" style={{ width: '100%' }} onClick={startScan} disabled={loadingProducts}>
-                  📷 {t('e_scan_button')}
-                </button>
-              ) : (
-                <div>
-                  <div id={scannerDivId} style={{ width: '100%', borderRadius: 8, overflow: 'hidden' }} />
-                  <button className="btn-danger" style={{ width: '100%', marginTop: 10 }} onClick={stopScan}>
-                    {t('e_cancel_scan')}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
+                {METHODS.map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => selectMethod(m.key)}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                      padding: '12px 8px', borderRadius: 10,
+                      border: method === m.key ? '2px solid #2f8f8a' : '1px solid #e1e5ea',
+                      background: method === m.key ? '#eef7f6' : '#fff', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 600, color: method === m.key ? '#16233f' : '#6b7684'
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>{m.icon}</span>
+                    {t(m.labelKey)}
                   </button>
-                </div>
-              )}
-
-              {scanError && <p style={{ color: '#c0392b', fontSize: 12.5, marginTop: 10 }}>{scanError}</p>}
-
-              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #eef1f4' }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
-                  {t('e_manual_barcode')}
-                </label>
-                <form onSubmit={handleManualLookup} style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    value={manualBarcode}
-                    onChange={(e) => setManualBarcode(e.target.value)}
-                    placeholder={t('e_barcode_example')}
-                    style={{ flex: 1, padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5 }}
-                  />
-                  <button className="btn-primary" type="submit">{t('e_search_button')}</button>
-                </form>
+                ))}
               </div>
 
-              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #eef1f4' }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
-                  {t('e_no_barcode_search')}
-                </label>
-                <input
-                  value={noBarcodeQuery}
-                  onChange={(e) => setNoBarcodeQuery(e.target.value)}
-                  placeholder={t('e_no_barcode_placeholder')}
-                  style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
-                />
-                <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #eef1f4', borderRadius: 8 }}>
-                  {noBarcodeFiltered.length === 0 ? (
-                    <p style={{ padding: 12, fontSize: 12.5, color: '#97a2b0', margin: 0 }}>{t('e_no_products_found')}</p>
-                  ) : (
-                    noBarcodeFiltered.map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => selectProductManually(p)}
-                        style={{ padding: '9px 12px', borderBottom: '1px solid #f1f3f5', cursor: 'pointer', fontSize: 13 }}
-                      >
-                        <strong>{p.itemCode || '—'}</strong>
-                        <span style={{ color: '#6b7684' }}> — {p.descriptionErp || p.descriptionGr || ''}</span>
+              <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18 }}>
+                {method === 'scan' && (
+                  <div>
+                    {!scanning ? (
+                      <button className="btn-primary" style={{ width: '100%' }} onClick={startScan} disabled={loadingProducts}>
+                        📷 {t('e_scan_button')}
+                      </button>
+                    ) : (
+                      <div>
+                        <div id={scannerDivId} style={{ width: '100%', borderRadius: 8, overflow: 'hidden' }} />
+                        <button className="btn-danger" style={{ width: '100%', marginTop: 10 }} onClick={stopScan}>
+                          {t('e_cancel_scan')}
+                        </button>
                       </div>
-                    ))
-                  )}
-                </div>
+                    )}
+                    {scanError && <p style={{ color: '#c0392b', fontSize: 12.5, marginTop: 10 }}>{scanError}</p>}
+                  </div>
+                )}
+
+                {method === 'manual' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
+                      {t('e_manual_barcode')}
+                    </label>
+                    <form onSubmit={handleManualLookup} style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        value={manualBarcode}
+                        onChange={(e) => setManualBarcode(e.target.value)}
+                        placeholder={t('e_barcode_example')}
+                        autoFocus
+                        style={{ flex: 1, padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5 }}
+                      />
+                      <button className="btn-primary" type="submit">{t('e_search_button')}</button>
+                    </form>
+                    {scanError && <p style={{ color: '#c0392b', fontSize: 12.5, marginTop: 10 }}>{scanError}</p>}
+                  </div>
+                )}
+
+                {method === 'no-barcode' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
+                      {t('e_no_barcode_search')}
+                    </label>
+                    <input
+                      value={noBarcodeQuery}
+                      onChange={(e) => setNoBarcodeQuery(e.target.value)}
+                      placeholder={t('e_no_barcode_placeholder')}
+                      autoFocus
+                      style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
+                    />
+                    <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #eef1f4', borderRadius: 8 }}>
+                      {noBarcodeFiltered.length === 0 ? (
+                        <p style={{ padding: 12, fontSize: 12.5, color: '#97a2b0', margin: 0 }}>{t('e_no_products_found')}</p>
+                      ) : (
+                        noBarcodeFiltered.map((p) => (
+                          <div
+                            key={p.id}
+                            onClick={() => selectProductManually(p)}
+                            style={{ padding: '9px 12px', borderBottom: '1px solid #f1f3f5', cursor: 'pointer', fontSize: 13 }}
+                          >
+                            <strong>{p.itemCode || '—'}</strong>
+                            <span style={{ color: '#6b7684' }}> — {p.descriptionErp || p.descriptionGr || ''}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {method === 'description' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
+                      {t('e_method_description')}
+                    </label>
+                    <input
+                      value={descQuery}
+                      onChange={(e) => setDescQuery(e.target.value)}
+                      placeholder={t('e_description_placeholder')}
+                      autoFocus
+                      style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
+                    />
+                    <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #eef1f4', borderRadius: 8 }}>
+                      {descQuery.trim() === '' ? null : descFiltered.length === 0 ? (
+                        <p style={{ padding: 12, fontSize: 12.5, color: '#97a2b0', margin: 0 }}>{t('e_no_products_found')}</p>
+                      ) : (
+                        descFiltered.map((p) => (
+                          <div
+                            key={p.id}
+                            onClick={() => selectProductManually(p)}
+                            style={{ padding: '9px 12px', borderBottom: '1px solid #f1f3f5', cursor: 'pointer', fontSize: 13 }}
+                          >
+                            <strong>{p.itemCode || '—'}</strong>
+                            <span style={{ color: '#6b7684' }}> — {p.descriptionErp || p.descriptionGr || ''}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
