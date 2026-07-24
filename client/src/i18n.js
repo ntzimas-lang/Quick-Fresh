@@ -166,6 +166,8 @@ export const translations = {
     r_delete_error_prefix: 'Σφάλμα διαγραφής:',
     r_search_placeholder_specific: 'Αναζήτηση κωδικού/περιγραφής...',
     r_diff_today: 'Λήγει σήμερα',
+    r_from_date: 'Από',
+    r_to_date: 'Έως',
 
     // Ιστορικό
     h_filter_all: 'Όλα',
@@ -211,6 +213,12 @@ export const translations = {
     d_products_total: 'Σύνολο',
     d_loading: 'Φόρτωση...',
     d_pieces_abbr: 'τεμ.',
+    d_soon_analysis_title: 'Λήγουν εντός 7 ημερών — Ανάλυση',
+    d_bucket_today: 'Σήμερα',
+    d_bucket_1_3: '1-3 ημέρες',
+    d_bucket_4_7: '4-7 ημέρες',
+    d_by_store_soon: 'Ανά κατάστημα',
+    d_no_soon: 'Δεν λήγει τίποτα μέσα στις επόμενες 7 ημέρες.',
 
     // Login
     l_email: 'Email',
@@ -378,6 +386,8 @@ export const translations = {
     r_delete_error_prefix: 'Delete error:',
     r_search_placeholder_specific: 'Search code/description...',
     r_diff_today: 'Expires today',
+    r_from_date: 'From',
+    r_to_date: 'To',
 
     h_filter_all: 'All',
     h_action_insert: 'Created',
@@ -420,6 +430,12 @@ export const translations = {
     d_products_total: 'Total',
     d_loading: 'Loading...',
     d_pieces_abbr: 'pcs',
+    d_soon_analysis_title: 'Expiring within 7 days — Breakdown',
+    d_bucket_today: 'Today',
+    d_bucket_1_3: '1-3 days',
+    d_bucket_4_7: '4-7 days',
+    d_by_store_soon: 'By store',
+    d_no_soon: 'Nothing is expiring in the next 7 days.',
 
     l_email: 'Email',
     l_password: 'Password',
