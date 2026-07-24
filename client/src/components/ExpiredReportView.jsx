@@ -3,6 +3,7 @@ import { Entries } from '../api.js';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
+import { useLanguage } from '../LanguageContext.jsx';
 
 function daysDiff(expiryDateStr) {
   const today = new Date();
@@ -30,6 +31,7 @@ function formatDate(dateStr) {
 }
 
 export default function ExpiredReportView({ canDelete = false }) {
+  const { t } = useLanguage();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -108,7 +110,7 @@ export default function ExpiredReportView({ canDelete = false }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: 15 }}>Report Ληγμένα</strong>
+        <strong style={{ fontSize: 15 }}>{t('title_expired')}</strong>
         <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title="Εξαγωγή σε PDF">
           PDF
         </button>

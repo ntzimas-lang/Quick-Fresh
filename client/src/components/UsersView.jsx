@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Profiles, supabase } from '../api.js';
+import { useLanguage } from '../LanguageContext.jsx';
 
 const ROLE_LABELS = { super_user: 'Super User', viewer: 'Viewer', driver: 'Οδηγός' };
 const ROLE_COLORS = { super_user: '#2f8f8a', viewer: '#6b7684', driver: '#c98a1f' };
@@ -12,6 +13,7 @@ function formatDate(ts) {
 }
 
 export default function UsersView() {
+  const { t } = useLanguage();
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,7 +47,7 @@ export default function UsersView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', flexShrink: 0 }}>
-        <strong style={{ fontSize: 15 }}>Χρήστες</strong>
+        <strong style={{ fontSize: 15 }}>{t('title_users')}</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
         {loading ? (

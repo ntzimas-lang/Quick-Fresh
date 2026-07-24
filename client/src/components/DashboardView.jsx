@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Products, Contacts, Entries } from '../api.js';
+import { useLanguage } from '../LanguageContext.jsx';
 
 const CONTACT_STATUS_COLORS = {
   'Έκλεισε': '#27ae60',
@@ -16,6 +17,7 @@ function daysDiff(expiryDateStr) {
 }
 
 export default function DashboardView() {
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [products, setProducts] = useState([]);
@@ -58,7 +60,7 @@ export default function DashboardView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', flexShrink: 0 }}>
-        <strong style={{ fontSize: 15 }}>Πίνακας Ελέγχου</strong>
+        <strong style={{ fontSize: 15 }}>{t('title_dashboard')}</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, background: '#f9fafb' }}>
         <div className="dashboard-grid">

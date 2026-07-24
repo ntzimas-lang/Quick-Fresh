@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { History } from '../api.js';
+import { useLanguage } from '../LanguageContext.jsx';
 
 const ACTION_LABELS = { INSERT: 'Δημιουργία', UPDATE: 'Ενημέρωση', DELETE: 'Διαγραφή' };
 const ACTION_COLORS = { INSERT: '#2f8f8a', UPDATE: '#c98a1f', DELETE: '#c0392b' };
@@ -36,6 +37,7 @@ function formatDate(ts) {
 }
 
 export default function HistoryView() {
+  const { t } = useLanguage();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tableFilter, setTableFilter] = useState('all');
@@ -52,7 +54,7 @@ export default function HistoryView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <strong style={{ fontSize: 15 }}>Ιστορικό Αλλαγών</strong>
+        <strong style={{ fontSize: 15 }}>{t('title_history')}</strong>
         <select
           value={tableFilter}
           onChange={(e) => setTableFilter(e.target.value)}

@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Products, Entries } from '../api.js';
+import { useLanguage } from '../LanguageContext.jsx';
 
 export default function ProductEntryView() {
+  const { t } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -166,7 +168,7 @@ export default function ProductEntryView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', flexShrink: 0 }}>
-        <strong style={{ fontSize: 15 }}>Καταχώρηση Ληγμένων</strong>
+        <strong style={{ fontSize: 15 }}>{t('title_entry')}</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: '#f9fafb' }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
