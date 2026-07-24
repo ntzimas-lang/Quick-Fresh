@@ -42,6 +42,8 @@ export default function ExpiredReportView({ canDelete = false }) {
   const [error, setError] = useState('');
   const [storeFilter, setStoreFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   useEffect(() => {
     load();
@@ -80,8 +82,10 @@ export default function ExpiredReportView({ canDelete = false }) {
         (e.productDescription || '').toLowerCase().includes(q)
       );
     }
+    if (fromDate) rows = rows.filter((e) => e.expiryDate && e.expiryDate >= fromDate);
+    if (toDate) rows = rows.filter((e) => e.expiryDate && e.expiryDate <= toDate);
     return [...rows].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
-  }, [entries, storeFilter, search]);
+  }, [entries, storeFilter, search, fromDate, toDate]);
 
   function exportPDF() {
     const doc = new jsPDF({ orientation: 'landscape' });
@@ -125,6 +129,24 @@ export default function ExpiredReportView({ canDelete = false }) {
           placeholder={t('r_search_placeholder_specific')}
           style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13, width: 220 }}
         />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6b7684' }}>
+          {t('r_from_date')}
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}
+          />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6b7684' }}>
+          {t('r_to_date')}
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}
+          />
+        </label>
         <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}>
           <option value="all">{t('r_all_stores')}</option>
           {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}

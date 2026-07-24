@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Products, Contacts, Entries } from '../api.js';
+import { Contacts, Entries } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const CONTACT_STATUS_COLORS = {
@@ -16,17 +16,30 @@ function daysDiff(expiryDateStr) {
   return Math.round((expiry.getTime() - today.getTime()) / 86400000);
 }
 
+function Bar({ label, value, max, color }) {
+  const pct = max ? Math.round((value / max) * 100) : 0;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span style={{ fontSize: 13 }}>{label}</span>
+        <strong style={{ fontSize: 13 }}>{value}</strong>
+      </div>
+      <div style={{ height: 8, background: '#f1f3f5', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ width: pct + '%', height: '100%', background: color }} />
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardView() {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [products, setProducts] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [entries, setEntries] = useState([]);
 
   useEffect(() => {
     Promise.all([
-      Products.list().then(setProducts),
       Contacts.list().then(setContacts),
       Entries.list().then(setEntries)
     ])
@@ -41,9 +54,6 @@ export default function DashboardView() {
     return <div style={{ padding: 20, color: '#c0392b' }}>{error}</div>;
   }
 
-  const entos = products.filter((p) => (p.status || 'ΕΝΤΟΣ') !== 'ΕΚΤΟΣ').length;
-  const ektos = products.length - entos;
-
   // Μετράμε τεμάχια (ποσότητα) αντί για αριθμό καταχωρήσεων — μία καταχώρηση
   // μπορεί να αντιπροσωπεύει πολλά τεμάχια. Χωρίς ποσότητα, θεωρούμε 1 τεμάχιο.
   function entryQty(e) {
@@ -52,16 +62,23 @@ export default function DashboardView() {
   }
   const entryDiffs = entries.map((e) => ({ ...e, diff: daysDiff(e.expiryDate), qty: entryQty(e) }));
   const expiredQty = entryDiffs.filter((e) => e.diff < 0).reduce((sum, e) => sum + e.qty, 0);
-  const soonQty = entryDiffs.filter((e) => e.diff >= 0 && e.diff <= 7).reduce((sum, e) => sum + e.qty, 0);
+  const soonEntries = entryDiffs.filter((e) => e.diff >= 0 && e.diff <= 7);
+  const soonQty = soonEntries.reduce((sum, e) => sum + e.qty, 0);
   const totalQty = entryDiffs.reduce((sum, e) => sum + e.qty, 0);
 
-  const storeQtyMap = {};
-  entryDiffs.filter((e) => e.diff <= 7).forEach((e) => {
+  // Ανάλυση ειδικά για όσα λήγουν εντός 7 ημερών: ανά ημέρες-απόσταση και ανά κατάστημα.
+  const bucketToday = soonEntries.filter((e) => e.diff === 0).reduce((s, e) => s + e.qty, 0);
+  const bucket1_3 = soonEntries.filter((e) => e.diff >= 1 && e.diff <= 3).reduce((s, e) => s + e.qty, 0);
+  const bucket4_7 = soonEntries.filter((e) => e.diff >= 4 && e.diff <= 7).reduce((s, e) => s + e.qty, 0);
+  const maxBucket = Math.max(bucketToday, bucket1_3, bucket4_7, 1);
+
+  const soonStoreMap = {};
+  soonEntries.forEach((e) => {
     const key = e.store || '—';
-    storeQtyMap[key] = (storeQtyMap[key] || 0) + e.qty;
+    soonStoreMap[key] = (soonStoreMap[key] || 0) + e.qty;
   });
-  const storeBreakdown = Object.entries(storeQtyMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const maxStoreQty = storeBreakdown.length ? storeBreakdown[0][1] : 0;
+  const soonStoreBreakdown = Object.entries(soonStoreMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxSoonStoreQty = soonStoreBreakdown.length ? soonStoreBreakdown[0][1] : 0;
 
   const statusGroups = {};
   contacts.forEach((c) => {
@@ -77,9 +94,55 @@ export default function DashboardView() {
         <strong style={{ fontSize: 15 }}>{t('title_dashboard')}</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, background: '#f9fafb' }}>
-        <div className="dashboard-grid">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* 1. Επαφές ανά Status — μεγαλύτερη έμφαση, με μπάρες ποσοστού */}
+          {/* 1. Ληγμένα — πρώτη, σε πλήρες πλάτος, με μεγαλύτερη ανάλυση για όσα λήγουν σε 7 ημέρες */}
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
+            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
+              {t('d_expired_title')}
+            </div>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 22 }}>
+              <div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#c0392b' }}>{expiredQty}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_expired_pieces')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#c98a1f' }}>{soonQty}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_soon_pieces')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#16233f' }}>{totalQty}</div>
+                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_total_pieces')}</div>
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18 }}>
+              <div style={{ fontSize: 13.5, color: '#16233f', fontWeight: 700, marginBottom: 14 }}>
+                {t('d_soon_analysis_title')}
+              </div>
+              {soonQty === 0 ? (
+                <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_no_soon')}</p>
+              ) : (
+                <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 260px', minWidth: 240 }}>
+                    <Bar label={t('d_bucket_today')} value={bucketToday} max={maxBucket} color="#c0392b" />
+                    <Bar label={t('d_bucket_1_3')} value={bucket1_3} max={maxBucket} color="#e0703a" />
+                    <Bar label={t('d_bucket_4_7')} value={bucket4_7} max={maxBucket} color="#c98a1f" />
+                  </div>
+                  <div style={{ flex: '1 1 260px', minWidth: 240 }}>
+                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase' }}>
+                      {t('d_by_store_soon')}
+                    </div>
+                    {soonStoreBreakdown.map(([store, q]) => (
+                      <Bar key={store} label={store} value={q} max={maxSoonStoreQty} color="#c98a1f" />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Επαφές ανά Status — κάτω, σε πλήρες πλάτος */}
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
             <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
               {t('d_contacts_by_status')}
@@ -106,67 +169,6 @@ export default function DashboardView() {
                 );
               })
             )}
-          </div>
-
-          {/* 2. Ληγμένα — μεγαλύτερη έμφαση, σε τεμάχια + ανάλυση ανά κατάστημα */}
-          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 22 }}>
-            <div style={{ fontSize: 14, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 16 }}>
-              {t('d_expired_title')}
-            </div>
-            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: storeBreakdown.length ? 20 : 0 }}>
-              <div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: '#c0392b' }}>{expiredQty}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_expired_pieces')}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: '#c98a1f' }}>{soonQty}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_soon_pieces')}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: '#16233f' }}>{totalQty}</div>
-                <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_total_pieces')}</div>
-              </div>
-            </div>
-            {storeBreakdown.length > 0 && (
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, marginBottom: 10 }}>
-                  {t('d_by_store')}
-                </div>
-                {storeBreakdown.map(([store, q]) => {
-                  const pct = maxStoreQty ? Math.round((q / maxStoreQty) * 100) : 0;
-                  return (
-                    <div key={store} style={{ marginBottom: 10 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontSize: 13 }}>{store}</span>
-                        <strong style={{ fontSize: 13 }}>{q} {t('d_pieces_abbr')}</strong>
-                      </div>
-                      <div style={{ height: 8, background: '#f1f3f5', borderRadius: 4, overflow: 'hidden' }}>
-                        <div style={{ width: pct + '%', height: '100%', background: '#c0392b' }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* 3. Προϊόντα — πιο συμπαγής κάρτα, τελευταία */}
-          <div className="dashboard-card--sm" style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 24 }}>
-            <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_products_title')}</div>
-            <div style={{ display: 'flex', gap: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                <span style={{ fontSize: 18, fontWeight: 700, color: '#27ae60' }}>{entos}</span>
-                <span style={{ fontSize: 11.5, color: '#6b7684' }}>ΕΝΤΟΣ</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                <span style={{ fontSize: 18, fontWeight: 700, color: '#c0392b' }}>{ektos}</span>
-                <span style={{ fontSize: 11.5, color: '#6b7684' }}>ΕΚΤΟΣ</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                <span style={{ fontSize: 18, fontWeight: 700, color: '#16233f' }}>{products.length}</span>
-                <span style={{ fontSize: 11.5, color: '#6b7684' }}>{t('d_products_total')}</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
