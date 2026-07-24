@@ -61,6 +61,7 @@ export default function ExpiredReportView({ canDelete = false }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
   const [storeFilter, setStoreFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -97,12 +98,12 @@ export default function ExpiredReportView({ canDelete = false }) {
   }
 
   async function handleDelete(id) {
-    if (!confirm(t('r_delete_confirm'))) return;
+    setDeleteError('');
     try {
       await Entries.remove(id);
       setEntries((prev) => prev.filter((e) => e.id !== id));
     } catch (err) {
-      alert(t('r_delete_error_prefix') + ' ' + (err.message || err));
+      setDeleteError(t('r_delete_error_prefix') + ' ' + (err.message || err));
     }
   }
 
@@ -275,6 +276,16 @@ export default function ExpiredReportView({ canDelete = false }) {
         </div>
       )}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
+        {deleteError && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: '#fdecea', color: '#c0392b', border: '1px solid #f3c1bb', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>
+            <span>{deleteError}</span>
+            <button
+              type="button"
+              onClick={() => setDeleteError('')}
+              style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}
+            >✕</button>
+          </div>
+        )}
         {loading ? (
           <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>
         ) : error ? (
