@@ -327,7 +327,7 @@ export const StoreEquipment = {
   },
   async create(body) {
     const id = newId();
-    const record = { id, store: '', fridgeNo: [], picoNo: [], ...body, id };
+    const record = { id, store: '', equipment: [], ...body, id };
     const { data, error } = await supabase
       .from('store_equipment')
       .insert({ id: record.id, data: record })
