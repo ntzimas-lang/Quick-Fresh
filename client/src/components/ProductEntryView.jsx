@@ -72,6 +72,7 @@ export default function ProductEntryView() {
   const [descQuery, setDescQuery] = useState('');
   const [expiredEntries, setExpiredEntries] = useState([]);
   const [entryQuery, setEntryQuery] = useState('');
+  const [entryStoreFilter, setEntryStoreFilter] = useState('');
 
   const scannerDivId = 'qf-barcode-scanner-region';
   const html5QrRef = useRef(null);
@@ -89,19 +90,30 @@ export default function ProductEntryView() {
     Entries.list().then(setExpiredEntries).catch(() => {});
   }, []);
 
+  // Καταστήματα που εμφανίζονται πράγματι στα ληγμένα (όχι όλη τη λίστα καταστημάτων) —
+  // έτσι το φίλτρο δείχνει μόνο επιλογές που έχουν νόημα εδώ.
+  const entryStoreOptions = useMemo(() => {
+    const set = new Set();
+    expiredEntries.forEach((e) => { const s = (e.store || '').trim(); if (s) set.add(s); });
+    return Array.from(set).sort();
+  }, [expiredEntries]);
+
   const expiredFiltered = useMemo(() => {
     // Ό,τι έχει ΗΔΗ λήξει ή λήγει σήμερα (diff <= 0) — όχι "σε X ημέρες".
     const alreadyExpired = expiredEntries.filter((e) => e.expiryDate && daysDiff(e.expiryDate) <= 0);
+    const byStore = entryStoreFilter
+      ? alreadyExpired.filter((e) => (e.store || '') === entryStoreFilter)
+      : alreadyExpired;
     const q = entryQuery.trim().toLowerCase();
     const base = q
-      ? alreadyExpired.filter((e) =>
+      ? byStore.filter((e) =>
           (e.productItemCode || '').toLowerCase().includes(q) ||
           (e.productDescription || '').toLowerCase().includes(q) ||
           (e.store || '').toLowerCase().includes(q)
         )
-      : alreadyExpired;
+      : byStore;
     return [...base].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)).slice(0, 40);
-  }, [expiredEntries, entryQuery]);
+  }, [expiredEntries, entryQuery, entryStoreFilter]);
 
   function selectExpiredEntry(entry) {
     setMatchedProduct({
@@ -265,6 +277,7 @@ export default function ProductEntryView() {
     setNoBarcodeQuery('');
     setDescQuery('');
     setEntryQuery('');
+    setEntryStoreFilter('');
   }
 
   async function handleSubmit(e) {
@@ -344,11 +357,18 @@ export default function ProductEntryView() {
                 <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
                   {t('x_pick_expired_label')}
                 </label>
+                <select
+                  value={entryStoreFilter}
+                  onChange={(e) => setEntryStoreFilter(e.target.value)}
+                  style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
+                >
+                  <option value="">{t('x_pick_expired_all_stores')}</option>
+                  {entryStoreOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
                 <input
                   value={entryQuery}
                   onChange={(e) => setEntryQuery(e.target.value)}
                   placeholder={t('x_pick_expired_placeholder')}
-                  autoFocus
                   style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
                 />
                 <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid #eef1f4', borderRadius: 8 }}>
