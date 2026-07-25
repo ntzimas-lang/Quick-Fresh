@@ -55,6 +55,20 @@ export default function StoreEquipmentView({ readOnly = false }) {
     return Array.from(set).sort();
   }, [products]);
 
+  // Για τη Μετονομασία θέλουμε να φαίνονται ΟΛΑ τα ονόματα καταστήματος που υπάρχουν
+  // ΟΠΟΥΔΗΠΟΤΕ στην εφαρμογή — όχι μόνο στη λίστα Κατάστημα (Cost tab) των Προϊόντων.
+  // Παλιές καταχωρήσεις Ληγμένα/Καταστροφών μπορεί να έχουν ένα όνομα (π.χ. "Kryoneri")
+  // που πλέον δεν υπάρχει καν στα Προϊόντα (έχει ήδη αλλάξει εκεί σε κάτι άλλο) — τέτοια
+  // "ορφανά" ονόματα δεν θα εμφανίζονταν ποτέ στο storeOptions, άρα δεν θα μπορούσες να τα
+  // διορθώσεις. Εδώ τα μαζεύουμε από ΟΛΕΣ τις πηγές, ώστε να μπορείς να τα μετονομάσεις όλα.
+  const allKnownStoreNames = useMemo(() => {
+    const set = new Set(storeOptions);
+    records.forEach((r) => { const c = (r.store || '').trim(); if (c) set.add(c); });
+    entries.forEach((e) => { const c = (e.store || '').trim(); if (c) set.add(c); });
+    destructions.forEach((d) => { const c = (d.store || '').trim(); if (c) set.add(c); });
+    return Array.from(set).sort();
+  }, [storeOptions, records, entries, destructions]);
+
   // Ανίχνευση "σχεδόν ίδιων" ονομάτων καταστήματος μέσα στη λίστα Κατάστημα (Cost tab) των
   // Προϊόντων (π.χ. κενό, κεφαλαία/πεζά, τόνος) — για το εργαλείο αυτόματης συγχώνευσης παρακάτω.
   const duplicateGroups = useMemo(() => {
@@ -319,14 +333,19 @@ export default function StoreEquipmentView({ readOnly = false }) {
             <button type="button" onClick={() => setError('')} style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontWeight: 700 }}>✕</button>
           </div>
         )}
-        {!readOnly && storeOptions.length > 0 && (
+        {!readOnly && allKnownStoreNames.length > 0 && (
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
             <strong style={{ fontSize: 13, color: '#16233f', display: 'block', marginBottom: 4 }}>{t('se_store_list_title')}</strong>
             <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px' }}>{t('se_store_list_desc')}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {storeOptions.map((name) => (
+              {allKnownStoreNames.map((name) => (
                 <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f4f6f8', borderRadius: 8, padding: '5px 4px 5px 12px' }}>
                   <span style={{ fontSize: 13 }}>{name}</span>
+                  {!storeOptions.includes(name) && (
+                    <span title={t('se_legacy_name_hint')} style={{ fontSize: 10, color: '#c98a1f', fontWeight: 700, background: '#fff8e8', border: '1px solid #eddca6', borderRadius: 4, padding: '1px 5px' }}>
+                      {t('se_legacy_name_badge')}
+                    </span>
+                  )}
                   <button
                     type="button"
                     disabled={merging}
