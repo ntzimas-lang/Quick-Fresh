@@ -212,10 +212,96 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
   }
 
-  function promptRename(oldName) {
-    const next = window.prompt(t('se_rename_prompt'), oldName);
-    if (next == null) return;
-    renameStore(oldName, next);
+  // Προσθήκη ΝΕΟΥ καταστήματος από εδώ (χωρίς να χρειάζεται να ανοίξεις κάποιο προϊόν) —
+  // το προσθέτει στη λίστα Κατάστημα (Cost tab) ΟΛΩΝ των προϊόντων (με κενές τιμές,
+  // συμπληρώνονται μετά ανά προϊόν) ώστε να εμφανιστεί αμέσως παντού, και δημιουργεί
+  // και εγγραφή Ψυγείο/Pico για αυτό.
+  const [newStoreName, setNewStoreName] = useState('');
+
+  async function addNewStore() {
+    const trimmed = newStoreName.trim();
+    if (!trimmed) return;
+    if (allKnownStoreNames.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      setError(t('se_new_store_exists'));
+      return;
+    }
+    setMerging(true);
+    setError('');
+    try {
+      const updated = await Promise.all(
+        products.map(async (p) => {
+          if ((p.stores || []).some((s) => (s.name || '').trim() === trimmed)) return p;
+          const nextStores = [...(p.stores || []), { name: trimmed, sellingPriceStore: null, sellingPriceQF: null }];
+          return Products.update(p.id, { ...p, stores: nextStores });
+        })
+      );
+      if (updated.length) setProducts((prev) => prev.map((p) => updated.find((u) => u.id === p.id) || p));
+      if (!records.some((r) => (r.store || '').trim() === trimmed)) {
+        const rec = await StoreEquipment.create({ store: trimmed, fridgeNo: '', picoNo: '' });
+        setRecords((prev) => [...prev, rec]);
+      }
+      setNewStoreName('');
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  // Διαγραφή καταστήματος: το αφαιρεί από τη λίστα Κατάστημα (Cost tab) και το Ενεργό Σε
+  // Κατάστημα ΟΛΩΝ των προϊόντων, καθώς και την εγγραφή Ψυγείο/Pico. Τα ήδη υπάρχοντα Ληγμένα/
+  // Καταστροφές με αυτό το όνομα ΔΕΝ πειράζονται — μένουν ως ιστορικό.
+  async function deleteStore(name) {
+    if (!window.confirm(`${t('se_delete_store_confirm_prefix')} "${name}" ${t('se_delete_store_confirm_suffix')}`)) return;
+    setMerging(true);
+    setError('');
+    try {
+      const affected = products.filter((p) =>
+        (p.stores || []).some((s) => (s.name || '').trim() === name) ||
+        (p.activeStores || []).includes(name)
+      );
+      const updated = await Promise.all(affected.map((p) => {
+        const nextStores = (p.stores || []).filter((s) => (s.name || '').trim() !== name);
+        const nextActive = (p.activeStores || []).filter((s) => (s || '').trim() !== name);
+        return Products.update(p.id, { ...p, stores: nextStores, activeStores: nextActive });
+      }));
+      if (updated.length) setProducts((prev) => prev.map((p) => updated.find((u) => u.id === p.id) || p));
+
+      const seRec = records.find((r) => (r.store || '').trim() === name);
+      if (seRec) {
+        await StoreEquipment.remove(seRec.id);
+        setRecords((prev) => prev.filter((r) => r.id !== seRec.id));
+      }
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  // Inline επεξεργασία ονόματος αντί για window.prompt() — σε κάποιες συσκευές/browsers
+  // (π.χ. μέσα σε webview) το native prompt() μπορεί να μην ανοίγει καθόλου, οπότε το ✎
+  // έμοιαζε να "μην κάνει τίποτα". Έτσι ο χρήστης βλέπει και επεξεργάζεται το όνομα μέσα
+  // στην ίδια τη σελίδα.
+  const [renamingName, setRenamingName] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  function startRename(oldName) {
+    setRenamingName(oldName);
+    setRenameValue(oldName);
+  }
+
+  function cancelRename() {
+    setRenamingName(null);
+    setRenameValue('');
+  }
+
+  async function confirmRename() {
+    const oldName = renamingName;
+    const next = renameValue;
+    setRenamingName(null);
+    setRenameValue('');
+    await renameStore(oldName, next);
   }
 
   function toggleSort(key) {
@@ -339,22 +425,81 @@ export default function StoreEquipmentView({ readOnly = false }) {
             <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px' }}>{t('se_store_list_desc')}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {allKnownStoreNames.map((name) => (
-                <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f4f6f8', borderRadius: 8, padding: '5px 4px 5px 12px' }}>
-                  <span style={{ fontSize: 13 }}>{name}</span>
-                  {!storeOptions.includes(name) && (
-                    <span title={t('se_legacy_name_hint')} style={{ fontSize: 10, color: '#c98a1f', fontWeight: 700, background: '#fff8e8', border: '1px solid #eddca6', borderRadius: 4, padding: '1px 5px' }}>
-                      {t('se_legacy_name_badge')}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    disabled={merging}
-                    onClick={() => promptRename(name)}
-                    title={t('se_rename_button')}
-                    style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#6b7684', padding: '4px 8px' }}
-                  >✎</button>
-                </div>
+                renamingName === name ? (
+                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#eef7f6', border: '1px solid #2f8f8a', borderRadius: 8, padding: '4px 4px 4px 8px' }}>
+                    <input
+                      autoFocus
+                      list="qf-rename-datalist"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') cancelRename(); }}
+                      style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '4px 6px', fontSize: 13, width: 220 }}
+                    />
+                    <button
+                      type="button"
+                      disabled={merging}
+                      onClick={confirmRename}
+                      title={t('se_rename_button')}
+                      style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: merging ? 'default' : 'pointer', fontSize: 13, padding: '5px 9px' }}
+                    >✓</button>
+                    <button
+                      type="button"
+                      onClick={cancelRename}
+                      title={t('common_cancel')}
+                      style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 13, padding: '5px 6px' }}
+                    >✕</button>
+                  </div>
+                ) : (
+                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f4f6f8', borderRadius: 8, padding: '5px 4px 5px 12px' }}>
+                    <span style={{ fontSize: 13 }}>{name}</span>
+                    {!storeOptions.includes(name) && (
+                      <span title={t('se_legacy_name_hint')} style={{ fontSize: 10, color: '#c98a1f', fontWeight: 700, background: '#fff8e8', border: '1px solid #eddca6', borderRadius: 4, padding: '1px 5px' }}>
+                        {t('se_legacy_name_badge')}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={merging}
+                      onClick={() => startRename(name)}
+                      title={t('se_rename_button')}
+                      style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#6b7684', padding: '4px 8px' }}
+                    >✎</button>
+                    <button
+                      type="button"
+                      disabled={merging}
+                      onClick={() => deleteStore(name)}
+                      title={t('se_delete_store_button')}
+                      style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#c0392b', padding: '4px 8px' }}
+                    >🗑</button>
+                  </div>
+                )
               ))}
+            </div>
+            {renamingName && (
+              <>
+                <datalist id="qf-rename-datalist">
+                  {allKnownStoreNames.filter((n) => n !== renamingName).map((n) => <option key={n} value={n} />)}
+                </datalist>
+                <p style={{ fontSize: 11, color: '#97a2b0', margin: '8px 0 0' }}>{t('se_rename_datalist_hint')}</p>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #eef1f4' }}>
+              <input
+                value={newStoreName}
+                onChange={(e) => setNewStoreName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') addNewStore(); }}
+                placeholder={t('se_new_store_placeholder')}
+                style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13, width: 240 }}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={merging || !newStoreName.trim()}
+                onClick={addNewStore}
+                style={{ padding: '6px 14px', fontSize: 12.5 }}
+              >
+                {t('se_new_store_button')}
+              </button>
             </div>
           </div>
         )}
