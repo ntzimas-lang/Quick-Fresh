@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StoreEquipment, Products } from '../api.js';
+import { StoreEquipment, Products, Entries, Destructions } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 function buildColumns(t) {
@@ -27,6 +27,8 @@ export default function StoreEquipmentView({ readOnly = false }) {
   const COLUMNS = buildColumns(t);
   const [records, setRecords] = useState([]);
   const [products, setProducts] = useState([]);
+  const [entries, setEntries] = useState([]);
+  const [destructions, setDestructions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'card'
@@ -36,8 +38,8 @@ export default function StoreEquipmentView({ readOnly = false }) {
   const [sortDir, setSortDir] = useState('asc');
 
   useEffect(() => {
-    Promise.all([StoreEquipment.list(), Products.list()])
-      .then(([se, prods]) => { setRecords(se); setProducts(prods); setLoading(false); })
+    Promise.all([StoreEquipment.list(), Products.list(), Entries.list(), Destructions.list()])
+      .then(([se, prods, ent, destr]) => { setRecords(se); setProducts(prods); setEntries(ent); setDestructions(destr); setLoading(false); })
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
   }, []);
 
@@ -172,6 +174,22 @@ export default function StoreEquipmentView({ readOnly = false }) {
       } else if (seOld) {
         const updatedRec = await StoreEquipment.update(seOld.id, { ...seOld, store: trimmed });
         setRecords((prev) => prev.map((r) => (r.id === seOld.id ? updatedRec : r)));
+      }
+
+      // Το Report Ληγμένα και οι Καταστροφές κρατάνε δικό τους αντίγραφο του ονόματος
+      // καταστήματος (δεν διαβάζουν από τη λίστα Κατάστημα σε πραγματικό χρόνο) — γι' αυτό
+      // η μετονομασία πρέπει να ενημερώσει και τις ήδη υπάρχουσες καταχωρήσεις τους, αλλιώς
+      // θα συνέχιζαν να δείχνουν το παλιό όνομα.
+      const affectedEntries = entries.filter((e) => (e.store || '').trim() === oldName);
+      const updatedEntries = await Promise.all(affectedEntries.map((e) => Entries.update(e.id, { ...e, store: trimmed })));
+      if (updatedEntries.length) {
+        setEntries((prev) => prev.map((e) => updatedEntries.find((u) => u.id === e.id) || e));
+      }
+
+      const affectedDestructions = destructions.filter((d) => (d.store || '').trim() === oldName);
+      const updatedDestructions = await Promise.all(affectedDestructions.map((d) => Destructions.update(d.id, { ...d, store: trimmed })));
+      if (updatedDestructions.length) {
+        setDestructions((prev) => prev.map((d) => updatedDestructions.find((u) => u.id === d.id) || d));
       }
     } catch (err) {
       setError(err.message || String(err));
