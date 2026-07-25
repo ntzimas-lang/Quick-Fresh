@@ -427,8 +427,7 @@ export default function DashboardView({ isDriver = false } = {}) {
                             {topProducts.map((p) => (
                               <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
                                 <td style={{ padding: '6px 0' }}>{p.name}</td>
-                                <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>€{p.netRevenue.toFixed(0)}</td>
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -443,8 +442,7 @@ export default function DashboardView({ isDriver = false } = {}) {
                             {worstProducts.map((p) => (
                               <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
                                 <td style={{ padding: '6px 0' }}>{p.name}</td>
-                                <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>€{p.netRevenue.toFixed(0)}</td>
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
                               </tr>
                             ))}
                           </tbody>
