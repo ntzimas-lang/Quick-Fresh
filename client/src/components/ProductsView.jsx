@@ -67,6 +67,11 @@ function statusColor(value) {
 function statusBadgeStyle(color) {
   return { display: 'inline-block', color: '#fff', background: color, padding: '3px 9px', borderRadius: 10, fontSize: 11.5, fontWeight: 600 };
 }
+// Η τιμή αποθηκεύεται πάντα στα ελληνικά ('ΕΝΤΟΣ'/'ΕΚΤΟΣ') στη βάση — μόνο η ΕΜΦΑΝΙΣΗ
+// μεταφράζεται όταν η γλώσσα είναι Αγγλικά.
+function statusLabel(value, t) {
+  return value === 'ΕΚΤΟΣ' ? t('p_status_ektos') : t('p_status_entos');
+}
 
 function computeFC(p) {
   const vat = p.cost?.vatPercent || 0;
@@ -528,7 +533,7 @@ export default function ProductsView({ readOnly = false }) {
         return value && value[0] ? <img src={value[0]} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4 }} /> : <span style={{ color: '#d7dce2' }}>—</span>;
       }
       if (col.key === 'status') {
-        return <span style={statusBadgeStyle(statusColor(p.status || 'ΕΝΤΟΣ'))}>{p.status || 'ΕΝΤΟΣ'}</span>;
+        return <span style={statusBadgeStyle(statusColor(p.status || 'ΕΝΤΟΣ'))}>{statusLabel(p.status || 'ΕΝΤΟΣ', t)}</span>;
       }
       if (col.key === 'sellingPrice' || col.key === 'ptk') return isFinite(value) ? fmtEuro(value) : '—';
       if (storeColRO && (storeColRO.field === 'price' || storeColRO.field === 'priceQF')) return isFinite(value) ? fmtEuro(value) : '—';
@@ -608,8 +613,8 @@ export default function ProductsView({ readOnly = false }) {
           onChange={(e) => updateProductInline(p.id, (prod) => ({ ...prod, status: e.target.value }))}
           style={{ ...inlineInputStyle, background: statusColor(sv), color: '#fff', fontWeight: 600, borderRadius: 10 }}
         >
-          <option>ΕΝΤΟΣ</option>
-          <option>ΕΚΤΟΣ</option>
+          <option value="ΕΝΤΟΣ">{statusLabel('ΕΝΤΟΣ', t)}</option>
+          <option value="ΕΚΤΟΣ">{statusLabel('ΕΚΤΟΣ', t)}</option>
         </select>
       );
     }
@@ -914,8 +919,8 @@ export default function ProductsView({ readOnly = false }) {
                     onChange={(e) => updateField('status', e.target.value)}
                     style={{ background: statusColor(current.status || 'ΕΝΤΟΣ'), color: '#fff', fontWeight: 600, border: 'none' }}
                   >
-                    <option>ΕΝΤΟΣ</option>
-                    <option>ΕΚΤΟΣ</option>
+                    <option value="ΕΝΤΟΣ">{statusLabel('ΕΝΤΟΣ', t)}</option>
+                    <option value="ΕΚΤΟΣ">{statusLabel('ΕΚΤΟΣ', t)}</option>
                   </select>
                 </div>
                 <div className="field">
