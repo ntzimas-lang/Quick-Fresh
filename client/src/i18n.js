@@ -30,7 +30,8 @@ export const translations = {
     se_merge_desc: 'Βρέθηκαν ονόματα καταστημάτων στα Προϊόντα που μοιάζουν πολύ μεταξύ τους (π.χ. κενό, κεφαλαία/πεζά, τόνος). Πάτησε "Ενοποίηση" για να ενημερωθούν αυτόματα όλα τα προϊόντα ώστε να χρησιμοποιούν το ίδιο, σωστό όνομα.',
     se_merge_button: 'Ενοποίηση',
     se_merge_apply_all: 'Εφαρμογή όλων',
-    p_stores_managed_hint: 'Η λίστα καταστημάτων διαχειρίζεται από τη σελίδα "Καταστήματα".',
+    se_source_hint: 'Τα καταστήματα διαχειρίζονται από τα Προϊόντα → Cost → Κατάστημα. Εδώ επιλέγεις μόνο σε ποιο κατάστημα ανήκει το Ψυγείο/Pico.',
+    p_stores_managed_hint: 'Νέο κατάστημα προστίθεται από την καρτέλα "Cost" (πεδίο Κατάστημα).',
     e_mode_expiry: 'Καταχώρηση Λήξης',
     e_mode_destruction: 'Καταχώρηση Καταστροφής',
     logout: 'Αποσύνδεση',
@@ -286,6 +287,7 @@ export const translations = {
     sales_col_uploaded: 'Ανέβηκε',
 
     // Καταστροφή προϊόντος
+    x_date_label: 'Ημερομηνία καταστροφής',
     x_reason_label: 'Λόγος καταστροφής (προαιρετικό)',
     x_reason_placeholder: 'π.χ. έληξε, φθορά συσκευασίας...',
     x_auto_remove_hint: 'Η καταχώρηση αυτού του προϊόντος στα Ληγμένα (ίδιο κατάστημα) θα αφαιρεθεί αυτόματα.',
@@ -332,7 +334,8 @@ export const translations = {
     se_merge_desc: 'Found store names in Products that look very similar (e.g. spacing, casing, accents). Click "Merge" to automatically update all products to use the same, correct name.',
     se_merge_button: 'Merge',
     se_merge_apply_all: 'Apply all',
-    p_stores_managed_hint: 'The store list is managed from the "Stores" page.',
+    se_source_hint: 'Stores are managed from Products → Cost → Store. Here you only pick which store a Fridge/Pico belongs to.',
+    p_stores_managed_hint: 'A new store is added from the "Cost" tab (Store field).',
     e_mode_expiry: 'Expiry Entry',
     e_mode_destruction: 'Destruction Entry',
     logout: 'Log Out',
@@ -577,6 +580,7 @@ export const translations = {
     sales_col_rows: 'Products',
     sales_col_uploaded: 'Uploaded',
 
+    x_date_label: 'Destruction date',
     x_reason_label: 'Reason (optional)',
     x_reason_placeholder: 'e.g. expired, damaged packaging...',
     x_auto_remove_hint: 'Any expired-report entry for this product (same store) will be removed automatically.',
