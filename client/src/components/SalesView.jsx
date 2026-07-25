@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { SalesDaily, SalesProducts } from '../api.js';
+import { SalesDaily, SalesProducts, Products } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
-const STORE_CANDIDATES = ['DEMO', 'Plaisio', 'Novibet', 'Kryoneri', 'Nestle', 'AIA', 'Metlen', 'ACS Courier'];
-
-function normalizeStoreName(raw) {
+// Το "Location" στα reports της POS δεν γράφεται πάντα ίδιο ακριβώς με το όνομα
+// καταστήματος της εφαρμογής (π.χ. "Kryoneri" στο report vs "Gefsinus Kryoneri Q&F"
+// στα Προϊόντα) — ψάχνουμε μερική αντιστοιχία μέσα στα ΠΡΑΓΜΑΤΙΚΑ ονόματα από τη
+// κεντρική λίστα καταστημάτων (Προϊόντα → Cost → Κατάστημα) αντί για hardcoded λίστα.
+function normalizeStoreName(raw, knownStores) {
   if (!raw) return raw || '';
   const lower = String(raw).toLowerCase();
-  const match = STORE_CANDIDATES.find((s) => lower.includes(s.toLowerCase()));
+  const match = (knownStores || []).find((s) => lower.includes(s.toLowerCase()) || s.toLowerCase().includes(lower));
   return match || String(raw).trim();
 }
 
@@ -53,7 +55,7 @@ function findHeaderRow(rows, mustInclude) {
   return -1;
 }
 
-function parseDailySalesSummary(workbook) {
+function parseDailySalesSummary(workbook, knownStores) {
   const sheetName = workbook.SheetNames.find((n) => /daily/i.test(n)) || workbook.SheetNames[0];
   const ws = workbook.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
@@ -82,7 +84,7 @@ function parseDailySalesSummary(workbook) {
     if (!location || location.toLowerCase() === 'total') continue;
     const isoDate = toIsoDate(r[iDate]);
     if (!isoDate) continue;
-    const store = normalizeStoreName(location);
+    const store = normalizeStoreName(location, knownStores);
     const totalSales = num(r[iTotal]);
     const tax = num(r[iTax]);
     out.push({
@@ -107,7 +109,7 @@ function parseDailySalesSummary(workbook) {
   return out;
 }
 
-function parseSalesAnalysisReport(workbook, storeOverride) {
+function parseSalesAnalysisReport(workbook, storeOverride, knownStores) {
   const summarySheetName = workbook.SheetNames.find((n) => /summary/i.test(n)) || workbook.SheetNames[0];
   const detailsSheetName = workbook.SheetNames.find((n) => /details/i.test(n));
   const wsSummary = workbook.Sheets[summarySheetName];
@@ -147,7 +149,7 @@ function parseSalesAnalysisReport(workbook, storeOverride) {
       const locs = new Set();
       for (let i = dHeaderIdx + 1; i < rowsDetails.length; i++) {
         const loc = rowsDetails[i] && rowsDetails[i][iLoc];
-        if (loc) locs.add(normalizeStoreName(loc));
+        if (loc) locs.add(normalizeStoreName(loc, knownStores));
       }
       if (locs.size === 1) resolvedStore = [...locs][0];
     }
@@ -195,9 +197,26 @@ export default function SalesView({ canDelete = false }) {
   const [busyProducts, setBusyProducts] = useState(false);
   const [message, setMessage] = useState(null); // { type: 'ok'|'error', text }
   const [pendingStoreFile, setPendingStoreFile] = useState(null); // file waiting for store pick
-  const [storePick, setStorePick] = useState(STORE_CANDIDATES[0]);
+  const [storePick, setStorePick] = useState('');
+  const [allProducts, setAllProducts] = useState([]);
   const dailyInputRef = useRef(null);
   const productsInputRef = useRef(null);
+
+  // Η λίστα καταστημάτων προέρχεται από την ίδια κεντρική λίστα με παντού αλλού
+  // στην εφαρμογή (Προϊόντα → Cost → Κατάστημα) — όχι από ξεχωριστή/παλιωμένη λίστα.
+  const storeOptions = useMemo(() => {
+    const set = new Set();
+    allProducts.forEach((p) => (p.stores || []).forEach((s) => s && s.name && set.add(s.name)));
+    return Array.from(set).sort();
+  }, [allProducts]);
+
+  useEffect(() => {
+    Products.list().then(setAllProducts).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!storePick && storeOptions.length) setStorePick(storeOptions[0]);
+  }, [storeOptions, storePick]);
 
   async function refresh() {
     setLoading(true);
@@ -230,7 +249,7 @@ export default function SalesView({ canDelete = false }) {
     setMessage(null);
     try {
       const wb = await readWorkbook(file);
-      const rows = parseDailySalesSummary(wb);
+      const rows = parseDailySalesSummary(wb, storeOptions);
       if (!rows.length) throw new Error('no_rows');
       await SalesDaily.upsertMany(rows);
       setMessage({ type: 'ok', text: t('sales_upload_daily_ok').replace('{n}', rows.length) });
@@ -256,7 +275,7 @@ export default function SalesView({ canDelete = false }) {
     setMessage(null);
     try {
       const wb = await readWorkbook(file);
-      const { rows } = parseSalesAnalysisReport(wb, storePick);
+      const { rows } = parseSalesAnalysisReport(wb, storePick, storeOptions);
       if (!rows.length) throw new Error('no_rows');
       await SalesProducts.insertBatch(rows);
       setMessage({ type: 'ok', text: t('sales_upload_products_ok').replace('{n}', rows.length) });
@@ -333,7 +352,8 @@ export default function SalesView({ canDelete = false }) {
                 <div style={{ fontSize: 12.5, marginBottom: 8 }}>{t('sales_pick_store_prefix')} <strong>{pendingStoreFile.name}</strong></div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <select value={storePick} onChange={(e) => setStorePick(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}>
-                    {STORE_CANDIDATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {storeOptions.length === 0 && <option value="">{t('common_select_placeholder')}</option>}
+                    {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                   <button className="btn-primary" onClick={confirmProductsUpload} disabled={busyProducts} style={{ padding: '6px 14px' }}>
                     {busyProducts ? t('sales_uploading') : t('sales_confirm_upload')}
