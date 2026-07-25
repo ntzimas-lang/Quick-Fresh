@@ -22,6 +22,15 @@ function normalizeStoreKey(s) {
     .toLowerCase();
 }
 
+// fridgeNo/picoNo ήταν παλιά ένα απλό κείμενο (ένα ψυγείο/pico ανά κατάστημα) — τώρα είναι
+// λίστα, ώστε ένα κατάστημα να μπορεί να έχει πολλά. Παλιές εγγραφές με απλό string
+// μετατρέπονται αυτόματα σε λίστα του ενός στοιχείου.
+function toArray(v) {
+  if (Array.isArray(v)) return v.filter((x) => x !== null && x !== undefined && String(x).trim() !== '');
+  if (v === null || v === undefined || String(v).trim() === '') return [];
+  return [String(v).trim()];
+}
+
 export default function StoreEquipmentView({ readOnly = false }) {
   const { t } = useLanguage();
   const COLUMNS = buildColumns(t);
@@ -128,7 +137,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
       }));
       setProducts((prev) => prev.map((p) => updated.find((u) => u.id === p.id) || p));
       if (!records.some((r) => (r.store || '').trim() === canonical)) {
-        const rec = await StoreEquipment.create({ store: canonical, fridgeNo: '', picoNo: '' });
+        const rec = await StoreEquipment.create({ store: canonical, fridgeNo: [], picoNo: [] });
         setRecords((prev) => [...prev, rec]);
       }
     } catch (err) {
@@ -181,7 +190,10 @@ export default function StoreEquipmentView({ readOnly = false }) {
       const seOld = records.find((r) => (r.store || '').trim() === oldName);
       const seTarget = records.find((r) => (r.store || '').trim() === trimmed);
       if (seOld && seTarget) {
-        const mergedFields = { fridgeNo: seTarget.fridgeNo || seOld.fridgeNo || '', picoNo: seTarget.picoNo || seOld.picoNo || '' };
+        const mergedFields = {
+          fridgeNo: Array.from(new Set([...toArray(seTarget.fridgeNo), ...toArray(seOld.fridgeNo)])),
+          picoNo: Array.from(new Set([...toArray(seTarget.picoNo), ...toArray(seOld.picoNo)]))
+        };
         const updatedTarget = await StoreEquipment.update(seTarget.id, { ...seTarget, ...mergedFields });
         await StoreEquipment.remove(seOld.id);
         setRecords((prev) => prev.filter((r) => r.id !== seOld.id).map((r) => (r.id === updatedTarget.id ? updatedTarget : r)));
@@ -237,7 +249,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
       );
       if (updated.length) setProducts((prev) => prev.map((p) => updated.find((u) => u.id === p.id) || p));
       if (!records.some((r) => (r.store || '').trim() === trimmed)) {
-        const rec = await StoreEquipment.create({ store: trimmed, fridgeNo: '', picoNo: '' });
+        const rec = await StoreEquipment.create({ store: trimmed, fridgeNo: [], picoNo: [] });
         setRecords((prev) => [...prev, rec]);
       }
       setNewStoreName('');
@@ -319,8 +331,8 @@ export default function StoreEquipmentView({ readOnly = false }) {
       const q = search.trim().toLowerCase();
       rows = rows.filter((r) =>
         (r.store || '').toLowerCase().includes(q) ||
-        (r.fridgeNo || '').toLowerCase().includes(q) ||
-        (r.picoNo || '').toLowerCase().includes(q)
+        toArray(r.fridgeNo).join(' ').toLowerCase().includes(q) ||
+        toArray(r.picoNo).join(' ').toLowerCase().includes(q)
       );
     }
     const sorted = [...rows].sort((a, b) => {
@@ -352,7 +364,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
 
   async function handleCreate() {
     try {
-      const record = await StoreEquipment.create({ store: '', fridgeNo: '', picoNo: '' });
+      const record = await StoreEquipment.create({ store: '', fridgeNo: [], picoNo: [] });
       setRecords((prev) => [...prev, record]);
       setSearch(''); // αλλιώς το νέο (άδειο) κατάστημα μπορεί να φιλτραριστεί εκτός λίστας
       setViewMode('card');
@@ -380,6 +392,67 @@ export default function StoreEquipmentView({ readOnly = false }) {
     } catch (err) {
       setError(err.message || String(err));
     }
+  }
+
+  // Πολλαπλά Ψυγεία/Pico ανά κατάστημα: κάθε γραμμή fridgeNo/picoNo είναι πλέον λίστα.
+  // "drafts" κρατάει το κείμενο που πληκτρολογείται πριν προστεθεί ένα νέο στοιχείο.
+  const [drafts, setDrafts] = useState({});
+
+  async function addEquipmentValue(id, field) {
+    const key = `${id}:${field}`;
+    const val = (drafts[key] || '').trim();
+    if (!val) return;
+    const current = records.find((r) => r.id === id);
+    if (!current) return;
+    const nextArr = [...toArray(current[field]), val];
+    setDrafts((d) => ({ ...d, [key]: '' }));
+    setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: nextArr } : r)));
+    try {
+      await StoreEquipment.update(id, { ...current, [field]: nextArr });
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  }
+
+  async function removeEquipmentValue(id, field, idx) {
+    const current = records.find((r) => r.id === id);
+    if (!current) return;
+    const nextArr = toArray(current[field]).filter((_, i) => i !== idx);
+    setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: nextArr } : r)));
+    try {
+      await StoreEquipment.update(id, { ...current, [field]: nextArr });
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  }
+
+  function renderMultiField(r, field, placeholder, chipWidth) {
+    const key = `${r.id}:${field}`;
+    const values = toArray(r[field]);
+    if (readOnly) return values.length ? values.join(', ') : '—';
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+        {values.map((v, i) => (
+          <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#eef1f4', borderRadius: 5, padding: '2px 3px 2px 8px', fontSize: 12.5, whiteSpace: 'nowrap' }}>
+            {v}
+            <button
+              type="button"
+              onClick={() => removeEquipmentValue(r.id, field, i)}
+              title={t('common_delete')}
+              style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 12, padding: '0 3px', lineHeight: 1 }}
+            >✕</button>
+          </span>
+        ))}
+        <input
+          value={drafts[key] || ''}
+          onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentValue(r.id, field); } }}
+          onBlur={() => addEquipmentValue(r.id, field)}
+          placeholder={placeholder}
+          style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: chipWidth || 90 }}
+        />
+      </div>
+    );
   }
 
   const current = filtered[cardIndex];
@@ -573,22 +646,10 @@ export default function StoreEquipmentView({ readOnly = false }) {
                         )}
                       </td>
                       <td style={{ padding: '6px 12px' }}>
-                        {readOnly ? (r.fridgeNo || '—') : (
-                          <input
-                            value={r.fridgeNo || ''}
-                            onChange={(e) => handleFieldChange(r.id, 'fridgeNo', e.target.value)}
-                            style={{ width: '100%', border: '1px solid #e1e5ea', borderRadius: 6, padding: '5px 6px', fontSize: 13 }}
-                          />
-                        )}
+                        {renderMultiField(r, 'fridgeNo', t('se_add_fridge_placeholder'))}
                       </td>
                       <td style={{ padding: '6px 12px' }}>
-                        {readOnly ? (r.picoNo || '—') : (
-                          <input
-                            value={r.picoNo || ''}
-                            onChange={(e) => handleFieldChange(r.id, 'picoNo', e.target.value)}
-                            style={{ width: '100%', border: '1px solid #e1e5ea', borderRadius: 6, padding: '5px 6px', fontSize: 13 }}
-                          />
-                        )}
+                        {renderMultiField(r, 'picoNo', t('se_add_pico_placeholder'))}
                       </td>
                       {!readOnly && (
                         <td style={{ padding: '6px 12px' }}>
@@ -638,19 +699,11 @@ export default function StoreEquipmentView({ readOnly = false }) {
                     </div>
                     <div className="field" style={{ marginBottom: 14 }}>
                       <label>{t('se_col_fridgeNo')}</label>
-                      <input
-                        disabled={readOnly}
-                        value={current.fridgeNo || ''}
-                        onChange={(e) => handleFieldChange(current.id, 'fridgeNo', e.target.value)}
-                      />
+                      {renderMultiField(current, 'fridgeNo', t('se_add_fridge_placeholder'), 140)}
                     </div>
                     <div className="field" style={{ marginBottom: 18 }}>
                       <label>{t('se_col_picoNo')}</label>
-                      <input
-                        disabled={readOnly}
-                        value={current.picoNo || ''}
-                        onChange={(e) => handleFieldChange(current.id, 'picoNo', e.target.value)}
-                      />
+                      {renderMultiField(current, 'picoNo', t('se_add_pico_placeholder'), 140)}
                     </div>
                     {!readOnly && (
                       <div style={{ display: 'flex', gap: 8 }}>
