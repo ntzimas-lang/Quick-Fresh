@@ -302,9 +302,6 @@ export default function ProductsView({ readOnly = false }) {
     if (!name || !name.trim()) return;
     await addStoreEverywhere(name);
   }
-  function removeStore(idx) {
-    applyCardUpdate((prev) => ({ ...prev, stores: prev.stores.filter((_, i) => i !== idx) }));
-  }
   function toggleActiveStore(name) {
     applyCardUpdate((prev) => {
       const active = prev.activeStores.includes(name)
@@ -1028,7 +1025,6 @@ export default function ProductsView({ readOnly = false }) {
                     <th>{t('p_stores_col_fc_store')}</th>
                     <th>{t('p_stores_col_price_qf')}</th>
                     <th>{t('p_stores_col_fc_qf')}</th>
-                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1044,7 +1040,6 @@ export default function ProductsView({ readOnly = false }) {
                         <td><div className="fc-cell">{fmtPct(fcStore)}</div></td>
                         <td><input disabled={readOnly} type="number" step="0.01" value={s.sellingPriceQF ?? ''} onChange={(e) => updateStore(i, 'sellingPriceQF', e.target.value)} /></td>
                         <td><div className="fc-cell">{fmtPct(fcQF)}</div></td>
-                        <td>{!readOnly && <button className="btn-danger" onClick={() => removeStore(i)}>✕</button>}</td>
                       </tr>
                     );
                   })}
