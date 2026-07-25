@@ -24,8 +24,33 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Ίδια λογική με το Report Ληγμένα — πόσες ημέρες μένουν (αρνητικό = ήδη έληξε).
+function daysDiff(expiryDateStr) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = new Date(expiryDateStr + 'T00:00:00');
+  return Math.round((expiry.getTime() - today.getTime()) / 86400000);
+}
+
+function diffLabel(diff, t, lang) {
+  if (diff < 0) {
+    const days = Math.abs(diff);
+    if (lang === 'en') return `Expired ${days} day${days === 1 ? '' : 's'} ago`;
+    return `Έληξε πριν ${days} ${days === 1 ? 'ημέρα' : 'ημέρες'}`;
+  }
+  if (diff === 0) return t('r_diff_today');
+  if (lang === 'en') return `in ${diff} day${diff === 1 ? '' : 's'}`;
+  return `σε ${diff} ${diff === 1 ? 'ημέρα' : 'ημέρες'}`;
+}
+
+function diffColor(diff) {
+  if (diff <= 0) return '#c0392b';
+  if (diff <= 7) return '#c98a1f';
+  return '#2f8f8a';
+}
+
 export default function ProductEntryView() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [entryMode, setEntryMode] = useState('expiry');
@@ -45,6 +70,8 @@ export default function ProductEntryView() {
   const [recentEntries, setRecentEntries] = useState([]);
   const [noBarcodeQuery, setNoBarcodeQuery] = useState('');
   const [descQuery, setDescQuery] = useState('');
+  const [expiredEntries, setExpiredEntries] = useState([]);
+  const [entryQuery, setEntryQuery] = useState('');
 
   const scannerDivId = 'qf-barcode-scanner-region';
   const html5QrRef = useRef(null);
@@ -54,6 +81,38 @@ export default function ProductEntryView() {
       .then((rows) => { setProducts(rows); setLoadingProducts(false); })
       .catch(() => setLoadingProducts(false));
   }, []);
+
+  // Στην Καταχώρηση Καταστροφής επιλέγουμε ΑΠΟ τις ίδιες καταχωρήσεις που δείχνει το
+  // Report Ληγμένα (όχι ελεύθερη αναζήτηση σε όλα τα προϊόντα) — έτσι δεν καταστρέφεται
+  // κάτι που δεν έχει καν καταχωρηθεί ως ληγμένο.
+  useEffect(() => {
+    Entries.list().then(setExpiredEntries).catch(() => {});
+  }, []);
+
+  const expiredFiltered = useMemo(() => {
+    const q = entryQuery.trim().toLowerCase();
+    const base = q
+      ? expiredEntries.filter((e) =>
+          (e.productItemCode || '').toLowerCase().includes(q) ||
+          (e.productDescription || '').toLowerCase().includes(q) ||
+          (e.store || '').toLowerCase().includes(q)
+        )
+      : expiredEntries;
+    return [...base].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)).slice(0, 40);
+  }, [expiredEntries, entryQuery]);
+
+  function selectExpiredEntry(entry) {
+    setMatchedProduct({
+      id: entry.productId,
+      itemCode: entry.productItemCode,
+      descriptionErp: entry.productDescription,
+      descriptionGr: entry.productDescription
+    });
+    setStore(entry.store || '');
+    setQuantity(entry.quantity != null ? String(entry.quantity) : '1');
+    setNotFoundBarcode('');
+    setScanError('');
+  }
 
   useEffect(() => {
     return () => {
@@ -203,6 +262,7 @@ export default function ProductEntryView() {
     setDestructionDate(todayIso());
     setNoBarcodeQuery('');
     setDescQuery('');
+    setEntryQuery('');
   }
 
   async function handleSubmit(e) {
@@ -232,6 +292,9 @@ export default function ProductEntryView() {
           date: destructionDate
         });
         setRecentEntries((prev) => [{ ...record, removedEntries, type: 'destruction' }, ...prev].slice(0, 8));
+        // Η καταστροφή αφαιρεί αυτόματα τις αντίστοιχες καταχωρήσεις Ληγμένα στο backend —
+        // ξαναφορτώνουμε τη λίστα ώστε να μην εμφανίζονται πια εδώ ούτε στο Report Ληγμένα.
+        Entries.list().then(setExpiredEntries).catch(() => {});
       }
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
@@ -273,7 +336,48 @@ export default function ProductEntryView() {
             ))}
           </div>
 
-          {!matchedProduct && !notFoundBarcode && (
+          {!matchedProduct && !notFoundBarcode && entryMode === 'destruction' && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18 }}>
+                <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
+                  {t('x_pick_expired_label')}
+                </label>
+                <input
+                  value={entryQuery}
+                  onChange={(e) => setEntryQuery(e.target.value)}
+                  placeholder={t('x_pick_expired_placeholder')}
+                  autoFocus
+                  style={{ width: '100%', padding: '9px 10px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 13.5, marginBottom: 8 }}
+                />
+                <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid #eef1f4', borderRadius: 8 }}>
+                  {expiredFiltered.length === 0 ? (
+                    <p style={{ padding: 12, fontSize: 12.5, color: '#97a2b0', margin: 0 }}>{t('x_no_expired_entries')}</p>
+                  ) : (
+                    expiredFiltered.map((entry) => {
+                      const diff = daysDiff(entry.expiryDate);
+                      return (
+                        <div
+                          key={entry.id}
+                          onClick={() => selectExpiredEntry(entry)}
+                          style={{ padding: '9px 12px', borderBottom: '1px solid #f1f3f5', cursor: 'pointer', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+                        >
+                          <span>
+                            <strong>{entry.productItemCode || '—'}</strong>
+                            <span style={{ color: '#6b7684' }}> — {entry.productDescription || ''} — {entry.store}{entry.quantity != null ? ` — ${entry.quantity}` : ''}</span>
+                          </span>
+                          <span style={{ color: '#fff', background: diffColor(diff), padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {diffLabel(diff, t, lang)}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!matchedProduct && !notFoundBarcode && entryMode !== 'destruction' && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
                 {METHODS.map((m) => (
