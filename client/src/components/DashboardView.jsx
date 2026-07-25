@@ -237,8 +237,8 @@ export default function DashboardView({ isDriver = false } = {}) {
     : '';
 
   const productTotalsList = Object.entries(productTotals).map(([name, v]) => ({ name, ...v }));
-  const topProducts = [...productTotalsList].sort((a, b) => b.netRevenue - a.netRevenue).slice(0, 20);
-  const worstProducts = [...productTotalsList].sort((a, b) => a.netRevenue - b.netRevenue).slice(0, 20);
+  const topProducts = [...productTotalsList].sort((a, b) => b.sold - a.sold).slice(0, 20);
+  const worstProducts = [...productTotalsList].sort((a, b) => a.sold - b.sold).slice(0, 20);
   const categoryBreakdown = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const categoryMax = categoryBreakdown.length ? categoryBreakdown[0][1] : 1;
 
