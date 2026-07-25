@@ -90,14 +90,16 @@ export default function ProductEntryView() {
   }, []);
 
   const expiredFiltered = useMemo(() => {
+    // Μόνο ό,τι έχει ΗΔΗ λήξει (diff < 0) — όχι "λήγει σήμερα" ή "σε X ημέρες".
+    const alreadyExpired = expiredEntries.filter((e) => e.expiryDate && daysDiff(e.expiryDate) < 0);
     const q = entryQuery.trim().toLowerCase();
     const base = q
-      ? expiredEntries.filter((e) =>
+      ? alreadyExpired.filter((e) =>
           (e.productItemCode || '').toLowerCase().includes(q) ||
           (e.productDescription || '').toLowerCase().includes(q) ||
           (e.store || '').toLowerCase().includes(q)
         )
-      : expiredEntries;
+      : alreadyExpired;
     return [...base].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)).slice(0, 40);
   }, [expiredEntries, entryQuery]);
 
