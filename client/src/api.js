@@ -202,6 +202,17 @@ export const Entries = {
   async remove(id) {
     const { error } = await supabase.from('product_entries').delete().eq('id', id);
     if (error) throw error;
+  },
+  async update(id, body) {
+    const record = { ...body, id };
+    const { data, error } = await supabase
+      .from('product_entries')
+      .update({ data: record, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
   }
 };
 
@@ -294,6 +305,17 @@ export const Destructions = {
   async remove(id) {
     const { error } = await supabase.from('destructions').delete().eq('id', id);
     if (error) throw error;
+  },
+  async update(id, body) {
+    const record = { ...body, id };
+    const { data, error } = await supabase
+      .from('destructions')
+      .update({ data: record, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
   }
 };
 
