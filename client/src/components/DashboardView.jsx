@@ -17,6 +17,26 @@ function monthLabel(key, lang) {
   return `${labels[Number(m) - 1]} ${y}`;
 }
 
+function dayLabel(iso) {
+  const [, m, d] = String(iso).split('-');
+  return `${d}/${m}`;
+}
+
+// Εξάγει τον πραγματικό μήνα της περιόδου ενός Sales Analysis Report από το periodLabel
+// του (π.χ. "01/05/2026 00:00 to 24/07/2026 23:59" -> κρατάμε την ΤΕΛΕΥΤΑΙΑ ημερομηνία,
+// δηλ. το τέλος της περιόδου, -> '2026-07'). Αν δεν βρεθεί ημερομηνία μέσα στο κείμενο,
+// πέφτουμε πίσω στο uploadedAt (πότε έγινε το upload) — αλλά αυτό ΔΕΝ είναι η πραγματική
+// περίοδος πωλήσεων, γι' αυτό προτιμάται πάντα το periodLabel όταν υπάρχει.
+function periodMonthKey(p) {
+  const label = p.periodLabel || '';
+  const matches = [...label.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
+  if (matches.length) {
+    const last = matches[matches.length - 1];
+    return `${last[3]}-${last[2]}`;
+  }
+  return p.uploadedAt ? monthKey(p.uploadedAt) : null;
+}
+
 // Μετατρέπει μια σειρά τιμών σε συντεταγμένες SVG, κανονικοποιημένες 0-100
 // ώστε πολλές καμπύλες με διαφορετική κλίμακα να χωράνε στο ίδιο γράφημα.
 // Επιστρέφει και την πραγματική τιμή ανά σημείο, για να δείχνουμε νούμερα πάνω στο γράφημα.
@@ -171,25 +191,45 @@ export default function DashboardView({ isDriver = false } = {}) {
   const netCoords = trendCoords(monthNet);
   const txCoords = trendCoords(monthTx);
 
-  // Top 5 προϊόντα + κατηγορίες ανά μήνα: ομαδοποίηση των uploads με βάση τον μήνα
-  // μεταφόρτωσης, κρατώντας μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα ΜΕΣΑ σε κάθε μήνα
-  // (ώστε επαναληπτικά uploads του ίδιου μήνα να μην διπλομετρηθούν).
+  // Τάση ανά ημέρα (καθαρές πωλήσεις / συναλλαγές) — ίδια λογική με το μηνιαίο γράφημα,
+  // αλλά με ένα σημείο ανά ημερομηνία. Το πλάτος του γραφήματος μεγαλώνει ανάλογα με τον
+  // αριθμό ημερών ώστε να μη στριμώχνονται οι ετικέτες, μέσα σε οριζόντια scrollable θήκη.
+  const dayMap = {};
+  salesDaily.forEach((r) => {
+    if (!r.date) return;
+    if (!dayMap[r.date]) dayMap[r.date] = { tx: 0, net: 0 };
+    dayMap[r.date].tx += r.transactions || 0;
+    dayMap[r.date].net += r.netSales || 0;
+  });
+  const dayKeys = Object.keys(dayMap).sort();
+  const dayNet = dayKeys.map((k) => dayMap[k].net);
+  const dayTx = dayKeys.map((k) => dayMap[k].tx);
+  const dayChartWidth = Math.max(360, dayKeys.length * 42);
+  const dayNetCoords = trendCoords(dayNet, dayChartWidth);
+  const dayTxCoords = trendCoords(dayTx, dayChartWidth);
+
+  // Top 5 προϊόντα + κατηγορίες ανά μήνα: ομαδοποίηση των uploads με βάση την ΠΡΑΓΜΑΤΙΚΗ
+  // περίοδο του report (periodMonthKey — από το periodLabel, όχι πότε έγινε το upload),
+  // κρατώντας μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα ΜΕΣΑ σε κάθε μήνα περιόδου
+  // (ώστε επαναληπτικά uploads της ίδιας περιόδου να μην διπλομετρηθούν).
   const latestBatchByStoreMonth = {};
   salesProducts.forEach((p) => {
-    if (!p.uploadedAt) return;
-    const key = monthKey(p.uploadedAt) + '|' + p.store;
+    const mk = periodMonthKey(p);
+    if (!mk) return;
+    const key = mk + '|' + p.store;
     const cur = latestBatchByStoreMonth[key];
     if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStoreMonth[key] = p.uploadedAt;
   });
   const monthlyProducts = salesProducts.filter((p) => {
-    if (!p.uploadedAt) return false;
-    const key = monthKey(p.uploadedAt) + '|' + p.store;
+    const mk = periodMonthKey(p);
+    if (!mk) return false;
+    const key = mk + '|' + p.store;
     return p.uploadedAt === latestBatchByStoreMonth[key];
   });
   const productMonthTotals = {};
   const categoryMonthTotals = {};
   monthlyProducts.forEach((p) => {
-    const mk = monthKey(p.uploadedAt);
+    const mk = periodMonthKey(p);
     if (!productMonthTotals[mk]) productMonthTotals[mk] = {};
     const name = p.productName || '—';
     if (!productMonthTotals[mk][name]) productMonthTotals[mk][name] = { sold: 0, netRevenue: 0 };
@@ -283,6 +323,43 @@ export default function DashboardView({ isDriver = false } = {}) {
                     </svg>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#97a2b0', marginTop: 4 }}>
                       {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
+                    </div>
+                  </div>
+                )}
+
+                {dayKeys.length > 1 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
+                      <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_sales_daily_trend_title')}</span>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684' }}>
+                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
+                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
+                      </div>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <svg viewBox={`0 0 ${dayChartWidth} 110`} style={{ width: dayChartWidth, height: 160, display: 'block' }}>
+                        <polyline points={coordsToPoints(dayNetCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
+                        <polyline points={coordsToPoints(dayTxCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
+                        {dayNetCoords.map((c, i) => (
+                          <g key={'net' + i}>
+                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
+                            <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
+                              {formatEuro(c.value)}
+                            </text>
+                          </g>
+                        ))}
+                        {dayTxCoords.map((c, i) => (
+                          <g key={'tx' + i}>
+                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
+                            <text x={c.x} y={c.y + 15} textAnchor="middle" fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
+                              {Math.round(c.value)}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                      <div style={{ display: 'flex', width: dayChartWidth, justifyContent: 'space-between', fontSize: 9.5, color: '#97a2b0', marginTop: 4 }}>
+                        {dayKeys.map((k) => <span key={k}>{dayLabel(k)}</span>)}
+                      </div>
                     </div>
                   </div>
                 )}
