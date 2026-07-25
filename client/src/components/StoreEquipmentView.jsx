@@ -129,6 +129,63 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
   }
 
+  // Μετονομασία ενός καταστήματος (π.χ. "Kryoneri" -> "Gefsinus Kryoneri Q&F") — αλλάζει
+  // το όνομα ΠΑΝΤΟΥ όπου εμφανίζεται: στη λίστα Κατάστημα των Προϊόντων → Cost tab
+  // (p.stores), στο "Ενεργό Σε Κατάστημα" (p.activeStores) και στην εγγραφή Ψυγείο/Pico
+  // εδώ. Αν το νέο όνομα υπάρχει ήδη ως ξεχωριστό κατάστημα, τα συγχωνεύει (κρατώντας τις
+  // τιμές/στοιχεία που λείπουν από το ένα, από το άλλο) αντί να δημιουργήσει διπλότυπο.
+  async function renameStore(oldName, newName) {
+    const trimmed = (newName || '').trim();
+    if (!trimmed || trimmed === oldName) return;
+    setMerging(true);
+    setError('');
+    try {
+      const affected = products.filter((p) =>
+        (p.stores || []).some((s) => (s.name || '').trim() === oldName) ||
+        (p.activeStores || []).includes(oldName)
+      );
+      const updated = await Promise.all(affected.map((p) => {
+        const stores = p.stores || [];
+        const oldEntry = stores.find((s) => (s.name || '').trim() === oldName);
+        const targetEntry = stores.find((s) => (s.name || '').trim() === trimmed);
+        let nextStores = stores;
+        if (oldEntry && targetEntry) {
+          const merged = { ...targetEntry };
+          if ((merged.sellingPriceStore === null || merged.sellingPriceStore === undefined) && oldEntry.sellingPriceStore != null) merged.sellingPriceStore = oldEntry.sellingPriceStore;
+          if ((merged.sellingPriceQF === null || merged.sellingPriceQF === undefined) && oldEntry.sellingPriceQF != null) merged.sellingPriceQF = oldEntry.sellingPriceQF;
+          nextStores = stores.filter((s) => s !== oldEntry && s !== targetEntry).concat([merged]);
+        } else if (oldEntry) {
+          nextStores = stores.map((s) => (s === oldEntry ? { ...s, name: trimmed } : s));
+        }
+        const nextActive = Array.from(new Set((p.activeStores || []).map((s) => ((s || '').trim() === oldName ? trimmed : s))));
+        return Products.update(p.id, { ...p, stores: nextStores, activeStores: nextActive });
+      }));
+      setProducts((prev) => prev.map((p) => updated.find((u) => u.id === p.id) || p));
+
+      const seOld = records.find((r) => (r.store || '').trim() === oldName);
+      const seTarget = records.find((r) => (r.store || '').trim() === trimmed);
+      if (seOld && seTarget) {
+        const mergedFields = { fridgeNo: seTarget.fridgeNo || seOld.fridgeNo || '', picoNo: seTarget.picoNo || seOld.picoNo || '' };
+        const updatedTarget = await StoreEquipment.update(seTarget.id, { ...seTarget, ...mergedFields });
+        await StoreEquipment.remove(seOld.id);
+        setRecords((prev) => prev.filter((r) => r.id !== seOld.id).map((r) => (r.id === updatedTarget.id ? updatedTarget : r)));
+      } else if (seOld) {
+        const updatedRec = await StoreEquipment.update(seOld.id, { ...seOld, store: trimmed });
+        setRecords((prev) => prev.map((r) => (r.id === seOld.id ? updatedRec : r)));
+      }
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  function promptRename(oldName) {
+    const next = window.prompt(t('se_rename_prompt'), oldName);
+    if (next == null) return;
+    renameStore(oldName, next);
+  }
+
   function toggleSort(key) {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -242,6 +299,26 @@ export default function StoreEquipmentView({ readOnly = false }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: '#fdecea', color: '#c0392b', border: '1px solid #f3c1bb', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>
             <span>{error}</span>
             <button type="button" onClick={() => setError('')} style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+          </div>
+        )}
+        {!readOnly && storeOptions.length > 0 && (
+          <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+            <strong style={{ fontSize: 13, color: '#16233f', display: 'block', marginBottom: 4 }}>{t('se_store_list_title')}</strong>
+            <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px' }}>{t('se_store_list_desc')}</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {storeOptions.map((name) => (
+                <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f4f6f8', borderRadius: 8, padding: '5px 4px 5px 12px' }}>
+                  <span style={{ fontSize: 13 }}>{name}</span>
+                  <button
+                    type="button"
+                    disabled={merging}
+                    onClick={() => promptRename(name)}
+                    title={t('se_rename_button')}
+                    style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#6b7684', padding: '4px 8px' }}
+                  >✎</button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {!readOnly && duplicateGroups.length > 0 && (
