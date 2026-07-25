@@ -5,7 +5,7 @@ import { useLanguage } from '../LanguageContext.jsx';
 function buildColumns(t) {
   return [
     { key: 'store', label: t('se_col_store') },
-    { key: 'equipment', label: `${t('se_col_fridgeNo')} / ${t('se_col_picoNo')}` }
+    { key: 'equipment', label: `${t('se_col_fridgeNo')} / ${t('se_col_picoNo')} / ${t('se_col_stockwellNo')}` }
   ];
 }
 
@@ -27,17 +27,18 @@ function toArray(v) {
   return [String(v).trim()];
 }
 
-// Κάθε Ψυγείο "κλειδώνει" με ΕΝΑ συγκεκριμένο PICO — δεν είναι δύο ανεξάρτητες λίστες,
-// είναι ζευγάρια {fridgeNo, picoNo}. Παλιές εγγραφές (πριν το ζευγάρωμα) είχαν δύο χωριστές
-// λίστες fridgeNo[]/picoNo[] (ή ένα απλό string) — εδώ τις μετατρέπουμε αυτόματα σε ζευγάρια
-// (ταιριάζοντας κατά σειρά· αν λείπει η μία πλευρά, μένει κενή).
+// Κάθε Ψυγείο "κλειδώνει" με ΕΝΑ συγκεκριμένο PICO (και προαιρετικά ένα Stockwell No) —
+// δεν είναι ανεξάρτητες λίστες, είναι ζευγάρια/τριάδες {fridgeNo, picoNo, stockwellNo}.
+// Παλιές εγγραφές (πριν το ζευγάρωμα) είχαν δύο χωριστές λίστες fridgeNo[]/picoNo[] (ή ένα
+// απλό string) — εδώ τις μετατρέπουμε αυτόματα (ταιριάζοντας κατά σειρά· αν λείπει κάποια
+// πλευρά, μένει κενή).
 function toPairs(record) {
-  if (Array.isArray(record.equipment)) return record.equipment;
+  if (Array.isArray(record.equipment)) return record.equipment.map((p) => ({ fridgeNo: '', picoNo: '', stockwellNo: '', ...p }));
   const fridges = toArray(record.fridgeNo);
   const picos = toArray(record.picoNo);
   const len = Math.max(fridges.length, picos.length);
   const pairs = [];
-  for (let i = 0; i < len; i++) pairs.push({ fridgeNo: fridges[i] || '', picoNo: picos[i] || '' });
+  for (let i = 0; i < len; i++) pairs.push({ fridgeNo: fridges[i] || '', picoNo: picos[i] || '', stockwellNo: '' });
   return pairs;
 }
 
@@ -338,7 +339,11 @@ export default function StoreEquipmentView({ readOnly = false }) {
       const q = search.trim().toLowerCase();
       rows = rows.filter((r) =>
         (r.store || '').toLowerCase().includes(q) ||
-        toPairs(r).some((p) => (p.fridgeNo || '').toLowerCase().includes(q) || (p.picoNo || '').toLowerCase().includes(q))
+        toPairs(r).some((p) =>
+          (p.fridgeNo || '').toLowerCase().includes(q) ||
+          (p.picoNo || '').toLowerCase().includes(q) ||
+          (p.stockwellNo || '').toLowerCase().includes(q)
+        )
       );
     }
     const sorted = [...rows].sort((a, b) => {
@@ -400,13 +405,17 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
   }
 
-  // Πολλά ζευγάρια Ψυγείο+PICO ανά κατάστημα — κάθε ζευγάρι προστίθεται/διαγράφεται μαζί
-  // (το ένα "κλειδώνει" με το άλλο, δεν είναι δύο ανεξάρτητες λίστες).
-  // "pairDrafts" κρατάει το κείμενο που πληκτρολογείται πριν προστεθεί ένα νέο ζευγάρι.
+  // Πολλά ζευγάρια Ψυγείο+PICO(+Stockwell) ανά κατάστημα — κάθε ζευγάρι προστίθεται/
+  // διαγράφεται/επεξεργάζεται μαζί (δεν είναι ανεξάρτητες λίστες).
+  // "pairDrafts" κρατάει το κείμενο πριν προστεθεί ένα νέο ζευγάρι.
+  // "editingPair"/"editDraft" κρατάνε ποιο ήδη-καταχωρημένο ζευγάρι επεξεργαζόμαστε.
+  const emptyPair = { fridgeNo: '', picoNo: '', stockwellNo: '' };
   const [pairDrafts, setPairDrafts] = useState({});
+  const [editingPair, setEditingPair] = useState(null); // { id, idx }
+  const [editDraft, setEditDraft] = useState(emptyPair);
 
   function getPairDraft(id) {
-    return pairDrafts[id] || { fridgeNo: '', picoNo: '' };
+    return pairDrafts[id] || emptyPair;
   }
   function setPairDraftField(id, field, value) {
     setPairDrafts((d) => ({ ...d, [id]: { ...getPairDraft(id), [field]: value } }));
@@ -416,11 +425,12 @@ export default function StoreEquipmentView({ readOnly = false }) {
     const draft = getPairDraft(id);
     const fridgeNo = (draft.fridgeNo || '').trim();
     const picoNo = (draft.picoNo || '').trim();
-    if (!fridgeNo && !picoNo) return;
+    const stockwellNo = (draft.stockwellNo || '').trim();
+    if (!fridgeNo && !picoNo && !stockwellNo) return;
     const current = records.find((r) => r.id === id);
     if (!current) return;
-    const nextPairs = [...toPairs(current), { fridgeNo, picoNo }];
-    setPairDrafts((d) => ({ ...d, [id]: { fridgeNo: '', picoNo: '' } }));
+    const nextPairs = [...toPairs(current), { fridgeNo, picoNo, stockwellNo }];
+    setPairDrafts((d) => ({ ...d, [id]: emptyPair }));
     setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, equipment: nextPairs } : r)));
     try {
       await StoreEquipment.update(id, { ...current, equipment: nextPairs });
@@ -441,27 +451,92 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
   }
 
+  function startEditPair(id, idx, pair) {
+    setEditingPair({ id, idx });
+    setEditDraft({ fridgeNo: pair.fridgeNo || '', picoNo: pair.picoNo || '', stockwellNo: pair.stockwellNo || '' });
+  }
+  function cancelEditPair() {
+    setEditingPair(null);
+    setEditDraft(emptyPair);
+  }
+  async function saveEditPair() {
+    if (!editingPair) return;
+    const { id, idx } = editingPair;
+    const current = records.find((r) => r.id === id);
+    if (!current) { cancelEditPair(); return; }
+    const nextPairs = toPairs(current).map((p, i) => (i === idx ? { ...editDraft } : p));
+    setEditingPair(null);
+    setEditDraft(emptyPair);
+    setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, equipment: nextPairs } : r)));
+    try {
+      await StoreEquipment.update(id, { ...current, equipment: nextPairs });
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  }
+
   function renderEquipmentPairs(r, inputWidth) {
     const pairs = toPairs(r);
     if (readOnly) {
-      return pairs.length ? pairs.map((p) => `${p.fridgeNo || '—'} / ${p.picoNo || '—'}`).join(', ') : '—';
+      return pairs.length ? pairs.map((p) => `${p.fridgeNo || '—'} / ${p.picoNo || '—'} / ${p.stockwellNo || '—'}`).join(', ') : '—';
     }
     const draft = getPairDraft(r.id);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {pairs.map((p, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#eef1f4', borderRadius: 5, padding: '3px 4px 3px 8px', fontSize: 12.5, whiteSpace: 'nowrap' }}>
-            <span>🧊 {p.fridgeNo || '—'}</span>
-            <span style={{ color: '#c7cdd4' }}>↔</span>
-            <span>📟 {p.picoNo || '—'}</span>
-            <button
-              type="button"
-              onClick={() => removeEquipmentPair(r.id, i)}
-              title={t('common_delete')}
-              style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 12, padding: '0 3px', lineHeight: 1 }}
-            >✕</button>
-          </div>
-        ))}
+        {pairs.map((p, i) => {
+          const isEditing = editingPair && editingPair.id === r.id && editingPair.idx === i;
+          if (isEditing) {
+            return (
+              <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center', background: '#eef7f6', border: '1px solid #2f8f8a', borderRadius: 5, padding: '3px 4px' }}>
+                <input
+                  autoFocus
+                  value={editDraft.fridgeNo}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, fridgeNo: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                  placeholder={t('se_add_fridge_placeholder')}
+                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
+                />
+                <input
+                  value={editDraft.picoNo}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, picoNo: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                  placeholder={t('se_add_pico_placeholder')}
+                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
+                />
+                <input
+                  value={editDraft.stockwellNo}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, stockwellNo: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                  placeholder={t('se_add_stockwell_placeholder')}
+                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
+                />
+                <button type="button" onClick={saveEditPair} title={t('se_rename_button')} style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: 'pointer', fontSize: 13, padding: '4px 8px', lineHeight: 1 }}>✓</button>
+                <button type="button" onClick={cancelEditPair} title={t('common_cancel')} style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 13, padding: '4px 6px' }}>✕</button>
+              </div>
+            );
+          }
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#eef1f4', borderRadius: 5, padding: '3px 4px 3px 8px', fontSize: 12.5, whiteSpace: 'nowrap' }}>
+              <span>🧊 {p.fridgeNo || '—'}</span>
+              <span style={{ color: '#c7cdd4' }}>↔</span>
+              <span>📟 {p.picoNo || '—'}</span>
+              <span style={{ color: '#c7cdd4' }}>↔</span>
+              <span>📦 {p.stockwellNo || '—'}</span>
+              <button
+                type="button"
+                onClick={() => startEditPair(r.id, i, p)}
+                title={t('se_rename_button')}
+                style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 12, padding: '0 3px', lineHeight: 1 }}
+              >✎</button>
+              <button
+                type="button"
+                onClick={() => removeEquipmentPair(r.id, i)}
+                title={t('common_delete')}
+                style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 12, padding: '0 3px', lineHeight: 1 }}
+              >✕</button>
+            </div>
+          );
+        })}
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <input
             value={draft.fridgeNo}
@@ -475,6 +550,13 @@ export default function StoreEquipmentView({ readOnly = false }) {
             onChange={(e) => setPairDraftField(r.id, 'picoNo', e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } }}
             placeholder={t('se_add_pico_placeholder')}
+            style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
+          />
+          <input
+            value={draft.stockwellNo}
+            onChange={(e) => setPairDraftField(r.id, 'stockwellNo', e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } }}
+            placeholder={t('se_add_stockwell_placeholder')}
             style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
           />
           <button
@@ -728,8 +810,8 @@ export default function StoreEquipmentView({ readOnly = false }) {
                       </select>
                     </div>
                     <div className="field" style={{ marginBottom: 18 }}>
-                      <label>{t('se_col_fridgeNo')} / {t('se_col_picoNo')}</label>
-                      {renderEquipmentPairs(current, 110)}
+                      <label>{t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}</label>
+                      {renderEquipmentPairs(current, 90)}
                     </div>
                     {!readOnly && (
                       <div style={{ display: 'flex', gap: 8 }}>
