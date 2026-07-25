@@ -90,8 +90,8 @@ export default function ProductEntryView() {
   }, []);
 
   const expiredFiltered = useMemo(() => {
-    // Μόνο ό,τι έχει ΗΔΗ λήξει (diff < 0) — όχι "λήγει σήμερα" ή "σε X ημέρες".
-    const alreadyExpired = expiredEntries.filter((e) => e.expiryDate && daysDiff(e.expiryDate) < 0);
+    // Ό,τι έχει ΗΔΗ λήξει ή λήγει σήμερα (diff <= 0) — όχι "σε X ημέρες".
+    const alreadyExpired = expiredEntries.filter((e) => e.expiryDate && daysDiff(e.expiryDate) <= 0);
     const q = entryQuery.trim().toLowerCase();
     const base = q
       ? alreadyExpired.filter((e) =>
