@@ -12,10 +12,22 @@ function normalizeStoreName(raw) {
   return match || String(raw).trim();
 }
 
-// 'dd/mm/yyyy' -> 'yyyy-mm-dd'
-function toIsoDate(ddmmyyyy) {
-  if (!ddmmyyyy) return null;
-  const parts = String(ddmmyyyy).split('/');
+// Δέχεται είτε κείμενο 'dd/mm/yyyy' είτε αριθμό-σειρά ημερομηνίας του Excel
+// (όταν το κελί "Date" είναι μορφοποιημένο ως πραγματική ημερομηνία αντί για
+// κείμενο — τότε το SheetJS με raw:true επιστρέφει αριθμό, όχι string, και το
+// παλιό split('/') απέτυχε σιωπηλά, πετώντας τη γραμμή). -> 'yyyy-mm-dd'
+function toIsoDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    // Excel epoch: 30/12/1899 (λόγω του ιστορικού 1900-leap-year quirk).
+    const epochMs = Date.UTC(1899, 11, 30);
+    const d = new Date(epochMs + value * 86400000);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  const parts = String(value).split('/');
   if (parts.length !== 3) return null;
   const [d, m, y] = parts;
   return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;

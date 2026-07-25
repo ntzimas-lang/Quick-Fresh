@@ -240,6 +240,33 @@ export default function DashboardView({ isDriver = false } = {}) {
     const cat = p.cat1 || '—';
     categoryMonthTotals[mk][cat] = (categoryMonthTotals[mk][cat] || 0) + (p.netRevenue || 0);
   });
+  // Πραγματικό εύρος ημερομηνιών ανά "μήνα-κάδο" (mk) — ένα Sales Analysis Report
+  // μπορεί να καλύπτει πάνω από έναν ημερολογιακό μήνα (π.χ. "01/05 έως 24/07").
+  // Σε αυτή την περίπτωση δείχνουμε τίμιο εύρος στον τίτλο ("Μάι – Ιουλ 2026") αντί
+  // να παρουσιάζουμε παραπλανητικά συγκεντρωτικά στοιχεία 3 μηνών σαν να είναι ενός.
+  const monthPeriodBounds = {};
+  monthlyProducts.forEach((p) => {
+    const mk = periodMonthKey(p);
+    const label = p.periodLabel || '';
+    const matches = [...label.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
+    if (!matches.length) return;
+    const first = matches[0];
+    const last = matches[matches.length - 1];
+    const startKey = `${first[3]}-${first[2]}`;
+    const endKey = `${last[3]}-${last[2]}`;
+    if (!monthPeriodBounds[mk]) monthPeriodBounds[mk] = { start: startKey, end: endKey };
+    else {
+      if (startKey < monthPeriodBounds[mk].start) monthPeriodBounds[mk].start = startKey;
+      if (endKey > monthPeriodBounds[mk].end) monthPeriodBounds[mk].end = endKey;
+    }
+  });
+  function monthDisplayLabel(mk) {
+    const bounds = monthPeriodBounds[mk];
+    if (bounds && bounds.start !== bounds.end) {
+      return `${monthLabel(bounds.start, lang)} – ${monthLabel(bounds.end, lang)}`;
+    }
+    return monthLabel(mk, lang);
+  }
   const productMonthKeys = Object.keys(productMonthTotals).sort().reverse();
   const topProductsByMonth = productMonthKeys.map((mk) => ({
     monthKey: mk,
@@ -407,7 +434,7 @@ export default function DashboardView({ isDriver = false } = {}) {
                       {categoryBreakdownByMonth.map(({ monthKey: mk, categories, max }) => (
                         <div key={mk} style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 420 }}>
                           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 8 }}>
-                            {monthLabel(mk, lang)}
+                            {monthDisplayLabel(mk)}
                           </div>
                           {categories.map(([cat, val]) => (
                             <Bar key={cat} label={cat} value={Math.round(val)} max={max} color="#2f8f8a" />
@@ -429,7 +456,7 @@ export default function DashboardView({ isDriver = false } = {}) {
                       {topProductsByMonth.map(({ monthKey: mk, products }) => (
                         <div key={mk} style={{ flex: '1 1 260px', minWidth: 240 }}>
                           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 8 }}>
-                            {monthLabel(mk, lang)}
+                            {monthDisplayLabel(mk)}
                           </div>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                             <tbody>
