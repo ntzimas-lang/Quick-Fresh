@@ -109,7 +109,16 @@ function parseDailySalesSummary(workbook, knownStores) {
   return out;
 }
 
-function parseSalesAnalysisReport(workbook, storeOverride, knownStores) {
+// Ψάχνει μέσα σε ένα ελεύθερο κείμενο (τίτλος report, όνομα αρχείου) για κάποιο από
+// τα γνωστά ονόματα καταστημάτων — δεύτερη γραμμή άμυνας όταν το φύλλο "Details" δεν
+// βοηθάει (δεν υπάρχει, ή έχει παραπάνω από ένα Location μέσα στο ίδιο αρχείο).
+function guessStoreFromText(text, knownStores) {
+  if (!text) return '';
+  const low = String(text).toLowerCase();
+  return (knownStores || []).find((s) => low.includes(s.toLowerCase())) || '';
+}
+
+function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName) {
   const summarySheetName = workbook.SheetNames.find((n) => /summary/i.test(n)) || workbook.SheetNames[0];
   const detailsSheetName = workbook.SheetNames.find((n) => /details/i.test(n));
   const wsSummary = workbook.Sheets[summarySheetName];
@@ -154,6 +163,10 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores) {
       if (locs.size === 1) resolvedStore = [...locs][0];
     }
   }
+  // Δεύτερη προσπάθεια: ψάχνουμε το όνομα καταστήματος μέσα στον τίτλο του report
+  // ή στο όνομα του αρχείου (π.χ. "Sales Analysis Report - Gefsinus Kryoneri Q&F.xlsx").
+  if (!resolvedStore) resolvedStore = guessStoreFromText(titleCell, knownStores);
+  if (!resolvedStore) resolvedStore = guessStoreFromText(fileName, knownStores);
 
   const batchId = 'batch-' + Date.now();
   const uploadedAt = new Date().toISOString();
@@ -196,8 +209,6 @@ export default function SalesView({ canDelete = false }) {
   const [busyDaily, setBusyDaily] = useState(false);
   const [busyProducts, setBusyProducts] = useState(false);
   const [message, setMessage] = useState(null); // { type: 'ok'|'error', text }
-  const [pendingStoreFile, setPendingStoreFile] = useState(null); // file waiting for store pick
-  const [storePick, setStorePick] = useState('');
   const [allProducts, setAllProducts] = useState([]);
   const dailyInputRef = useRef(null);
   const productsInputRef = useRef(null);
@@ -213,10 +224,6 @@ export default function SalesView({ canDelete = false }) {
   useEffect(() => {
     Products.list().then(setAllProducts).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (!storePick && storeOptions.length) setStorePick(storeOptions[0]);
-  }, [storeOptions, storePick]);
 
   async function refresh() {
     setLoading(true);
@@ -261,25 +268,25 @@ export default function SalesView({ canDelete = false }) {
     }
   }
 
-  function handleProductsFile(e) {
+  // Χωρίς επιλογή καταστήματος από τον χρήστη — προσπαθούμε αυτόματη αναγνώριση από
+  // το φύλλο "Details" του αρχείου (στήλη Location). Αν δεν βρεθεί και υπάρχει μόνο
+  // ΕΝΑ κατάστημα καταχωρημένο συνολικά στην εφαρμογή, χρησιμοποιούμε αυτό ως μοναδική
+  // λογική επιλογή. Αν κάποτε υπάρξουν πολλά καταστήματα και δεν μπορεί να αναγνωριστεί
+  // αυτόματα, αποθηκεύεται ως "—" και μπορεί να διορθωθεί αργότερα.
+  async function handleProductsFile(e) {
     const file = e.target.files && e.target.files[0];
     if (productsInputRef.current) productsInputRef.current.value = '';
-    if (!file) return;
-    setPendingStoreFile(file);
-  }
-
-  async function confirmProductsUpload() {
-    const file = pendingStoreFile;
     if (!file) return;
     setBusyProducts(true);
     setMessage(null);
     try {
       const wb = await readWorkbook(file);
-      const { rows } = parseSalesAnalysisReport(wb, storePick, storeOptions);
+      const { rows, resolvedStore } = parseSalesAnalysisReport(wb, '', storeOptions, file.name);
       if (!rows.length) throw new Error('no_rows');
-      await SalesProducts.insertBatch(rows);
+      const finalStore = resolvedStore || (storeOptions.length === 1 ? storeOptions[0] : '');
+      const finalRows = finalStore ? rows.map((r) => ({ ...r, store: finalStore })) : rows;
+      await SalesProducts.insertBatch(finalRows);
       setMessage({ type: 'ok', text: t('sales_upload_products_ok').replace('{n}', rows.length) });
-      setPendingStoreFile(null);
       refresh();
     } catch (err) {
       setMessage({ type: 'error', text: t('sales_upload_error') + ' ' + (err.message || err) });
@@ -346,24 +353,6 @@ export default function SalesView({ canDelete = false }) {
             <label htmlFor="products-upload" className="btn-primary" style={{ display: 'inline-block', cursor: 'pointer', opacity: busyProducts ? 0.6 : 1 }}>
               {busyProducts ? t('sales_uploading') : t('sales_choose_file')}
             </label>
-
-            {pendingStoreFile && (
-              <div style={{ marginTop: 14, padding: 12, background: '#f4f6f8', borderRadius: 8 }}>
-                <div style={{ fontSize: 12.5, marginBottom: 8 }}>{t('sales_pick_store_prefix')} <strong>{pendingStoreFile.name}</strong></div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <select value={storePick} onChange={(e) => setStorePick(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13 }}>
-                    {storeOptions.length === 0 && <option value="">{t('common_select_placeholder')}</option>}
-                    {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <button className="btn-primary" onClick={confirmProductsUpload} disabled={busyProducts} style={{ padding: '6px 14px' }}>
-                    {busyProducts ? t('sales_uploading') : t('sales_confirm_upload')}
-                  </button>
-                  <button onClick={() => setPendingStoreFile(null)} style={{ border: '1px solid #d7dce2', background: '#fff', borderRadius: 6, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }}>
-                    {t('common_cancel')}
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
