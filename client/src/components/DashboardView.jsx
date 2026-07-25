@@ -22,21 +22,6 @@ function dayLabel(iso) {
   return `${d}/${m}`;
 }
 
-// Εξάγει τον πραγματικό μήνα της περιόδου ενός Sales Analysis Report από το periodLabel
-// του (π.χ. "01/05/2026 00:00 to 24/07/2026 23:59" -> κρατάμε την ΤΕΛΕΥΤΑΙΑ ημερομηνία,
-// δηλ. το τέλος της περιόδου, -> '2026-07'). Αν δεν βρεθεί ημερομηνία μέσα στο κείμενο,
-// πέφτουμε πίσω στο uploadedAt (πότε έγινε το upload) — αλλά αυτό ΔΕΝ είναι η πραγματική
-// περίοδος πωλήσεων, γι' αυτό προτιμάται πάντα το periodLabel όταν υπάρχει.
-function periodMonthKey(p) {
-  const label = p.periodLabel || '';
-  const matches = [...label.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
-  if (matches.length) {
-    const last = matches[matches.length - 1];
-    return `${last[3]}-${last[2]}`;
-  }
-  return p.uploadedAt ? monthKey(p.uploadedAt) : null;
-}
-
 // Μετατρέπει μια σειρά τιμών σε συντεταγμένες SVG, κανονικοποιημένες 0-100
 // ώστε πολλές καμπύλες με διαφορετική κλίμακα να χωράνε στο ίδιο γράφημα.
 // Επιστρέφει και την πραγματική τιμή ανά σημείο, για να δείχνουμε νούμερα πάνω στο γράφημα.
@@ -208,77 +193,54 @@ export default function DashboardView({ isDriver = false } = {}) {
   const dayNetCoords = trendCoords(dayNet, dayChartWidth);
   const dayTxCoords = trendCoords(dayTx, dayChartWidth);
 
-  // Top 5 προϊόντα + κατηγορίες ανά μήνα: ομαδοποίηση των uploads με βάση την ΠΡΑΓΜΑΤΙΚΗ
-  // περίοδο του report (periodMonthKey — από το periodLabel, όχι πότε έγινε το upload),
-  // κρατώντας μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα ΜΕΣΑ σε κάθε μήνα περιόδου
-  // (ώστε επαναληπτικά uploads της ίδιας περιόδου να μην διπλομετρηθούν).
-  const latestBatchByStoreMonth = {};
+  // Top 5 προϊόντα + κατηγορίες: το Sales Analysis Report δίνει ΕΝΑ συγκεντρωτικό
+  // σύνολο ανά προϊόν για ΟΛΗ την περίοδο που ζητήθηκε κατά την εξαγωγή (δεν έχει
+  // per-row ημερομηνία μέσα στο αρχείο) — άρα δεν μπορεί να "σπάσει" σε ξεχωριστούς
+  // ημερολογιακούς μήνες με αξιοπιστία. Δείχνουμε λοιπόν την πιο πρόσφατη παρτίδα ανά
+  // κατάστημα ως ΕΝΑ ενιαίο μπλοκ, με τίτλο ακριβώς την περίοδο που δηλώνει το ίδιο το
+  // αρχείο (π.χ. "01/05/2026 – 25/07/2026") — τίμιο ως προς το τι πραγματικά ξέρουμε.
+  const latestBatchByStore = {};
   salesProducts.forEach((p) => {
-    const mk = periodMonthKey(p);
-    if (!mk) return;
-    const key = mk + '|' + p.store;
-    const cur = latestBatchByStoreMonth[key];
-    if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStoreMonth[key] = p.uploadedAt;
+    const cur = latestBatchByStore[p.store];
+    if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStore[p.store] = p.uploadedAt;
   });
-  const monthlyProducts = salesProducts.filter((p) => {
-    const mk = periodMonthKey(p);
-    if (!mk) return false;
-    const key = mk + '|' + p.store;
-    return p.uploadedAt === latestBatchByStoreMonth[key];
-  });
-  const productMonthTotals = {};
-  const categoryMonthTotals = {};
-  monthlyProducts.forEach((p) => {
-    const mk = periodMonthKey(p);
-    if (!productMonthTotals[mk]) productMonthTotals[mk] = {};
-    const name = p.productName || '—';
-    if (!productMonthTotals[mk][name]) productMonthTotals[mk][name] = { sold: 0, netRevenue: 0 };
-    productMonthTotals[mk][name].sold += p.sold || 0;
-    productMonthTotals[mk][name].netRevenue += p.netRevenue || 0;
+  const currentProducts = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
 
-    if (!categoryMonthTotals[mk]) categoryMonthTotals[mk] = {};
+  const productTotals = {};
+  const categoryTotals = {};
+  let periodStart = null;
+  let periodEnd = null;
+  currentProducts.forEach((p) => {
+    const name = p.productName || '—';
+    if (!productTotals[name]) productTotals[name] = { sold: 0, netRevenue: 0 };
+    productTotals[name].sold += p.sold || 0;
+    productTotals[name].netRevenue += p.netRevenue || 0;
+
     const cat = p.cat1 || '—';
-    categoryMonthTotals[mk][cat] = (categoryMonthTotals[mk][cat] || 0) + (p.netRevenue || 0);
-  });
-  // Πραγματικό εύρος ημερομηνιών ανά "μήνα-κάδο" (mk) — ένα Sales Analysis Report
-  // μπορεί να καλύπτει πάνω από έναν ημερολογιακό μήνα (π.χ. "01/05 έως 24/07").
-  // Σε αυτή την περίπτωση δείχνουμε τίμιο εύρος στον τίτλο ("Μάι – Ιουλ 2026") αντί
-  // να παρουσιάζουμε παραπλανητικά συγκεντρωτικά στοιχεία 3 μηνών σαν να είναι ενός.
-  const monthPeriodBounds = {};
-  monthlyProducts.forEach((p) => {
-    const mk = periodMonthKey(p);
+    categoryTotals[cat] = (categoryTotals[cat] || 0) + (p.netRevenue || 0);
+
     const label = p.periodLabel || '';
     const matches = [...label.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
-    if (!matches.length) return;
-    const first = matches[0];
-    const last = matches[matches.length - 1];
-    const startKey = `${first[3]}-${first[2]}`;
-    const endKey = `${last[3]}-${last[2]}`;
-    if (!monthPeriodBounds[mk]) monthPeriodBounds[mk] = { start: startKey, end: endKey };
-    else {
-      if (startKey < monthPeriodBounds[mk].start) monthPeriodBounds[mk].start = startKey;
-      if (endKey > monthPeriodBounds[mk].end) monthPeriodBounds[mk].end = endKey;
+    if (matches.length) {
+      const first = matches[0];
+      const last = matches[matches.length - 1];
+      const firstText = `${first[1]}/${first[2]}/${first[3]}`;
+      const firstDate = new Date(`${first[3]}-${first[2]}-${first[1]}`);
+      const lastText = `${last[1]}/${last[2]}/${last[3]}`;
+      const lastDate = new Date(`${last[3]}-${last[2]}-${last[1]}`);
+      if (!periodStart || firstDate < periodStart.date) periodStart = { date: firstDate, text: firstText };
+      if (!periodEnd || lastDate > periodEnd.date) periodEnd = { date: lastDate, text: lastText };
     }
   });
-  function monthDisplayLabel(mk) {
-    const bounds = monthPeriodBounds[mk];
-    if (bounds && bounds.start !== bounds.end) {
-      return `${monthLabel(bounds.start, lang)} – ${monthLabel(bounds.end, lang)}`;
-    }
-    return monthLabel(mk, lang);
-  }
-  const productMonthKeys = Object.keys(productMonthTotals).sort().reverse();
-  const topProductsByMonth = productMonthKeys.map((mk) => ({
-    monthKey: mk,
-    products: Object.entries(productMonthTotals[mk])
-      .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.netRevenue - a.netRevenue)
-      .slice(0, 5)
-  }));
-  const categoryBreakdownByMonth = productMonthKeys.map((mk) => {
-    const categories = Object.entries(categoryMonthTotals[mk] || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    return { monthKey: mk, categories, max: categories.length ? categories[0][1] : 1 };
-  });
+  const periodRangeText = periodStart && periodEnd
+    ? (periodStart.text === periodEnd.text ? periodStart.text : `${periodStart.text} – ${periodEnd.text}`)
+    : '';
+
+  const productTotalsList = Object.entries(productTotals).map(([name, v]) => ({ name, ...v }));
+  const topProducts = [...productTotalsList].sort((a, b) => b.netRevenue - a.netRevenue).slice(0, 20);
+  const worstProducts = [...productTotalsList].sort((a, b) => a.netRevenue - b.netRevenue).slice(0, 20);
+  const categoryBreakdown = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const categoryMax = categoryBreakdown.length ? categoryBreakdown[0][1] : 1;
 
   const hasSalesData = salesDaily.length > 0 || salesProducts.length > 0;
 
@@ -424,53 +386,70 @@ export default function DashboardView({ isDriver = false } = {}) {
                 )}
 
                 <div style={{ marginBottom: 22 }}>
-                  <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
-                    {t('d_sales_by_category_monthly_title')}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                      {t('d_sales_by_category_monthly_title')}
+                    </span>
+                    {periodRangeText && (
+                      <span style={{ fontSize: 11.5, color: '#97a2b0' }}>{t('d_sales_period_label')} {periodRangeText}</span>
+                    )}
                   </div>
-                  {categoryBreakdownByMonth.length === 0 ? (
+                  {categoryBreakdown.length === 0 ? (
                     <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
                   ) : (
-                    <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                      {categoryBreakdownByMonth.map(({ monthKey: mk, categories, max }) => (
-                        <div key={mk} style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 420 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 8 }}>
-                            {monthDisplayLabel(mk)}
-                          </div>
-                          {categories.map(([cat, val]) => (
-                            <Bar key={cat} label={cat} value={Math.round(val)} max={max} color="#2f8f8a" />
-                          ))}
-                        </div>
+                    <div style={{ maxWidth: 420 }}>
+                      {categoryBreakdown.map(([cat, val]) => (
+                        <Bar key={cat} label={cat} value={Math.round(val)} max={categoryMax} color="#2f8f8a" />
                       ))}
                     </div>
                   )}
                 </div>
 
                 <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18 }}>
-                  <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
-                    {t('d_sales_top_products_monthly_title')}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                      {t('d_sales_top_products_monthly_title')}
+                    </span>
+                    {periodRangeText && (
+                      <span style={{ fontSize: 11.5, color: '#97a2b0' }}>{t('d_sales_period_label')} {periodRangeText}</span>
+                    )}
                   </div>
-                  {topProductsByMonth.length === 0 ? (
+                  {topProducts.length === 0 ? (
                     <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
                   ) : (
                     <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                      {topProductsByMonth.map(({ monthKey: mk, products }) => (
-                        <div key={mk} style={{ flex: '1 1 260px', minWidth: 240 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 8 }}>
-                            {monthDisplayLabel(mk)}
-                          </div>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                            <tbody>
-                              {products.map((p) => (
-                                <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
-                                  <td style={{ padding: '6px 0' }}>{p.name}</td>
-                                  <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
-                                  <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>€{p.netRevenue.toFixed(0)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                      <div style={{ flex: '1 1 320px', minWidth: 280, maxWidth: 480 }}>
+                        <div style={{ fontSize: 11.5, color: '#2f8f8a', fontWeight: 700, marginBottom: 8 }}>
+                          {t('d_sales_top20_label')}
                         </div>
-                      ))}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                          <tbody>
+                            {topProducts.map((p) => (
+                              <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                <td style={{ padding: '6px 0' }}>{p.name}</td>
+                                <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>€{p.netRevenue.toFixed(0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ flex: '1 1 320px', minWidth: 280, maxWidth: 480 }}>
+                        <div style={{ fontSize: 11.5, color: '#c0392b', fontWeight: 700, marginBottom: 8 }}>
+                          {t('d_sales_worst20_label')}
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                          <tbody>
+                            {worstProducts.map((p) => (
+                              <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                <td style={{ padding: '6px 0' }}>{p.name}</td>
+                                <td style={{ padding: '6px 0', textAlign: 'right', color: '#6b7684', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>€{p.netRevenue.toFixed(0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
