@@ -41,26 +41,25 @@ export default function StoreEquipmentView({ readOnly = false }) {
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
   }, []);
 
-  // Αυτή η σελίδα ΕΙΝΑΙ η κεντρική/έγκυρη λίστα καταστημάτων — οι προτάσεις (datalist)
-  // προέρχονται από τις ίδιες τις εγγραφές εδώ, μαζί με ό,τι υπάρχει ήδη στα Προϊόντα
-  // (ώστε τίποτα να μη "χαθεί" από τη λίστα πριν γίνει η συγχώνευση διπλότυπων).
+  // Η βάση/πηγή αλήθειας για τα ονόματα καταστημάτων είναι πλέον η λίστα "Κατάστημα"
+  // των Προϊόντων → Cost tab (p.stores) — εκεί προστίθενται νέα καταστήματα, και ανοίγουν
+  // παντού αλλού (εδώ, στο Ενεργό Σε Κατάστημα, στην Καταχώρηση/Καταστροφή).
   const storeOptions = useMemo(() => {
     const set = new Set();
-    records.forEach((r) => { const clean = (r.store || '').trim(); if (clean) set.add(clean); });
-    products.forEach((p) => (p.activeStores || []).forEach((s) => {
-      const clean = (s || '').trim();
+    products.forEach((p) => (p.stores || []).forEach((s) => {
+      const clean = (s && s.name ? s.name : '').trim();
       if (clean) set.add(clean);
     }));
     return Array.from(set).sort();
-  }, [records, products]);
+  }, [products]);
 
-  // Ανίχνευση "σχεδόν ίδιων" ονομάτων καταστήματος μέσα στο Ενεργό Σε Κατάστημα των Προϊόντων
-  // (π.χ. κενό, κεφαλαία/πεζά, τόνος) — για το εργαλείο αυτόματης συγχώνευσης παρακάτω.
+  // Ανίχνευση "σχεδόν ίδιων" ονομάτων καταστήματος μέσα στη λίστα Κατάστημα (Cost tab) των
+  // Προϊόντων (π.χ. κενό, κεφαλαία/πεζά, τόνος) — για το εργαλείο αυτόματης συγχώνευσης παρακάτω.
   const duplicateGroups = useMemo(() => {
     const byKey = {};
     products.forEach((p) => {
-      (p.activeStores || []).forEach((raw) => {
-        const clean = (raw || '').trim();
+      (p.stores || []).forEach((s) => {
+        const clean = (s && s.name ? s.name : '').trim();
         if (!clean) return;
         const key = normalizeStoreKey(clean);
         if (!byKey[key]) byKey[key] = {};
@@ -86,13 +85,30 @@ export default function StoreEquipmentView({ readOnly = false }) {
     const canonical = group.canonical;
     const otherNames = group.variants.map((v) => v.name).filter((n) => n !== canonical);
     try {
-      const affected = products.filter((p) => (p.activeStores || []).some((s) => otherNames.includes((s || '').trim())));
+      const affected = products.filter((p) => (p.stores || []).some((s) => otherNames.includes((s.name || '').trim())));
       const updated = await Promise.all(affected.map((p) => {
+        const stores = p.stores || [];
+        const canonicalEntry = stores.find((s) => (s.name || '').trim() === canonical);
+        const variantEntries = stores.filter((s) => otherNames.includes((s.name || '').trim()));
+        let nextStores;
+        if (canonicalEntry) {
+          // Κρατάμε την εγγραφή του σωστού ονόματος, συμπληρώνοντας τυχόν κενές τιμές από τα διπλότυπα.
+          const merged = { ...canonicalEntry };
+          variantEntries.forEach((v) => {
+            if ((merged.sellingPriceStore === null || merged.sellingPriceStore === undefined) && v.sellingPriceStore != null) merged.sellingPriceStore = v.sellingPriceStore;
+            if ((merged.sellingPriceQF === null || merged.sellingPriceQF === undefined) && v.sellingPriceQF != null) merged.sellingPriceQF = v.sellingPriceQF;
+          });
+          nextStores = stores.filter((s) => s !== canonicalEntry && !variantEntries.includes(s)).concat([merged]);
+        } else {
+          // Δεν υπάρχει ήδη εγγραφή με το σωστό όνομα — μετονομάζουμε την πρώτη παραλλαγή.
+          const [first, ...rest] = variantEntries;
+          nextStores = stores.filter((s) => !variantEntries.includes(s)).concat([{ ...first, name: canonical }]);
+        }
         const nextActive = Array.from(new Set((p.activeStores || []).map((s) => {
           const clean = (s || '').trim();
           return otherNames.includes(clean) ? canonical : clean;
         })));
-        return Products.update(p.id, { ...p, activeStores: nextActive });
+        return Products.update(p.id, { ...p, stores: nextStores, activeStores: nextActive });
       }));
       setProducts((prev) => prev.map((p) => updated.find((u) => u.id === p.id) || p));
       if (!records.some((r) => (r.store || '').trim() === canonical)) {
@@ -218,10 +234,10 @@ export default function StoreEquipmentView({ readOnly = false }) {
           style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13, width: 200 }}
         />
       </div>
-      <datalist id="qf-store-datalist">
-        {storeOptions.map((s) => <option key={s} value={s} />)}
-      </datalist>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, background: '#f9fafb' }}>
+        {!readOnly && (
+          <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 12px' }}>{t('se_source_hint')}</p>
+        )}
         {error && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: '#fdecea', color: '#c0392b', border: '1px solid #f3c1bb', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>
             <span>{error}</span>
@@ -287,14 +303,14 @@ export default function StoreEquipmentView({ readOnly = false }) {
                     <tr key={r.id} style={{ borderTop: '1px solid #eef1f4' }}>
                       <td style={{ padding: '6px 12px' }}>
                         {readOnly ? (r.store || '—') : (
-                          <input
-                            list="qf-store-datalist"
+                          <select
                             value={r.store || ''}
-                            placeholder={t('se_store_input_placeholder')}
                             onChange={(e) => handleFieldChange(r.id, 'store', e.target.value)}
-                            onBlur={(e) => handleFieldChange(r.id, 'store', e.target.value.trim())}
                             style={{ width: '100%', border: '1px solid #e1e5ea', borderRadius: 6, padding: '5px 6px', fontSize: 13 }}
-                          />
+                          >
+                            <option value="">{t('common_select_placeholder')}</option>
+                            {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
                         )}
                       </td>
                       <td style={{ padding: '6px 12px' }}>
@@ -352,14 +368,14 @@ export default function StoreEquipmentView({ readOnly = false }) {
                   <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 20 }}>
                     <div className="field" style={{ marginBottom: 14 }}>
                       <label>{t('se_col_store')}</label>
-                      <input
-                        list="qf-store-datalist"
+                      <select
                         disabled={readOnly}
                         value={current.store || ''}
-                        placeholder={t('se_store_input_placeholder')}
                         onChange={(e) => handleFieldChange(current.id, 'store', e.target.value)}
-                        onBlur={(e) => handleFieldChange(current.id, 'store', e.target.value.trim())}
-                      />
+                      >
+                        <option value="">{t('common_select_placeholder')}</option>
+                        {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
                     </div>
                     <div className="field" style={{ marginBottom: 14 }}>
                       <label>{t('se_col_fridgeNo')}</label>

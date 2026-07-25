@@ -935,38 +935,36 @@ export default function ProductsView({ readOnly = false }) {
                     {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
-                <div className="field">
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
                   <label>{t('p_col_activeStores')}</label>
-                  <div className="chip-row">
-                    {storeOptions.map((name) => {
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '10px 12px', background: '#f9fafb', border: '1px solid #e1e5ea', borderRadius: 10 }}>
+                    {Array.from(new Set([...storeOptions, ...(current.activeStores || [])])).sort().map((name) => {
                       const on = (current.activeStores || []).includes(name);
                       return (
-                        <div key={name} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-                          <div
-                            className={'chip' + (readOnly ? '' : ' clickable') + (on ? '' : ' off')}
-                            onClick={() => { if (!readOnly) toggleActiveStore(name); }}
-                            style={{ paddingRight: readOnly ? 10 : 18 }}
-                          >
-                            {name}
-                          </div>
-                          {!readOnly && (
-                            <span
-                              onClick={() => removeStoreOption(name)}
-                              style={{ position: 'absolute', right: 4, fontSize: 10, cursor: 'pointer', color: on ? '#fff' : '#6b7684', opacity: 0.6 }}
-                              title={t('common_delete')}
-                            >
-                              ✕
-                            </span>
-                          )}
+                        <div
+                          key={name}
+                          onClick={() => { if (!readOnly) toggleActiveStore(name); }}
+                          style={{
+                            padding: '7px 14px',
+                            borderRadius: 999,
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            cursor: readOnly ? 'default' : 'pointer',
+                            userSelect: 'none',
+                            transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+                            background: on ? '#2f8f8a' : '#fff',
+                            color: on ? '#fff' : '#6b7684',
+                            border: on ? '1px solid #2f8f8a' : '1px solid #d7dce2'
+                          }}
+                        >
+                          {name}
                         </div>
                       );
                     })}
-                    {!readOnly && (
-                      <div className="chip clickable off" onClick={addStoreOption} style={{ borderStyle: 'dashed' }}>
-                        {t('p_add_store_chip')}
-                      </div>
-                    )}
                   </div>
+                  {!readOnly && (
+                    <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('p_stores_managed_hint')}</p>
+                  )}
                 </div>
               </div>
               <div className="grid-2">

@@ -20,6 +20,10 @@ function isUnfinishedPlaceholder(p) {
   return p.descriptionGr === 'Νέο προϊόν' && !p.itemCode && !p.descriptionErp;
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function ProductEntryView() {
   const { t } = useLanguage();
   const [products, setProducts] = useState([]);
@@ -35,6 +39,7 @@ export default function ProductEntryView() {
   const [expiryDate, setExpiryDate] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [reason, setReason] = useState('');
+  const [destructionDate, setDestructionDate] = useState(todayIso());
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [recentEntries, setRecentEntries] = useState([]);
@@ -60,6 +65,8 @@ export default function ProductEntryView() {
     };
   }, []);
 
+  // Η λίστα καταστημάτων προέρχεται από τη λίστα "Κατάστημα" των Προϊόντων (Cost tab) —
+  // εκεί προστίθενται νέα καταστήματα, και ανοίγουν αυτόματα και εδώ.
   const storeOptions = useMemo(() => {
     const set = new Set();
     products.forEach((p) => (p.stores || []).forEach((s) => s && s.name && set.add(s.name)));
@@ -193,6 +200,7 @@ export default function ProductEntryView() {
     setExpiryDate('');
     setQuantity('1');
     setReason('');
+    setDestructionDate(todayIso());
     setNoBarcodeQuery('');
     setDescQuery('');
   }
@@ -220,7 +228,8 @@ export default function ProductEntryView() {
           productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
           store,
           quantity,
-          reason
+          reason,
+          date: destructionDate
         });
         setRecentEntries((prev) => [{ ...record, removedEntries, type: 'destruction' }, ...prev].slice(0, 8));
       }
@@ -426,6 +435,10 @@ export default function ProductEntryView() {
                 </div>
               ) : (
                 <>
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label>{t('x_date_label')}</label>
+                    <input type="date" value={destructionDate} onChange={(e) => setDestructionDate(e.target.value)} required />
+                  </div>
                   <div className="field" style={{ marginBottom: 8 }}>
                     <label>{t('x_reason_label')}</label>
                     <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('x_reason_placeholder')} />

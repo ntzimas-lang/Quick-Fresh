@@ -27,7 +27,7 @@ function getRowValue(d, key) {
   if (key === 'store') return d.store || '';
   if (key === 'quantity') return d.quantity ?? null;
   if (key === 'reason') return d.reason || '';
-  if (key === 'date') return d.createdAt || '';
+  if (key === 'date') return d.date || d.createdAt || '';
   if (key === 'createdBy') return d.destroyedByEmail || '';
   return '';
 }
@@ -54,7 +54,7 @@ export default function DestructionsReportView({ canDelete = false }) {
   }
 
   function getRowFilterText(d, key) {
-    if (key === 'date') return formatDate(d.createdAt);
+    if (key === 'date') return formatDate(d.date || d.createdAt);
     const v = getRowValue(d, key);
     return v === null || v === undefined ? '' : String(v);
   }
@@ -133,7 +133,7 @@ export default function DestructionsReportView({ canDelete = false }) {
         return 0;
       });
     } else {
-      sorted.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      sorted.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
     }
     return sorted;
   }, [destructions, storeFilter, search, columnFilters, sortKey, sortDir]);
@@ -154,7 +154,7 @@ export default function DestructionsReportView({ canDelete = false }) {
         d.store || '',
         d.quantity ?? '',
         d.reason || '',
-        formatDate(d.createdAt),
+        formatDate(d.date || d.createdAt),
         d.destroyedByEmail || ''
       ]),
       styles: { fontSize: 8, cellPadding: 2, font: 'DejaVuSans' },
@@ -245,7 +245,7 @@ export default function DestructionsReportView({ canDelete = false }) {
                   <td style={{ padding: '10px 12px' }}>{d.store}</td>
                   <td style={{ padding: '10px 12px' }}>{d.quantity ?? '—'}</td>
                   <td style={{ padding: '10px 12px', color: '#6b7684' }}>{d.reason || '—'}</td>
-                  <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{formatDate(d.createdAt)}</td>
+                  <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{formatDate(d.date || d.createdAt)}</td>
                   <td style={{ padding: '10px 12px', color: '#6b7684' }}>{d.destroyedByEmail || '—'}</td>
                   {canDelete && (
                     <td style={{ padding: '10px 12px' }}>
