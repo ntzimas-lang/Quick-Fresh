@@ -11,8 +11,16 @@ const emptyForm = {
   nextStep: '',
   nextContactDate: '',
   notes: '',
-  sketch: ''
+  sketch: '',
+  points: []
 };
+
+// Ο πιθανός πελάτης μπορεί να θέλει τοποθέτηση σε παραπάνω από ένα σημείο μέσα στον
+// ίδιο χώρο (π.χ. Αποθήκη + Γραφεία) — κάθε σημείο έχει τη δική του ονομασία και
+// εκτίμηση ατόμων. Μέχρι 10 σημεία (εύλογο ανώτατο όριο).
+const MAX_POINTS = 10;
+const PEOPLE_RANGES = ['1-10', '11-25', '26-50', '51-100', '100+'];
+const emptyPoint = { label: '', peopleRange: '' };
 
 function formatDate(isoStr) {
   if (!isoStr) return '—';
@@ -111,6 +119,9 @@ export default function NewCustomersView({ canDelete = false }) {
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState('');
   const [sketchViewId, setSketchViewId] = useState(null);
+  const [pointDraft, setPointDraft] = useState(emptyPoint);
+  const [editingPointIdx, setEditingPointIdx] = useState(null);
+  const [editPointDraft, setEditPointDraft] = useState(emptyPoint);
   const canvasRef = useRef(null);
   const canvasHasContent = useRef(false);
 
@@ -155,6 +166,9 @@ export default function NewCustomersView({ canDelete = false }) {
     setForm(emptyForm);
     setSaveError('');
     clearCanvas();
+    setPointDraft(emptyPoint);
+    setEditingPointIdx(null);
+    setEditPointDraft(emptyPoint);
   }
 
   function startEdit(record) {
@@ -168,11 +182,48 @@ export default function NewCustomersView({ canDelete = false }) {
       nextStep: record.nextStep || '',
       nextContactDate: record.nextContactDate || '',
       notes: record.notes || '',
-      sketch: record.sketch || ''
+      sketch: record.sketch || '',
+      points: Array.isArray(record.points) ? record.points : []
     });
     setSaveError('');
+    setPointDraft(emptyPoint);
+    setEditingPointIdx(null);
     loadSketchIntoCanvas(record.sketch || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function addPoint() {
+    const label = (pointDraft.label || '').trim();
+    const peopleRange = pointDraft.peopleRange || '';
+    if (!label && !peopleRange) return;
+    if (form.points.length >= MAX_POINTS) return;
+    setForm((f) => ({ ...f, points: [...f.points, { label, peopleRange }] }));
+    setPointDraft(emptyPoint);
+  }
+
+  function removePoint(idx) {
+    setForm((f) => ({ ...f, points: f.points.filter((_, i) => i !== idx) }));
+    if (editingPointIdx === idx) { setEditingPointIdx(null); setEditPointDraft(emptyPoint); }
+  }
+
+  function startEditPoint(idx, point) {
+    setEditingPointIdx(idx);
+    setEditPointDraft({ label: point.label || '', peopleRange: point.peopleRange || '' });
+  }
+
+  function cancelEditPoint() {
+    setEditingPointIdx(null);
+    setEditPointDraft(emptyPoint);
+  }
+
+  function saveEditPoint() {
+    if (editingPointIdx === null) return;
+    setForm((f) => ({
+      ...f,
+      points: f.points.map((p, i) => (i === editingPointIdx ? { ...editPointDraft } : p))
+    }));
+    setEditingPointIdx(null);
+    setEditPointDraft(emptyPoint);
   }
 
   async function handleSave() {
@@ -341,6 +392,72 @@ export default function NewCustomersView({ canDelete = false }) {
               />
             </div>
           </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>{t('nc_points_title')}</label>
+            <div style={{ fontSize: 12, color: '#97a2b0', marginBottom: 10 }}>{t('nc_points_hint')}</div>
+
+            {form.points.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                {form.points.map((p, idx) =>
+                  editingPointIdx === idx ? (
+                    <div key={idx} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: '#f4f6f8', borderRadius: 6, padding: 8 }}>
+                      <input
+                        style={{ ...inputStyle, width: 180, flex: '1 1 160px' }}
+                        value={editPointDraft.label}
+                        placeholder={t('nc_points_label_placeholder')}
+                        onChange={(e) => setEditPointDraft((d) => ({ ...d, label: e.target.value }))}
+                      />
+                      <select
+                        style={{ ...inputStyle, width: 140, flex: '0 0 140px' }}
+                        value={editPointDraft.peopleRange}
+                        onChange={(e) => setEditPointDraft((d) => ({ ...d, peopleRange: e.target.value }))}
+                      >
+                        <option value="">{t('nc_points_people_pick')}</option>
+                        {PEOPLE_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                      <button type="button" className="btn-primary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={saveEditPoint}>✓</button>
+                      <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={cancelEditPoint}>✕</button>
+                    </div>
+                  ) : (
+                    <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'center', background: '#f4f6f8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+                      <span style={{ flex: 1 }}>
+                        📍 <strong>{p.label || '—'}</strong>
+                        {p.peopleRange && <span style={{ color: '#6b7684' }}> — {p.peopleRange} {t('nc_points_people_suffix')}</span>}
+                      </span>
+                      <button type="button" className="btn-secondary" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => startEditPoint(idx, p)}>✎</button>
+                      <button type="button" className="btn-danger" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => removePoint(idx)}>✕</button>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+            {form.points.length < MAX_POINTS ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  style={{ ...inputStyle, width: 180, flex: '1 1 160px' }}
+                  value={pointDraft.label}
+                  placeholder={t('nc_points_label_placeholder')}
+                  onChange={(e) => setPointDraft((d) => ({ ...d, label: e.target.value }))}
+                />
+                <select
+                  style={{ ...inputStyle, width: 140, flex: '0 0 140px' }}
+                  value={pointDraft.peopleRange}
+                  onChange={(e) => setPointDraft((d) => ({ ...d, peopleRange: e.target.value }))}
+                >
+                  <option value="">{t('nc_points_people_pick')}</option>
+                  {PEOPLE_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12.5 }} onClick={addPoint}>
+                  {t('nc_points_add_button')}
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: '#97a2b0' }}>{t('nc_points_max_hint')}</div>
+            )}
+          </div>
+
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>{t('nc_col_notes')}</label>
             <textarea
@@ -409,6 +526,16 @@ export default function NewCustomersView({ canDelete = false }) {
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{r.businessName || '—'}</div>
                     <div style={{ fontSize: 12, color: '#6b7684', marginTop: 2 }}>{r.phone || '—'}</div>
                     <div style={{ fontSize: 12, color: '#6b7684', marginTop: 2 }}>{formatDate(r.visitDate)} · {placeTypeLabel(r.placeType)}</div>
+                    {Array.isArray(r.points) && r.points.length > 0 && (
+                      <div style={{ fontSize: 11.5, color: '#6b7684', marginTop: 4 }}>
+                        {r.points.map((p, i) => (
+                          <span key={i}>
+                            📍 {p.label || '—'}{p.peopleRange ? ` (${p.peopleRange})` : ''}
+                            {i < r.points.length - 1 ? ' · ' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div style={{ minWidth: 140 }}>
                     <span style={{ background: colors.bg, color: colors.fg, borderRadius: 999, padding: '3px 10px', fontSize: 11.5, fontWeight: 600 }}>
