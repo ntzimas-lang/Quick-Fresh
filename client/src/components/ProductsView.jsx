@@ -1,12 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Products, upload } from '../api.js';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
 import { useLanguage } from '../LanguageContext.jsx';
-
-const STORE_CANDIDATES = ['DEMO', 'Plaisio', 'Novibet', 'Kryoneri', 'Nestle', 'AIA', 'Metlen', 'ACS Courier'];
 
 // Οι κατηγορίες είναι δεδομένα προϊόντος (όχι κείμενο διεπαφής) — παραμένουν ίδιες
 // ανεξάρτητα από τη γλώσσα της εφαρμογής.
@@ -192,7 +190,6 @@ export default function ProductsView({ readOnly = false }) {
   const [activeViewId, setActiveViewId] = useState(() => loadViewState()?.activeViewId || 'data');
   const [showColPicker, setShowColPicker] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
-  const [storeOptions, setStoreOptions] = useState(STORE_CANDIDATES);
   const [sortKey, setSortKey] = useState(() => loadViewState()?.sortKey ?? null);
   const [sortDir, setSortDir] = useState(() => loadViewState()?.sortDir || 'asc');
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -209,13 +206,17 @@ export default function ProductsView({ readOnly = false }) {
   }, [tableViews, activeViewId, sortKey, sortDir]);
 
   useEffect(() => {
-    Products.list().then((list) => {
-      setProducts(list);
-      const extra = new Set();
-      list.forEach((p) => (p.stores || []).forEach((s) => extra.add(s.name)));
-      setStoreOptions((prev) => Array.from(new Set([...prev, ...extra])));
-    });
+    Products.list().then(setProducts);
   }, []);
+
+  // Η λίστα καταστημάτων είναι ΠΑΝΤΑ παράγωγη από το Products → Cost → Κατάστημα
+  // (κεντρική πηγή αλήθειας, ίδιο μοτίβο με Πωλήσεις/Καταστήματα) — όχι από hardcoded
+  // λίστα-seed. Ό,τι όνομα καταστήματος υπάρχει έστω σε ένα προϊόν, εμφανίζεται εδώ.
+  const storeOptions = useMemo(() => {
+    const set = new Set();
+    products.forEach((p) => (p.stores || []).forEach((s) => s && s.name && set.add(s.name)));
+    return Array.from(set).sort();
+  }, [products]);
 
   async function selectProduct(id) {
     const p = products.find((x) => x.id === id) || (await Products.get(id));
@@ -280,9 +281,6 @@ export default function ProductsView({ readOnly = false }) {
   async function addStoreEverywhere(rawName) {
     const trimmed = (rawName || '').trim();
     if (!trimmed) return null;
-    if (!storeOptions.includes(trimmed)) {
-      setStoreOptions((prev) => [...prev, trimmed]);
-    }
     const updatedList = await Promise.all(
       products.map(async (p) => {
         if ((p.stores || []).some((s) => s.name === trimmed)) return p;
@@ -315,18 +313,6 @@ export default function ProductsView({ readOnly = false }) {
       return { ...prev, activeStores: active };
     });
   }
-  async function addStoreOption() {
-    const name = window.prompt(t('p_add_store_prompt'));
-    if (!name || !name.trim()) return;
-    const trimmed = name.trim();
-    await addStoreEverywhere(trimmed);
-    applyCardUpdate((prev) => (prev.activeStores.includes(trimmed) ? prev : { ...prev, activeStores: [...prev.activeStores, trimmed] }));
-  }
-  function removeStoreOption(name) {
-    if (!window.confirm(`${t('p_remove_store_confirm_prefix')} "${name}" ${t('p_remove_store_confirm_suffix')}`)) return;
-    setStoreOptions((prev) => prev.filter((n) => n !== name));
-  }
-
   async function handleImageUpload(key, file) {
     if (!file) return;
     const { url } = await upload(file);
