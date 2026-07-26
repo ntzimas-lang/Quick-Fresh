@@ -19,8 +19,7 @@ const emptyForm = {
 // ίδιο χώρο (π.χ. Αποθήκη + Γραφεία) — κάθε σημείο έχει τη δική του ονομασία και
 // εκτίμηση ατόμων. Μέχρι 10 σημεία (εύλογο ανώτατο όριο).
 const MAX_POINTS = 10;
-const PEOPLE_RANGES = ['1-10', '11-25', '26-50', '51-100', '100+'];
-const emptyPoint = { label: '', peopleRange: '' };
+const emptyPoint = { label: '', people: '' };
 
 function formatDate(isoStr) {
   if (!isoStr) return '—';
@@ -194,10 +193,10 @@ export default function NewCustomersView({ canDelete = false }) {
 
   function addPoint() {
     const label = (pointDraft.label || '').trim();
-    const peopleRange = pointDraft.peopleRange || '';
-    if (!label && !peopleRange) return;
+    const people = pointDraft.people || '';
+    if (!label && !people) return;
     if (form.points.length >= MAX_POINTS) return;
-    setForm((f) => ({ ...f, points: [...f.points, { label, peopleRange }] }));
+    setForm((f) => ({ ...f, points: [...f.points, { label, people }] }));
     setPointDraft(emptyPoint);
   }
 
@@ -208,7 +207,7 @@ export default function NewCustomersView({ canDelete = false }) {
 
   function startEditPoint(idx, point) {
     setEditingPointIdx(idx);
-    setEditPointDraft({ label: point.label || '', peopleRange: point.peopleRange || '' });
+    setEditPointDraft({ label: point.label || '', people: point.people || '' });
   }
 
   function cancelEditPoint() {
@@ -408,14 +407,14 @@ export default function NewCustomersView({ canDelete = false }) {
                         placeholder={t('nc_points_label_placeholder')}
                         onChange={(e) => setEditPointDraft((d) => ({ ...d, label: e.target.value }))}
                       />
-                      <select
-                        style={{ ...inputStyle, width: 140, flex: '0 0 140px' }}
-                        value={editPointDraft.peopleRange}
-                        onChange={(e) => setEditPointDraft((d) => ({ ...d, peopleRange: e.target.value }))}
-                      >
-                        <option value="">{t('nc_points_people_pick')}</option>
-                        {PEOPLE_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
-                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        style={{ ...inputStyle, width: 110, flex: '0 0 110px' }}
+                        value={editPointDraft.people}
+                        placeholder={t('nc_points_people_pick')}
+                        onChange={(e) => setEditPointDraft((d) => ({ ...d, people: e.target.value }))}
+                      />
                       <button type="button" className="btn-primary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={saveEditPoint}>✓</button>
                       <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={cancelEditPoint}>✕</button>
                     </div>
@@ -423,7 +422,9 @@ export default function NewCustomersView({ canDelete = false }) {
                     <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'center', background: '#f4f6f8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
                       <span style={{ flex: 1 }}>
                         📍 <strong>{p.label || '—'}</strong>
-                        {p.peopleRange && <span style={{ color: '#6b7684' }}> — {p.peopleRange} {t('nc_points_people_suffix')}</span>}
+                        {p.people !== '' && p.people !== undefined && p.people !== null && (
+                          <span style={{ color: '#6b7684' }}> — {p.people} {t('nc_points_people_suffix')}</span>
+                        )}
                       </span>
                       <button type="button" className="btn-secondary" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => startEditPoint(idx, p)}>✎</button>
                       <button type="button" className="btn-danger" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => removePoint(idx)}>✕</button>
@@ -441,14 +442,14 @@ export default function NewCustomersView({ canDelete = false }) {
                   placeholder={t('nc_points_label_placeholder')}
                   onChange={(e) => setPointDraft((d) => ({ ...d, label: e.target.value }))}
                 />
-                <select
-                  style={{ ...inputStyle, width: 140, flex: '0 0 140px' }}
-                  value={pointDraft.peopleRange}
-                  onChange={(e) => setPointDraft((d) => ({ ...d, peopleRange: e.target.value }))}
-                >
-                  <option value="">{t('nc_points_people_pick')}</option>
-                  {PEOPLE_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <input
+                  type="number"
+                  min="0"
+                  style={{ ...inputStyle, width: 110, flex: '0 0 110px' }}
+                  value={pointDraft.people}
+                  placeholder={t('nc_points_people_pick')}
+                  onChange={(e) => setPointDraft((d) => ({ ...d, people: e.target.value }))}
+                />
                 <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12.5 }} onClick={addPoint}>
                   {t('nc_points_add_button')}
                 </button>
@@ -530,7 +531,7 @@ export default function NewCustomersView({ canDelete = false }) {
                       <div style={{ fontSize: 11.5, color: '#6b7684', marginTop: 4 }}>
                         {r.points.map((p, i) => (
                           <span key={i}>
-                            📍 {p.label || '—'}{p.peopleRange ? ` (${p.peopleRange})` : ''}
+                            📍 {p.label || '—'}{p.people !== '' && p.people !== undefined && p.people !== null ? ` (${p.people})` : ''}
                             {i < r.points.length - 1 ? ' · ' : ''}
                           </span>
                         ))}
