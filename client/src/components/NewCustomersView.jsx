@@ -78,12 +78,12 @@ function SketchPad({ canvasRef, hasContent, onChange }) {
   return (
     <canvas
       ref={canvasRef}
-      width={900}
-      height={280}
+      width={1400}
+      height={560}
       style={{
         width: '100%',
-        maxWidth: 900,
-        height: 220,
+        maxWidth: 1400,
+        height: 460,
         background: '#fff',
         border: '1px solid #d7dce2',
         borderRadius: 8,
