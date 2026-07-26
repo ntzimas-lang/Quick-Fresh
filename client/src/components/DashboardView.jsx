@@ -83,6 +83,10 @@ export default function DashboardView({ isDriver = false } = {}) {
   const [entries, setEntries] = useState([]);
   const [salesDaily, setSalesDaily] = useState([]);
   const [salesProducts, setSalesProducts] = useState([]);
+  // Το ανά-κατηγορία breakdown (top20/worst20 μέσα σε ΚΑΘΕ κατηγορία) μπορεί να βγάλει
+  // πολλά δεδομένα στην οθόνη (μία κάρτα ανά κατηγορία) — κρυμμένο by default, ο χρήστης
+  // το ανοίγει όποτε το χρειάζεται.
+  const [showCategoryBreakdown, setShowCategoryBreakdown] = useState(false);
 
   useEffect(() => {
     // Ο Οδηγός βλέπει μόνο την κάρτα Ληγμένα — δεν χρειάζεται να φορτώσουμε
@@ -241,6 +245,26 @@ export default function DashboardView({ isDriver = false } = {}) {
   const worstProducts = [...productTotalsList].sort((a, b) => a.sold - b.sold).slice(0, 20);
   const categoryBreakdown = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const categoryMax = categoryBreakdown.length ? categoryBreakdown[0][1] : 1;
+
+  // Top 20 / Χειρότερα 20 ΜΕΣΑ σε κάθε κατηγορία (ποσότητα) — πάνω στα ίδια
+  // currentProducts (πιο πρόσφατη παρτίδα ανά κατάστημα) που χρησιμοποιεί ήδη το
+  // παραπάνω flat Top20/Worst20 block, ομαδοποιημένα κατά Cat1.
+  const categoryProductTotals = {};
+  currentProducts.forEach((p) => {
+    const cat = p.cat1 || '—';
+    const name = p.productName || '—';
+    if (!categoryProductTotals[cat]) categoryProductTotals[cat] = {};
+    categoryProductTotals[cat][name] = (categoryProductTotals[cat][name] || 0) + (p.sold || 0);
+  });
+  const categoryTopWorst20 = Object.entries(categoryProductTotals)
+    .map(([cat, totals]) => {
+      const list = Object.entries(totals).map(([name, sold]) => ({ name, sold }));
+      const top20 = [...list].sort((a, b) => b.sold - a.sold).slice(0, 20);
+      const worst20 = [...list].sort((a, b) => a.sold - b.sold).slice(0, 20);
+      const categoryTotal = list.reduce((s, p) => s + p.sold, 0);
+      return { cat, top20, worst20, categoryTotal };
+    })
+    .sort((a, b) => b.categoryTotal - a.categoryTotal);
 
   const hasSalesData = salesDaily.length > 0 || salesProducts.length > 0;
 
@@ -449,6 +473,63 @@ export default function DashboardView({ isDriver = false } = {}) {
                         </table>
                       </div>
                     </div>
+                  )}
+                </div>
+
+                <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginTop: 22 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: showCategoryBreakdown ? 12 : 0 }}>
+                    <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                      {t('d_category_breakdown_title')}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 12px', fontSize: 11.5 }}
+                      onClick={() => setShowCategoryBreakdown((v) => !v)}
+                    >
+                      {showCategoryBreakdown ? t('d_category_breakdown_hide') : t('d_category_breakdown_show')}
+                    </button>
+                  </div>
+                  {showCategoryBreakdown && (
+                    categoryTopWorst20.length === 0 ? (
+                      <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        {categoryTopWorst20.map(({ cat, top20, worst20 }) => (
+                          <div key={cat} style={{ border: '1px solid #eef1f4', borderRadius: 8, padding: 14 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 10 }}>{cat}</div>
+                            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                              <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 420 }}>
+                                <div style={{ fontSize: 11, color: '#2f8f8a', fontWeight: 700, marginBottom: 8 }}>{t('d_category_top20_label')}</div>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                                  <tbody>
+                                    {top20.map((p) => (
+                                      <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                        <td style={{ padding: '5px 0' }}>{p.name}</td>
+                                        <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 420 }}>
+                                <div style={{ fontSize: 11, color: '#c0392b', fontWeight: 700, marginBottom: 8 }}>{t('d_category_worst20_label')}</div>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                                  <tbody>
+                                    {worst20.map((p) => (
+                                      <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                        <td style={{ padding: '5px 0' }}>{p.name}</td>
+                                        <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.sold} {t('d_pieces_abbr')}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               </>

@@ -210,7 +210,6 @@ export default function SalesView({ canDelete = false }) {
   const [busyProducts, setBusyProducts] = useState(false);
   const [message, setMessage] = useState(null); // { type: 'ok'|'error', text }
   const [allProducts, setAllProducts] = useState([]);
-  const [salesProducts, setSalesProducts] = useState([]);
   const dailyInputRef = useRef(null);
   const productsInputRef = useRef(null);
 
@@ -231,7 +230,6 @@ export default function SalesView({ canDelete = false }) {
     try {
       const [daily, products] = await Promise.all([SalesDaily.list(), SalesProducts.list()]);
       setDailyCount(daily.length);
-      setSalesProducts(products);
       const byBatch = {};
       products.forEach((p) => {
         if (!byBatch[p.batchId]) byBatch[p.batchId] = { batchId: p.batchId, store: p.store, periodLabel: p.periodLabel, uploadedAt: p.uploadedAt, count: 0 };
@@ -296,38 +294,6 @@ export default function SalesView({ canDelete = false }) {
       setBusyProducts(false);
     }
   }
-
-  // Top 20 προϊόντα ανά κατηγορία (ποσότητα) — ίδιο pattern με τον Πίνακα Ελέγχου:
-  // παίρνουμε μόνο την πιο πρόσφατη παρτίδα ανά κατάστημα (ώστε παλιότερα uploads να
-  // μην προστίθενται πάνω σε νεότερα), ομαδοποιούμε κατά Cat1, και μέσα σε κάθε
-  // κατηγορία ταξινομούμε κατά τεμάχια (sold) — top 20 ξεχωριστά ανά κατηγορία.
-  const categoryTop20 = useMemo(() => {
-    const latestBatchByStore = {};
-    salesProducts.forEach((p) => {
-      const cur = latestBatchByStore[p.store];
-      if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStore[p.store] = p.uploadedAt;
-    });
-    const current = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
-
-    const byCat = {};
-    current.forEach((p) => {
-      const cat = p.cat1 || '—';
-      const name = p.productName || '—';
-      if (!byCat[cat]) byCat[cat] = {};
-      byCat[cat][name] = (byCat[cat][name] || 0) + (p.sold || 0);
-    });
-
-    return Object.entries(byCat)
-      .map(([cat, totals]) => {
-        const products = Object.entries(totals)
-          .map(([name, sold]) => ({ name, sold }))
-          .sort((a, b) => b.sold - a.sold)
-          .slice(0, 20);
-        const categoryTotal = products.reduce((s, p) => s + p.sold, 0);
-        return { cat, products, categoryTotal };
-      })
-      .sort((a, b) => b.categoryTotal - a.categoryTotal);
-  }, [salesProducts]);
 
   async function handleDeleteBatch(batchId) {
     try {
@@ -428,36 +394,6 @@ export default function SalesView({ canDelete = false }) {
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
-
-        {/* Top 20 προϊόντα ανά κατηγορία (ποσότητα) */}
-        <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20, marginTop: 14 }}>
-          <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
-            {t('sales_category_top20_title')}
-          </div>
-          {categoryTop20.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('sales_category_top20_empty')}</p>
-          ) : (
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              {categoryTop20.map(({ cat, products }) => (
-                <div key={cat} style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 360 }}>
-                  <div style={{ fontSize: 11.5, color: '#2f8f8a', fontWeight: 700, marginBottom: 8 }}>{cat}</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                    <tbody>
-                      {products.map((p) => (
-                        <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
-                          <td style={{ padding: '6px 0' }}>{p.name}</td>
-                          <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>
-                            {p.sold} {t('d_pieces_abbr')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
           )}
         </div>
       </div>
