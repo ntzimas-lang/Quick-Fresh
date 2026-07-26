@@ -6,6 +6,7 @@ import ProductEntryView from './components/ProductEntryView.jsx';
 import ExpiredReportView from './components/ExpiredReportView.jsx';
 import DestructionsReportView from './components/DestructionsReportView.jsx';
 import StoreEquipmentView from './components/StoreEquipmentView.jsx';
+import NewCustomersView from './components/NewCustomersView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import SalesView from './components/SalesView.jsx';
@@ -218,6 +219,14 @@ export default function App() {
               {t('nav_sales')}
             </button>
           )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'newCustomers' ? ' active' : '')}
+              onClick={() => setView('newCustomers')}
+            >
+              {t('nav_new_customers')}
+            </button>
+          )}
           <button
             className="nav-item lang-toggle"
             onClick={() => setLang(lang === 'el' ? 'en' : 'el')}
@@ -285,6 +294,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'sales' ? ' active' : '')}>
             <SalesView canDelete={role === 'super_user'} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'newCustomers' ? ' active' : '')}>
+            <NewCustomersView canDelete={role === 'super_user'} />
           </section>
         )}
         {role === 'super_user' && (
