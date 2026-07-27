@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StoreEquipment, Products, Entries, Destructions } from '../api.js';
+import { StoreEquipment, Products, Entries, Destructions, upload } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 function buildColumns(t) {
@@ -296,6 +296,90 @@ export default function StoreEquipmentView({ readOnly = false }) {
       setError(err.message || String(err));
     } finally {
       setMerging(false);
+    }
+  }
+
+  // Πρόσθετα "στοιχεία" ανά κατάστημα (μετρητές, διεύθυνση, αρχεία σύμβασης/υγειονομικού/
+  // άδειας λειτουργίας) — αποθηκεύονται στο ίδιο store_equipment jsonb record (χωρίς
+  // χρειάζεται SQL migration, απλά νέα πεδία στο ήδη υπάρχον record). Τα κείμενα/ημερομηνίες
+  // μένουν σε τοπικό draft μέχρι το "Αποθήκευση στοιχείων" — τα αρχεία αποθηκεύονται αμέσως
+  // μόλις ολοκληρωθεί το upload (ίδια λογική με τις εικόνες προϊόντων).
+  const emptyDetails = {
+    electricityMeterNo: '', waterMeterNo: '', address: '',
+    contractFileUrl: '', contractFrom: '', contractTo: '',
+    healthCertFileUrl: '', operatingLicenseFileUrl: ''
+  };
+  const [expandedStore, setExpandedStore] = useState(null);
+  const [detailsDraft, setDetailsDraft] = useState({});
+  const [uploadingField, setUploadingField] = useState(null);
+  const [detailsSavedFlash, setDetailsSavedFlash] = useState(null);
+
+  async function ensureRecordForStore(name) {
+    let rec = records.find((r) => (r.store || '').trim() === name);
+    if (!rec) {
+      rec = await StoreEquipment.create({ store: name, equipment: [] });
+      setRecords((prev) => [...prev, rec]);
+    }
+    return rec;
+  }
+
+  function getDetailsDraft(id) {
+    return detailsDraft[id] || emptyDetails;
+  }
+  function setDetailsField(id, field, value) {
+    setDetailsDraft((d) => ({ ...d, [id]: { ...getDetailsDraft(id), [field]: value } }));
+  }
+
+  async function toggleDetails(name) {
+    if (expandedStore === name) {
+      setExpandedStore(null);
+      return;
+    }
+    setError('');
+    const rec = await ensureRecordForStore(name);
+    setDetailsDraft((d) => ({
+      ...d,
+      [rec.id]: {
+        electricityMeterNo: rec.electricityMeterNo || '',
+        waterMeterNo: rec.waterMeterNo || '',
+        address: rec.address || '',
+        contractFileUrl: rec.contractFileUrl || '',
+        contractFrom: rec.contractFrom || '',
+        contractTo: rec.contractTo || '',
+        healthCertFileUrl: rec.healthCertFileUrl || '',
+        operatingLicenseFileUrl: rec.operatingLicenseFileUrl || ''
+      }
+    }));
+    setExpandedStore(name);
+  }
+
+  async function saveDetails(record) {
+    const draft = getDetailsDraft(record.id);
+    try {
+      const updated = await StoreEquipment.update(record.id, { ...record, ...draft });
+      setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+      setDetailsSavedFlash(record.id);
+      setTimeout(() => setDetailsSavedFlash((cur) => (cur === record.id ? null : cur)), 1500);
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  }
+
+  async function handleDocUpload(record, field, file) {
+    if (!file) return;
+    const key = `${record.id}:${field}`;
+    setUploadingField(key);
+    setError('');
+    try {
+      const { url } = await upload(file);
+      setDetailsField(record.id, field, url);
+      const draft = { ...getDetailsDraft(record.id), [field]: url };
+      const updated = await StoreEquipment.update(record.id, { ...record, ...draft });
+      setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setUploadingField((cur) => (cur === key ? null : cur));
     }
   }
 
@@ -611,58 +695,140 @@ export default function StoreEquipmentView({ readOnly = false }) {
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
             <strong style={{ fontSize: 13, color: '#16233f', display: 'block', marginBottom: 4 }}>{t('se_store_list_title')}</strong>
             <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px' }}>{t('se_store_list_desc')}</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {allKnownStoreNames.map((name) => (
-                renamingName === name ? (
-                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#eef7f6', border: '1px solid #2f8f8a', borderRadius: 8, padding: '4px 4px 4px 8px' }}>
-                    <input
-                      autoFocus
-                      list="qf-rename-datalist"
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') cancelRename(); }}
-                      style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '4px 6px', fontSize: 13, width: 220 }}
-                    />
-                    <button
-                      type="button"
-                      disabled={merging}
-                      onClick={confirmRename}
-                      title={t('se_rename_button')}
-                      style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: merging ? 'default' : 'pointer', fontSize: 13, padding: '5px 9px' }}
-                    >✓</button>
-                    <button
-                      type="button"
-                      onClick={cancelRename}
-                      title={t('common_cancel')}
-                      style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 13, padding: '5px 6px' }}
-                    >✕</button>
-                  </div>
-                ) : (
-                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f4f6f8', borderRadius: 8, padding: '5px 4px 5px 12px' }}>
-                    <span style={{ fontSize: 13 }}>{name}</span>
-                    {!storeOptions.includes(name) && (
-                      <span title={t('se_legacy_name_hint')} style={{ fontSize: 10, color: '#c98a1f', fontWeight: 700, background: '#fff8e8', border: '1px solid #eddca6', borderRadius: 4, padding: '1px 5px' }}>
-                        {t('se_legacy_name_badge')}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      disabled={merging}
-                      onClick={() => startRename(name)}
-                      title={t('se_rename_button')}
-                      style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#6b7684', padding: '4px 8px' }}
-                    >✎</button>
-                    <button
-                      type="button"
-                      disabled={merging}
-                      onClick={() => deleteStore(name)}
-                      title={t('se_delete_store_button')}
-                      style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#c0392b', padding: '4px 8px' }}
-                    >🗑</button>
-                  </div>
-                )
-              ))}
-            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase', background: '#f4f6f8' }}>
+                  <th style={{ padding: '7px 10px' }}>{t('se_col_store_name')}</th>
+                  <th style={{ padding: '7px 10px' }}>{t('se_col_address_preview')}</th>
+                  <th style={{ padding: '7px 10px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {allKnownStoreNames.map((name) => {
+                  const rec = records.find((r) => (r.store || '').trim() === name);
+                  const isExpanded = expandedStore === name;
+                  const draft = rec ? getDetailsDraft(rec.id) : emptyDetails;
+                  return (
+                    <React.Fragment key={name}>
+                      <tr style={{ borderTop: '1px solid #eef1f4' }}>
+                        <td style={{ padding: '7px 10px' }}>
+                          {renamingName === name ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <input
+                                autoFocus
+                                list="qf-rename-datalist"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') cancelRename(); }}
+                                style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '4px 6px', fontSize: 13, width: 200 }}
+                              />
+                              <button type="button" disabled={merging} onClick={confirmRename} title={t('se_rename_button')} style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: merging ? 'default' : 'pointer', fontSize: 13, padding: '5px 9px' }}>✓</button>
+                              <button type="button" onClick={cancelRename} title={t('common_cancel')} style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 13, padding: '5px 6px' }}>✕</button>
+                            </div>
+                          ) : (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {name}
+                              {!storeOptions.includes(name) && (
+                                <span title={t('se_legacy_name_hint')} style={{ fontSize: 10, color: '#c98a1f', fontWeight: 700, background: '#fff8e8', border: '1px solid #eddca6', borderRadius: 4, padding: '1px 5px' }}>
+                                  {t('se_legacy_name_badge')}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '7px 10px', color: '#6b7684', fontSize: 12.5 }}>{(rec && rec.address) || '—'}</td>
+                        <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                          <button type="button" onClick={() => toggleDetails(name)} title={t('se_details_button')} style={{ border: '1px solid #d7dce2', background: isExpanded ? '#eef7f6' : '#fff', cursor: 'pointer', fontSize: 12, color: '#2f8f8a', padding: '4px 9px', borderRadius: 5, marginRight: 4 }}>
+                            📄 {isExpanded ? t('se_details_hide_button') : t('se_details_button')}
+                          </button>
+                          <button type="button" disabled={merging} onClick={() => startRename(name)} title={t('se_rename_button')} style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#6b7684', padding: '4px 8px' }}>✎</button>
+                          <button type="button" disabled={merging} onClick={() => deleteStore(name)} title={t('se_delete_store_button')} style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#c0392b', padding: '4px 8px' }}>🗑</button>
+                        </td>
+                      </tr>
+                      {isExpanded && rec && (
+                        <tr>
+                          <td colSpan={3} style={{ padding: '4px 10px 18px', background: '#fafbfc' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                              <div>
+                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_electricity_meter')}</label>
+                                <input
+                                  value={draft.electricityMeterNo}
+                                  onChange={(e) => setDetailsField(rec.id, 'electricityMeterNo', e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+                                />
+                              </div>
+                              <div>
+                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_water_meter')}</label>
+                                <input
+                                  value={draft.waterMeterNo}
+                                  onChange={(e) => setDetailsField(rec.id, 'waterMeterNo', e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+                                />
+                              </div>
+                              <div style={{ gridColumn: '1 / -1' }}>
+                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_address')}</label>
+                                <input
+                                  value={draft.address}
+                                  onChange={(e) => setDetailsField(rec.id, 'address', e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+                                />
+                              </div>
+
+                              <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
+                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_contract_file')}</label>
+                                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                                    {draft.contractFileUrl ? t('se_file_replace') : t('se_file_choose')}
+                                    <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'contractFileUrl', e.target.files[0])} />
+                                  </label>
+                                  {uploadingField === `${rec.id}:contractFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
+                                  {draft.contractFileUrl && <a href={draft.contractFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>}
+                                  <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_from')}</span>
+                                  <input type="date" value={draft.contractFrom} onChange={(e) => setDetailsField(rec.id, 'contractFrom', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
+                                  <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_to')}</span>
+                                  <input type="date" value={draft.contractTo} onChange={(e) => setDetailsField(rec.id, 'contractTo', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_health_file')}</label>
+                                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                                    {draft.healthCertFileUrl ? t('se_file_replace') : t('se_file_choose')}
+                                    <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'healthCertFileUrl', e.target.files[0])} />
+                                  </label>
+                                  {uploadingField === `${rec.id}:healthCertFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
+                                  {draft.healthCertFileUrl && <a href={draft.healthCertFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_license_file')}</label>
+                                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                                    {draft.operatingLicenseFileUrl ? t('se_file_replace') : t('se_file_choose')}
+                                    <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'operatingLicenseFileUrl', e.target.files[0])} />
+                                  </label>
+                                  {uploadingField === `${rec.id}:operatingLicenseFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
+                                  {draft.operatingLicenseFileUrl && <a href={draft.operatingLicenseFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>}
+                                </div>
+                              </div>
+
+                              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
+                                <button type="button" className="btn-primary" onClick={() => saveDetails(rec)} style={{ padding: '6px 14px', fontSize: 12.5 }}>
+                                  {t('se_details_save_button')}
+                                </button>
+                                {detailsSavedFlash === rec.id && <span style={{ fontSize: 12, color: '#1f8f5f' }}>{t('se_details_saved_flash')}</span>}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
             {renamingName && (
               <>
                 <datalist id="qf-rename-datalist">
