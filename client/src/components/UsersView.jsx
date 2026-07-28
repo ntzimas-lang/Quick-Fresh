@@ -3,10 +3,10 @@ import { Profiles, supabase } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 function buildRoleLabels(t) {
-  return { super_user: t('role_super_user'), viewer: t('role_viewer'), driver: t('role_driver') };
+  return { super_user: t('role_super_user'), viewer: t('role_viewer'), driver: t('role_driver'), user: t('role_user') };
 }
-const ROLE_COLORS = { super_user: '#2f8f8a', viewer: '#6b7684', driver: '#c98a1f' };
-const ROLE_OPTIONS = ['viewer', 'driver', 'super_user'];
+const ROLE_COLORS = { super_user: '#2f8f8a', viewer: '#6b7684', driver: '#c98a1f', user: '#3d6bd6' };
+const ROLE_OPTIONS = ['viewer', 'driver', 'user', 'super_user'];
 
 function formatDate(ts) {
   if (!ts) return '—';
