@@ -322,7 +322,7 @@ export const translations = {
 
     // Εκτιμώμενο Απόθεμα (Report Ληγμένα → πλήρης εικόνα αποθέματος)
     r_stock_report_title: 'Εκτιμώμενο Απόθεμα ανά Κατάστημα',
-    r_stock_report_desc: 'Ενεργές καταχωρήσεις μείον ό,τι δείχνουν οι πωλήσεις της τελευταίας ανεβασμένης περιόδου — μια εκτίμηση του τι πραγματικά έχει μείνει στο σημείο. Οι καταστροφές εμφανίζονται μόνο ενημερωτικά (έχουν ήδη αφαιρεθεί από τις ενεργές καταχωρήσεις).',
+    r_stock_report_desc: 'Ενεργές καταχωρήσεις μείον τις πωλήσεις που αναλογούν στις μέρες που έχουμε καταχωρήσεις (όχι όλη την περίοδο πωλήσεων, που συνήθως καλύπτει πολύ μεγαλύτερο διάστημα) — μια εκτίμηση του τι πραγματικά έχει μείνει στο σημείο. Οι καταστροφές εμφανίζονται μόνο ενημερωτικά (έχουν ήδη αφαιρεθεί από τις ενεργές καταχωρήσεις).',
     r_stock_report_show: 'Εμφάνιση',
     r_stock_report_hide: 'Απόκρυψη',
     r_stock_report_empty: 'Δεν υπάρχουν ενεργές καταχωρήσεις για υπολογισμό.',
@@ -335,6 +335,7 @@ export const translations = {
     r_stock_col_nearest_expiry: 'Πλησιέστερη Λήξη',
     r_stock_no_sales_data: 'χωρίς δεδομένα πωλήσεων',
     r_stock_likely_sold_out: 'πιθανώς πουλήθηκε',
+    r_stock_unprorated_hint: 'Δεν μπορέσαμε να προσδιορίσουμε την περίοδο πωλήσεων ή δεν υπάρχει ακόμα καταχώρηση — δείχνουμε το σύνολο πωλήσεων μόνο ενημερωτικά, χωρίς να το αφαιρούμε από το εκτιμώμενο υπόλοιπο.',
 
     // Ιστορικό
     h_filter_all: 'Όλα',
@@ -777,7 +778,7 @@ export const translations = {
 
     // Estimated Stock (Expired Report → full stock picture)
     r_stock_report_title: 'Estimated Stock by Store',
-    r_stock_report_desc: "Active entries minus what the latest uploaded sales period shows sold — an estimate of what's actually still there. Destructions are shown for reference only (already subtracted from active entries).",
+    r_stock_report_desc: "Active entries minus the portion of sales that corresponds to the days we've had entries (not the whole sales period, which usually covers a much longer span) — an estimate of what's actually still there. Destructions are shown for reference only (already subtracted from active entries).",
     r_stock_report_show: 'Show',
     r_stock_report_hide: 'Hide',
     r_stock_report_empty: 'No active entries to calculate from.',
@@ -790,6 +791,7 @@ export const translations = {
     r_stock_col_nearest_expiry: 'Nearest Expiry',
     r_stock_no_sales_data: 'no sales data',
     r_stock_likely_sold_out: 'likely sold out',
+    r_stock_unprorated_hint: "We couldn't determine the sales period, or there's no entry yet — showing the total sales figure for reference only, not subtracted from the estimated remaining.",
 
     h_filter_all: 'All',
     h_action_insert: 'Created',
