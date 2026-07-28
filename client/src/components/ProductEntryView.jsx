@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Products, Entries, Destructions } from '../api.js';
+import { Products, Entries, Destructions, PendingDeliveries } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const METHODS = [
   { key: 'scan', icon: '📷', labelKey: 'e_method_scan' },
   { key: 'manual', icon: '⌨️', labelKey: 'e_method_manual' },
   { key: 'no-barcode', icon: '📋', labelKey: 'e_method_no_barcode' },
-  { key: 'description', icon: '🔎', labelKey: 'e_method_description' }
+  { key: 'description', icon: '🔎', labelKey: 'e_method_description' },
+  { key: 'delivery-pdf', icon: '📄', labelKey: 'e_method_delivery_pdf' }
 ];
 
 const ENTRY_MODES = [
@@ -49,7 +50,7 @@ function diffColor(diff) {
   return '#2f8f8a';
 }
 
-export default function ProductEntryView() {
+export default function ProductEntryView({ canDeletePending = false }) {
   const { t, lang } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
@@ -73,6 +74,29 @@ export default function ProductEntryView() {
   const [expiredEntries, setExpiredEntries] = useState([]);
   const [entryQuery, setEntryQuery] = useState('');
   const [entryStoreFilter, setEntryStoreFilter] = useState('');
+
+  // Μαζική καταχώρηση από Δελτίο Αποστολής (PDF) — μία παραλαβή, πολλά προϊόντα μαζί.
+  const [batchParsing, setBatchParsing] = useState(false);
+  const [batchError, setBatchError] = useState('');
+  const [batchFlash, setBatchFlash] = useState('');
+  const [batchMeta, setBatchMeta] = useState(null);
+  const [batchRows, setBatchRows] = useState([]);
+  const [batchStore, setBatchStore] = useState('');
+  const [batchSaving, setBatchSaving] = useState(false);
+  // Όταν επεξεργαζόμαστε (ή ολοκληρώνουμε) μια ήδη αποθηκευμένη "εκκρεμότητα" — κρατάμε
+  // ολόκληρη την υπάρχουσα εγγραφή (όχι μόνο το id) ώστε να μη χαθούν πεδία όπως
+  // createdBy/createdAt όταν κάνουμε update.
+  const [openPendingRecord, setOpenPendingRecord] = useState(null);
+  const [pendingDeliveries, setPendingDeliveries] = useState([]);
+
+  useEffect(() => {
+    PendingDeliveries.list().then(setPendingDeliveries).catch(() => {});
+  }, []);
+
+  const pendingDeliveriesList = useMemo(
+    () => pendingDeliveries.filter((d) => d.status !== 'completed'),
+    [pendingDeliveries]
+  );
 
   const scannerDivId = 'qf-barcode-scanner-region';
   const html5QrRef = useRef(null);
@@ -250,7 +274,197 @@ export default function ProductEntryView() {
   function selectMethod(key) {
     if (method === key) return;
     if (scanning) stopScan();
+    if (method === 'delivery-pdf' && key !== 'delivery-pdf') resetBatch();
     setMethod(key);
+  }
+
+  function resetBatch() {
+    setBatchParsing(false);
+    setBatchError('');
+    setBatchFlash('');
+    setBatchMeta(null);
+    setBatchRows([]);
+    setBatchStore('');
+    setBatchSaving(false);
+    setOpenPendingRecord(null);
+  }
+
+  // Ανοίγει μια ήδη αποθηκευμένη εκκρεμότητα για συμπλήρωση/ολοκλήρωση (π.χ. ο οδηγός
+  // στο σημείο, την επόμενη μέρα) — ξαναφτιάχνει το matchedProduct από τα ζωντανά
+  // products (με fallback στο "στιγμιότυπο" που είχε αποθηκευτεί, αν το προϊόν έχει
+  // διαγραφεί στο μεταξύ).
+  function openPendingDelivery(pd) {
+    setBatchError('');
+    setBatchFlash('');
+    setBatchMeta({ orderNumber: pd.orderNumber, shipDate: pd.shipDate, storeHint: pd.storeHint });
+    setBatchStore(pd.store || '');
+    setBatchRows((pd.rows || []).map((r) => ({
+      sku: r.sku,
+      pdfName: r.pdfName || r.productDescription || '',
+      qty: r.qty != null ? String(r.qty) : '1',
+      matchedProduct: r.productId
+        ? (products.find((p) => p.id === r.productId) || { id: r.productId, itemCode: r.productItemCode, descriptionErp: r.productDescription, descriptionGr: r.productDescription })
+        : null,
+      expiryDate: r.expiryDate || '',
+      include: r.include !== false,
+      manualQuery: ''
+    })));
+    setOpenPendingRecord(pd);
+  }
+
+  async function deletePendingDelivery(id) {
+    if (!window.confirm(t('e_batch_pending_delete_confirm'))) return;
+    try {
+      await PendingDeliveries.remove(id);
+      setPendingDeliveries((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      setBatchError(t('e_save_error_prefix') + ' ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  function serializeBatchRows() {
+    return batchRows.map((r) => ({
+      sku: r.sku,
+      pdfName: r.pdfName,
+      qty: r.qty,
+      productId: r.matchedProduct ? r.matchedProduct.id : null,
+      productItemCode: r.matchedProduct ? r.matchedProduct.itemCode : null,
+      productDescription: r.matchedProduct ? (r.matchedProduct.descriptionErp || r.matchedProduct.descriptionGr) : null,
+      expiryDate: r.expiryDate,
+      include: r.include
+    }));
+  }
+
+  async function saveBatchAsPending() {
+    if (!batchStore) {
+      setBatchError(t('e_batch_pick_store_error'));
+      return;
+    }
+    if (batchRows.filter((r) => r.include).length === 0) {
+      setBatchError(t('e_batch_incomplete_error'));
+      return;
+    }
+    setBatchSaving(true);
+    setBatchError('');
+    try {
+      if (openPendingRecord) {
+        const updated = await PendingDeliveries.update(openPendingRecord.id, {
+          ...openPendingRecord,
+          status: 'pending',
+          store: batchStore,
+          rows: serializeBatchRows()
+        });
+        setPendingDeliveries((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      } else {
+        const created = await PendingDeliveries.create({
+          status: 'pending',
+          orderNumber: (batchMeta && batchMeta.orderNumber) || '',
+          shipDate: (batchMeta && batchMeta.shipDate) || '',
+          storeHint: (batchMeta && batchMeta.storeHint) || '',
+          store: batchStore,
+          rows: serializeBatchRows()
+        });
+        setPendingDeliveries((prev) => [...prev, created]);
+      }
+      resetBatch();
+      setBatchFlash(t('e_batch_saved_pending_flash'));
+      setTimeout(() => setBatchFlash(''), 2500);
+    } catch (err) {
+      setBatchError(t('e_save_error_prefix') + ' ' + (err && err.message ? err.message : String(err)));
+    } finally {
+      setBatchSaving(false);
+    }
+  }
+
+  async function handleDeliveryFileChange(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setBatchError('');
+    setBatchParsing(true);
+    setBatchMeta(null);
+    setBatchRows([]);
+    try {
+      const { parseDeliveryNotePdf } = await import('../pdfDeliveryParser.js');
+      const { meta, rows, unrecognized } = await parseDeliveryNotePdf(file);
+      if (unrecognized || rows.length === 0) {
+        setBatchError(t('e_batch_parse_error'));
+        return;
+      }
+      const mapped = rows.map((r) => ({
+        sku: r.sku,
+        pdfName: r.name,
+        qty: r.qty != null ? String(r.qty) : '1',
+        matchedProduct: products.find((p) => (p.itemCode || '').trim() === r.sku.trim()) || null,
+        expiryDate: '',
+        include: true,
+        manualQuery: ''
+      }));
+      setBatchMeta(meta);
+      setBatchRows(mapped);
+    } catch (err) {
+      setBatchError(t('e_batch_parse_error') + ' (' + (err && err.message ? err.message : String(err)) + ')');
+    } finally {
+      setBatchParsing(false);
+    }
+  }
+
+  function updateBatchRow(idx, field, value) {
+    setBatchRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  }
+
+  function pickManualProduct(idx, product) {
+    setBatchRows((prev) => prev.map((r, i) => (i === idx ? { ...r, matchedProduct: product, manualQuery: '' } : r)));
+  }
+
+  const batchIncludedCount = batchRows.filter((r) => r.include).length;
+
+  async function submitBatch() {
+    if (!batchStore) {
+      setBatchError(t('e_batch_pick_store_error'));
+      return;
+    }
+    const toSave = batchRows.filter((r) => r.include);
+    const invalid = toSave.some((r) => !r.matchedProduct || !r.expiryDate || !r.qty || Number(r.qty) <= 0);
+    if (invalid || toSave.length === 0) {
+      setBatchError(t('e_batch_incomplete_error'));
+      return;
+    }
+    setBatchSaving(true);
+    setBatchError('');
+    const created = [];
+    try {
+      for (const r of toSave) {
+        // eslint-disable-next-line no-await-in-loop
+        const entry = await Entries.create({
+          productId: r.matchedProduct.id,
+          productItemCode: r.matchedProduct.itemCode,
+          productDescription: r.matchedProduct.descriptionErp || r.matchedProduct.descriptionGr,
+          store: batchStore,
+          expiryDate: r.expiryDate,
+          quantity: r.qty
+        });
+        created.push(entry);
+      }
+      setRecentEntries((prev) => [...created.map((entry) => ({ ...entry, type: 'expiry' })), ...prev].slice(0, 8));
+      if (openPendingRecord) {
+        const updated = await PendingDeliveries.update(openPendingRecord.id, {
+          ...openPendingRecord,
+          status: 'completed',
+          store: batchStore,
+          rows: serializeBatchRows(),
+          completedAt: new Date().toISOString()
+        });
+        setPendingDeliveries((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      }
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+      resetBatch();
+    } catch (err) {
+      setBatchError(t('e_save_error_prefix') + ' ' + (err && err.message ? err.message : String(err)));
+    } finally {
+      setBatchSaving(false);
+    }
   }
 
   function selectEntryMode(key) {
@@ -278,6 +492,7 @@ export default function ProductEntryView() {
     setDescQuery('');
     setEntryQuery('');
     setEntryStoreFilter('');
+    resetBatch();
   }
 
   async function handleSubmit(e) {
@@ -329,7 +544,7 @@ export default function ProductEntryView() {
         <strong style={{ fontSize: 15 }}>{t('title_entry')}</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: '#f9fafb' }}>
-        <div style={{ maxWidth: 480, margin: '0 auto' }}>
+        <div style={{ maxWidth: method === 'delivery-pdf' && batchRows.length > 0 ? 760 : 480, margin: '0 auto', transition: 'max-width 0.15s' }}>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 16 }}>
             {ENTRY_MODES.map((m) => (
@@ -518,6 +733,184 @@ export default function ProductEntryView() {
                         ))
                       )}
                     </div>
+                  </div>
+                )}
+
+                {method === 'delivery-pdf' && (
+                  <div>
+                    {batchFlash && (
+                      <div style={{ background: '#eef7f6', border: '1px solid #2f8f8a55', color: '#1f8f5f', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 14 }}>
+                        ✓ {batchFlash}
+                      </div>
+                    )}
+
+                    {batchRows.length === 0 && (
+                      <div>
+                        {pendingDeliveriesList.length > 0 && (
+                          <div style={{ marginBottom: 18 }}>
+                            <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 8, fontWeight: 600 }}>
+                              ⏳ {t('e_batch_pending_list_title')} ({pendingDeliveriesList.length})
+                            </label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {pendingDeliveriesList.map((pd) => (
+                                <div key={pd.id} style={{ background: '#fff8e8', border: '1px solid #eddca6', borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                                  <div style={{ fontSize: 12.5 }}>
+                                    <strong>{pd.store || '—'}</strong>
+                                    <span style={{ color: '#6b7684' }}>
+                                      {pd.orderNumber ? ` · ${t('e_batch_meta_order')} ${pd.orderNumber}` : ''}
+                                      {` · ${(pd.rows || []).length} ${t('e_batch_pending_items_suffix')}`}
+                                      {pd.createdByEmail ? ` · ${t('e_batch_pending_created_by_prefix')} ${pd.createdByEmail}` : ''}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <button type="button" className="btn-primary" style={{ padding: '5px 12px', fontSize: 12, background: activeMode.color }} onClick={() => openPendingDelivery(pd)}>
+                                      {t('e_batch_pending_open_button')}
+                                    </button>
+                                    {canDeletePending && (
+                                      <button type="button" onClick={() => deletePendingDelivery(pd.id)} title={t('common_delete')} style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontSize: 13, padding: '4px 6px' }}>🗑</button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <label style={{ display: 'block', fontSize: 12, color: '#6b7684', marginBottom: 6, fontWeight: 600 }}>
+                          {pendingDeliveriesList.length > 0 ? t('e_batch_new_upload_section_title') : t('e_batch_upload_label')}
+                        </label>
+                        <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 12px' }}>{t('e_batch_upload_hint')}</p>
+                        <label className="btn-primary" style={{ display: 'block', textAlign: 'center', background: activeMode.color, cursor: batchParsing ? 'default' : 'pointer', opacity: batchParsing ? 0.6 : 1 }}>
+                          {batchParsing ? t('e_batch_parsing') : `📄 ${t('e_batch_choose_file')}`}
+                          <input type="file" accept="application/pdf" style={{ display: 'none' }} disabled={batchParsing} onChange={handleDeliveryFileChange} />
+                        </label>
+                        {batchError && <p style={{ color: '#c0392b', fontSize: 12.5, marginTop: 10 }}>{batchError}</p>}
+                      </div>
+                    )}
+
+                    {batchRows.length > 0 && (
+                      <div>
+                        {openPendingRecord && (
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#8a6116', marginBottom: 8, textTransform: 'uppercase' }}>
+                            ⏳ {t('e_batch_editing_pending_title')}
+                          </div>
+                        )}
+                        {batchMeta && (
+                          <div style={{ background: '#f4f6f8', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#3a4353', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                            {batchMeta.orderNumber && <span><strong>{t('e_batch_meta_order')}:</strong> {batchMeta.orderNumber}</span>}
+                            {batchMeta.shipDate && <span><strong>{t('e_batch_meta_ship_date')}:</strong> {batchMeta.shipDate}</span>}
+                            {batchMeta.storeHint && <span><strong>{t('e_batch_meta_store_hint')}:</strong> {batchMeta.storeHint}</span>}
+                          </div>
+                        )}
+
+                        <div className="field" style={{ marginBottom: 14 }}>
+                          <label>{t('e_batch_store_label')}</label>
+                          <select value={batchStore} onChange={(e) => setBatchStore(e.target.value)}>
+                            <option value="">{t('common_select_placeholder')}</option>
+                            {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+
+                        <div style={{ overflowX: 'auto', border: '1px solid #eef1f4', borderRadius: 8, marginBottom: 14 }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 640 }}>
+                            <thead>
+                              <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase', background: '#f4f6f8' }}>
+                                <th style={{ padding: '7px 8px' }}></th>
+                                <th style={{ padding: '7px 8px' }}>{t('e_batch_col_sku')}</th>
+                                <th style={{ padding: '7px 8px' }}>{t('e_batch_col_product')}</th>
+                                <th style={{ padding: '7px 8px', width: 70 }}>{t('e_batch_col_qty')}</th>
+                                <th style={{ padding: '7px 8px', width: 150 }}>{t('e_batch_col_expiry')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {batchRows.map((row, idx) => {
+                                const matchQuery = row.manualQuery.trim().toLowerCase();
+                                const matchOptions = matchQuery
+                                  ? products.filter((p) => !isUnfinishedPlaceholder(p) && (
+                                      (p.itemCode || '').toLowerCase().includes(matchQuery) ||
+                                      (p.descriptionErp || '').toLowerCase().includes(matchQuery) ||
+                                      (p.descriptionGr || '').toLowerCase().includes(matchQuery)
+                                    )).slice(0, 10)
+                                  : [];
+                                return (
+                                  <tr key={idx} style={{ borderTop: '1px solid #eef1f4', opacity: row.include ? 1 : 0.45 }}>
+                                    <td style={{ padding: '6px 8px' }}>
+                                      <input type="checkbox" checked={row.include} onChange={(e) => updateBatchRow(idx, 'include', e.target.checked)} />
+                                    </td>
+                                    <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{row.sku}</td>
+                                    <td style={{ padding: '6px 8px' }}>
+                                      {row.matchedProduct ? (
+                                        <span>{row.matchedProduct.descriptionErp || row.matchedProduct.descriptionGr}</span>
+                                      ) : (
+                                        <div>
+                                          <div style={{ color: '#c0392b', fontSize: 11.5, marginBottom: 4 }}>
+                                            ⚠ {t('e_batch_unmatched_prefix')} ({row.pdfName})
+                                          </div>
+                                          <input
+                                            value={row.manualQuery}
+                                            onChange={(e) => updateBatchRow(idx, 'manualQuery', e.target.value)}
+                                            placeholder={t('e_batch_manual_pick_placeholder')}
+                                            style={{ width: '100%', padding: '5px 7px', border: '1px solid #d7dce2', borderRadius: 5, fontSize: 12 }}
+                                          />
+                                          {matchOptions.length > 0 && (
+                                            <div style={{ border: '1px solid #eef1f4', borderRadius: 6, marginTop: 4, maxHeight: 140, overflowY: 'auto' }}>
+                                              {matchOptions.map((p) => (
+                                                <div
+                                                  key={p.id}
+                                                  onClick={() => pickManualProduct(idx, p)}
+                                                  style={{ padding: '5px 8px', borderBottom: '1px solid #f1f3f5', cursor: 'pointer', fontSize: 11.5 }}
+                                                >
+                                                  <strong>{p.itemCode || '—'}</strong> — {p.descriptionErp || p.descriptionGr || ''}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '6px 8px' }}>
+                                      <input
+                                        type="number" min="0" step="1"
+                                        value={row.qty}
+                                        onChange={(e) => updateBatchRow(idx, 'qty', e.target.value)}
+                                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #d7dce2', borderRadius: 5, fontSize: 12.5 }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: '6px 8px' }}>
+                                      <input
+                                        type="date"
+                                        value={row.expiryDate}
+                                        onChange={(e) => updateBatchRow(idx, 'expiryDate', e.target.value)}
+                                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #d7dce2', borderRadius: 5, fontSize: 12.5 }}
+                                      />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {batchError && <p style={{ color: '#c0392b', fontSize: 12.5, marginBottom: 10 }}>{batchError}</p>}
+
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button className="btn-primary" type="button" style={{ flex: 1, minWidth: 160, background: activeMode.color }} disabled={batchSaving} onClick={submitBatch}>
+                            {batchSaving ? t('e_saving') : openPendingRecord ? t('e_batch_complete_button') : `${t('e_batch_row_count_prefix')} (${batchIncludedCount})`}
+                          </button>
+                          {!openPendingRecord && (
+                            <button className="btn-secondary" type="button" style={{ flex: 1, minWidth: 160 }} disabled={batchSaving} onClick={saveBatchAsPending}>
+                              ⏳ {t('e_batch_save_pending_button')}
+                            </button>
+                          )}
+                          <button className="btn-danger" type="button" onClick={resetBatch}>
+                            {openPendingRecord ? t('e_batch_close_button') : t('e_batch_cancel_button')}
+                          </button>
+                        </div>
+                        {!openPendingRecord && (
+                          <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '8px 0 0' }}>{t('e_batch_save_pending_hint')}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
