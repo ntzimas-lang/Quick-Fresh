@@ -371,6 +371,55 @@ export const NewCustomers = {
   }
 };
 
+export const PendingDeliveries = {
+  async list() {
+    const { data, error } = await supabase.from('pending_deliveries').select('*').order('updated_at', { ascending: true });
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async create(body) {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const id = newId();
+    const record = {
+      id,
+      status: 'pending',
+      orderNumber: '',
+      shipDate: '',
+      storeHint: '',
+      store: '',
+      rows: [],
+      ...body,
+      id,
+      createdBy: user?.id || null,
+      createdByEmail: user?.email || null,
+      createdAt: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('pending_deliveries')
+      .insert({ id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async update(id, body) {
+    const record = { ...body, id };
+    const { data, error } = await supabase
+      .from('pending_deliveries')
+      .update({ data: record, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async remove(id) {
+    const { error } = await supabase.from('pending_deliveries').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const StoreEquipment = {
   async list() {
     const { data, error } = await supabase.from('store_equipment').select('*').order('updated_at', { ascending: true });

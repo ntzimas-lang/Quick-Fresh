@@ -278,7 +278,7 @@ export default function App() {
           </section>
         )}
         <section className={'view' + (view === 'entry' ? ' active' : '')}>
-          <ProductEntryView />
+          <ProductEntryView canDeletePending={role === 'super_user'} />
         </section>
         <section className={'view' + (view === 'expired' ? ' active' : '')}>
           <ExpiredReportView canDelete={role === 'super_user'} />
