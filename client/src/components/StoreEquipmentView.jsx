@@ -2,13 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { StoreEquipment, Products, Entries, Destructions, upload } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
-function buildColumns(t) {
-  return [
-    { key: 'store', label: t('se_col_store') },
-    { key: 'equipment', label: `${t('se_col_fridgeNo')} / ${t('se_col_picoNo')} / ${t('se_col_stockwellNo')}` }
-  ];
-}
-
 // Κλειδί ομαδοποίησης "σχεδόν ίδιων" ονομάτων καταστήματος: αγνοεί κενά στην αρχή/τέλος,
 // πολλαπλά κενά, κεφαλαία/πεζά και τόνους — ώστε "Κοτσοβολος" / "Κοτσόβολος " / "ΚΟΤΣΟΒΟΛΟΣ"
 // να αναγνωρίζονται ως το ίδιο κατάστημα.
@@ -44,17 +37,13 @@ function toPairs(record) {
 
 export default function StoreEquipmentView({ readOnly = false }) {
   const { t } = useLanguage();
-  const COLUMNS = buildColumns(t);
   const [records, setRecords] = useState([]);
   const [products, setProducts] = useState([]);
   const [entries, setEntries] = useState([]);
   const [destructions, setDestructions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [viewMode, setViewMode] = useState('table'); // 'table' | 'card'
-  const [cardIndex, setCardIndex] = useState(0);
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState('store');
   const [sortDir, setSortDir] = useState('asc');
 
   useEffect(() => {
@@ -323,8 +312,23 @@ export default function StoreEquipmentView({ readOnly = false }) {
     return rec;
   }
 
+  // Lazy draft: αν δεν υπάρχει ακόμα τοπικό draft για αυτό το record, το παράγουμε από τις
+  // ήδη αποθηκευμένες τιμές του record — έτσι δουλεύει το ίδιο είτε ανοίγεις "Στοιχεία" στον
+  // πίνακα είτε βλέπεις το ίδιο κατάστημα στην Κάρτα, χωρίς να χρειάζεται ξεχωριστό seeding.
   function getDetailsDraft(id) {
-    return detailsDraft[id] || emptyDetails;
+    if (detailsDraft[id]) return detailsDraft[id];
+    const rec = records.find((r) => r.id === id);
+    if (!rec) return emptyDetails;
+    return {
+      electricityMeterNo: rec.electricityMeterNo || '',
+      waterMeterNo: rec.waterMeterNo || '',
+      address: rec.address || '',
+      contractFileUrl: rec.contractFileUrl || '',
+      contractFrom: rec.contractFrom || '',
+      contractTo: rec.contractTo || '',
+      healthCertFileUrl: rec.healthCertFileUrl || '',
+      operatingLicenseFileUrl: rec.operatingLicenseFileUrl || ''
+    };
   }
   function setDetailsField(id, field, value) {
     setDetailsDraft((d) => ({ ...d, [id]: { ...getDetailsDraft(id), [field]: value } }));
@@ -336,20 +340,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
       return;
     }
     setError('');
-    const rec = await ensureRecordForStore(name);
-    setDetailsDraft((d) => ({
-      ...d,
-      [rec.id]: {
-        electricityMeterNo: rec.electricityMeterNo || '',
-        waterMeterNo: rec.waterMeterNo || '',
-        address: rec.address || '',
-        contractFileUrl: rec.contractFileUrl || '',
-        contractFrom: rec.contractFrom || '',
-        contractTo: rec.contractTo || '',
-        healthCertFileUrl: rec.healthCertFileUrl || '',
-        operatingLicenseFileUrl: rec.operatingLicenseFileUrl || ''
-      }
-    }));
+    await ensureRecordForStore(name);
     setExpandedStore(name);
   }
 
@@ -408,66 +399,53 @@ export default function StoreEquipmentView({ readOnly = false }) {
     await renameStore(oldName, next);
   }
 
-  function toggleSort(key) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('asc');
-    }
+  function toggleSortDir() {
+    setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
   }
 
+  // Ενιαία λίστα πλέον: ΚΑΘΕ γνωστό όνομα καταστήματος είναι μία γραμμή, ό,τι κι αν έχει
+  // (ή δεν έχει ακόμα) record εξοπλισμού. Αν λείπει record, το δημιουργούμε αυτόματα στο
+  // παρασκήνιο ώστε κάθε κατάστημα να έχει πάντα ένα μέρος να αποθηκεύσει equipment/στοιχεία.
+  useEffect(() => {
+    const missing = allKnownStoreNames.filter((name) => !records.some((r) => (r.store || '').trim() === name));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const created = await Promise.all(missing.map((name) => StoreEquipment.create({ store: name, equipment: [] })));
+        if (!cancelled) setRecords((prev) => [...prev, ...created]);
+      } catch (err) {
+        if (!cancelled) setError(err.message || String(err));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [allKnownStoreNames, records]);
+
   const filtered = useMemo(() => {
-    let rows = records;
+    let names = allKnownStoreNames;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      rows = rows.filter((r) =>
-        (r.store || '').toLowerCase().includes(q) ||
-        toPairs(r).some((p) =>
-          (p.fridgeNo || '').toLowerCase().includes(q) ||
-          (p.picoNo || '').toLowerCase().includes(q) ||
-          (p.stockwellNo || '').toLowerCase().includes(q)
-        )
-      );
+      names = names.filter((name) => {
+        const rec = records.find((r) => (r.store || '').trim() === name);
+        return (
+          name.toLowerCase().includes(q) ||
+          (rec && (rec.address || '').toLowerCase().includes(q)) ||
+          (rec && toPairs(rec).some((p) =>
+            (p.fridgeNo || '').toLowerCase().includes(q) ||
+            (p.picoNo || '').toLowerCase().includes(q) ||
+            (p.stockwellNo || '').toLowerCase().includes(q)
+          ))
+        );
+      });
     }
-    const sorted = [...rows].sort((a, b) => {
-      const av = (a[sortKey] || '').toString().toLowerCase();
-      const bv = (b[sortKey] || '').toString().toLowerCase();
+    return [...names].sort((a, b) => {
+      const av = a.toLowerCase();
+      const bv = b.toLowerCase();
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
       if (av > bv) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
-    return sorted;
-  }, [records, search, sortKey, sortDir]);
-
-  useEffect(() => {
-    if (cardIndex >= filtered.length) setCardIndex(Math.max(0, filtered.length - 1));
-  }, [filtered.length]);
-
-  // Το νέο (κενό) κατάστημα μπορεί να μην καταλήξει στο τέλος της λίστας μετά την ταξινόμηση
-  // (π.χ. ένα κενό όνομα ταξινομείται πρώτο) — γι' αυτό ψάχνουμε το πραγματικό του index
-  // στο filtered ΑΦΟΥ ενημερωθεί, αντί να μαντεύουμε τη θέση του εκ των προτέρων.
-  const [pendingFocusId, setPendingFocusId] = useState(null);
-  useEffect(() => {
-    if (pendingFocusId == null) return;
-    const idx = filtered.findIndex((r) => r.id === pendingFocusId);
-    if (idx >= 0) {
-      setCardIndex(idx);
-      setPendingFocusId(null);
-    }
-  }, [filtered, pendingFocusId]);
-
-  async function handleCreate() {
-    try {
-      const record = await StoreEquipment.create({ store: '', equipment: [] });
-      setRecords((prev) => [...prev, record]);
-      setSearch(''); // αλλιώς το νέο (άδειο) κατάστημα μπορεί να φιλτραριστεί εκτός λίστας
-      setViewMode('card');
-      setPendingFocusId(record.id);
-    } catch (err) {
-      setError(err.message || String(err));
-    }
-  }
+  }, [allKnownStoreNames, records, search, sortDir]);
 
   async function handleFieldChange(id, field, value) {
     setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
@@ -654,26 +632,108 @@ export default function StoreEquipmentView({ readOnly = false }) {
     );
   }
 
-  const current = filtered[cardIndex];
+  // Κοινή φόρμα "στοιχείων" καταστήματος (μετρητές/διεύθυνση/αρχεία) — επαναχρησιμοποιείται
+  // και στην αναδιπλούμενη γραμμή του πίνακα ΚΑΙ στην Κάρτα, ώστε να μην υπάρχει διπλός κώδικας.
+  function renderDetailsForm(rec) {
+    const draft = getDetailsDraft(rec.id);
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        <div>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_electricity_meter')}</label>
+          <input
+            disabled={readOnly}
+            value={draft.electricityMeterNo}
+            onChange={(e) => setDetailsField(rec.id, 'electricityMeterNo', e.target.value)}
+            style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_water_meter')}</label>
+          <input
+            disabled={readOnly}
+            value={draft.waterMeterNo}
+            onChange={(e) => setDetailsField(rec.id, 'waterMeterNo', e.target.value)}
+            style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+          />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_address')}</label>
+          <input
+            disabled={readOnly}
+            value={draft.address}
+            onChange={(e) => setDetailsField(rec.id, 'address', e.target.value)}
+            style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+          />
+        </div>
+
+        <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_contract_file')}</label>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {!readOnly && (
+              <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                {draft.contractFileUrl ? t('se_file_replace') : t('se_file_choose')}
+                <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'contractFileUrl', e.target.files[0])} />
+              </label>
+            )}
+            {uploadingField === `${rec.id}:contractFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
+            {draft.contractFileUrl ? (
+              <a href={draft.contractFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>
+            ) : readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
+            <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_from')}</span>
+            <input disabled={readOnly} type="date" value={draft.contractFrom} onChange={(e) => setDetailsField(rec.id, 'contractFrom', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
+            <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_to')}</span>
+            <input disabled={readOnly} type="date" value={draft.contractTo} onChange={(e) => setDetailsField(rec.id, 'contractTo', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
+          </div>
+        </div>
+
+        <div>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_health_file')}</label>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {!readOnly && (
+              <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                {draft.healthCertFileUrl ? t('se_file_replace') : t('se_file_choose')}
+                <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'healthCertFileUrl', e.target.files[0])} />
+              </label>
+            )}
+            {uploadingField === `${rec.id}:healthCertFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
+            {draft.healthCertFileUrl ? (
+              <a href={draft.healthCertFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>
+            ) : readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
+          </div>
+        </div>
+
+        <div>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_license_file')}</label>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {!readOnly && (
+              <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                {draft.operatingLicenseFileUrl ? t('se_file_replace') : t('se_file_choose')}
+                <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'operatingLicenseFileUrl', e.target.files[0])} />
+              </label>
+            )}
+            {uploadingField === `${rec.id}:operatingLicenseFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
+            {draft.operatingLicenseFileUrl ? (
+              <a href={draft.operatingLicenseFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>
+            ) : readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
+          </div>
+        </div>
+
+        {!readOnly && (
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
+            <button type="button" className="btn-primary" onClick={() => saveDetails(rec)} style={{ padding: '6px 14px', fontSize: 12.5 }}>
+              {t('se_details_save_button')}
+            </button>
+            {detailsSavedFlash === rec.id && <span style={{ fontSize: 12, color: '#1f8f5f' }}>{t('se_details_saved_flash')}</span>}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15 }}>{t('title_store_equipment')}</strong>
-        <div style={{ display: 'flex', gap: 4, background: '#f1f3f5', borderRadius: 8, padding: 3 }}>
-          <button
-            onClick={() => setViewMode('table')}
-            style={{ border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', background: viewMode === 'table' ? '#fff' : 'transparent', color: viewMode === 'table' ? '#16233f' : '#6b7684' }}
-          >
-            {t('common_table')}
-          </button>
-          <button
-            onClick={() => setViewMode('card')}
-            style={{ border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', background: viewMode === 'card' ? '#fff' : 'transparent', color: viewMode === 'card' ? '#16233f' : '#6b7684' }}
-          >
-            {t('common_card')}
-          </button>
-        </div>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -691,7 +751,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
             <button type="button" onClick={() => setError('')} style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontWeight: 700 }}>✕</button>
           </div>
         )}
-        {!readOnly && allKnownStoreNames.length > 0 && (
+        {allKnownStoreNames.length > 0 && (
           <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
             <strong style={{ fontSize: 13, color: '#16233f', display: 'block', marginBottom: 4 }}>{t('se_store_list_title')}</strong>
             <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px' }}>{t('se_store_list_desc')}</p>
@@ -700,6 +760,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase', background: '#f4f6f8' }}>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_store_name')}</th>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_address_preview')}</th>
+                  <th style={{ padding: '7px 10px' }}>{t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}</th>
                   <th style={{ padding: '7px 10px' }}></th>
                 </tr>
               </thead>
@@ -737,90 +798,23 @@ export default function StoreEquipmentView({ readOnly = false }) {
                           )}
                         </td>
                         <td style={{ padding: '7px 10px', color: '#6b7684', fontSize: 12.5 }}>{(rec && rec.address) || '—'}</td>
+                        <td style={{ padding: '7px 10px' }}>{rec ? renderEquipmentPairs(rec, 70) : '—'}</td>
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           <button type="button" onClick={() => toggleDetails(name)} title={t('se_details_button')} style={{ border: '1px solid #d7dce2', background: isExpanded ? '#eef7f6' : '#fff', cursor: 'pointer', fontSize: 12, color: '#2f8f8a', padding: '4px 9px', borderRadius: 5, marginRight: 4 }}>
                             📄 {isExpanded ? t('se_details_hide_button') : t('se_details_button')}
                           </button>
-                          <button type="button" disabled={merging} onClick={() => startRename(name)} title={t('se_rename_button')} style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#6b7684', padding: '4px 8px' }}>✎</button>
-                          <button type="button" disabled={merging} onClick={() => deleteStore(name)} title={t('se_delete_store_button')} style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#c0392b', padding: '4px 8px' }}>🗑</button>
+                          {!readOnly && (
+                            <>
+                              <button type="button" disabled={merging} onClick={() => startRename(name)} title={t('se_rename_button')} style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#6b7684', padding: '4px 8px' }}>✎</button>
+                              <button type="button" disabled={merging} onClick={() => deleteStore(name)} title={t('se_delete_store_button')} style={{ border: 'none', background: 'transparent', cursor: merging ? 'default' : 'pointer', fontSize: 13, color: '#c0392b', padding: '4px 8px' }}>🗑</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                       {isExpanded && rec && (
                         <tr>
-                          <td colSpan={3} style={{ padding: '4px 10px 18px', background: '#fafbfc' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-                              <div>
-                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_electricity_meter')}</label>
-                                <input
-                                  value={draft.electricityMeterNo}
-                                  onChange={(e) => setDetailsField(rec.id, 'electricityMeterNo', e.target.value)}
-                                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
-                                />
-                              </div>
-                              <div>
-                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_water_meter')}</label>
-                                <input
-                                  value={draft.waterMeterNo}
-                                  onChange={(e) => setDetailsField(rec.id, 'waterMeterNo', e.target.value)}
-                                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
-                                />
-                              </div>
-                              <div style={{ gridColumn: '1 / -1' }}>
-                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_address')}</label>
-                                <input
-                                  value={draft.address}
-                                  onChange={(e) => setDetailsField(rec.id, 'address', e.target.value)}
-                                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
-                                />
-                              </div>
-
-                              <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
-                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_contract_file')}</label>
-                                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
-                                    {draft.contractFileUrl ? t('se_file_replace') : t('se_file_choose')}
-                                    <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'contractFileUrl', e.target.files[0])} />
-                                  </label>
-                                  {uploadingField === `${rec.id}:contractFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
-                                  {draft.contractFileUrl && <a href={draft.contractFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>}
-                                  <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_from')}</span>
-                                  <input type="date" value={draft.contractFrom} onChange={(e) => setDetailsField(rec.id, 'contractFrom', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
-                                  <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_to')}</span>
-                                  <input type="date" value={draft.contractTo} onChange={(e) => setDetailsField(rec.id, 'contractTo', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
-                                </div>
-                              </div>
-
-                              <div>
-                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_health_file')}</label>
-                                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
-                                    {draft.healthCertFileUrl ? t('se_file_replace') : t('se_file_choose')}
-                                    <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'healthCertFileUrl', e.target.files[0])} />
-                                  </label>
-                                  {uploadingField === `${rec.id}:healthCertFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
-                                  {draft.healthCertFileUrl && <a href={draft.healthCertFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>}
-                                </div>
-                              </div>
-
-                              <div>
-                                <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_license_file')}</label>
-                                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
-                                    {draft.operatingLicenseFileUrl ? t('se_file_replace') : t('se_file_choose')}
-                                    <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'operatingLicenseFileUrl', e.target.files[0])} />
-                                  </label>
-                                  {uploadingField === `${rec.id}:operatingLicenseFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
-                                  {draft.operatingLicenseFileUrl && <a href={draft.operatingLicenseFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>}
-                                </div>
-                              </div>
-
-                              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
-                                <button type="button" className="btn-primary" onClick={() => saveDetails(rec)} style={{ padding: '6px 14px', fontSize: 12.5 }}>
-                                  {t('se_details_save_button')}
-                                </button>
-                                {detailsSavedFlash === rec.id && <span style={{ fontSize: 12, color: '#1f8f5f' }}>{t('se_details_saved_flash')}</span>}
-                              </div>
-                            </div>
+                          <td colSpan={4} style={{ padding: '4px 10px 18px', background: '#fafbfc' }}>
+                            {renderDetailsForm(rec)}
                           </td>
                         </tr>
                       )}
@@ -829,7 +823,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 })}
               </tbody>
             </table>
-            {renamingName && (
+            {!readOnly && renamingName && (
               <>
                 <datalist id="qf-rename-datalist">
                   {allKnownStoreNames.filter((n) => n !== renamingName).map((n) => <option key={n} value={n} />)}
@@ -837,24 +831,26 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 <p style={{ fontSize: 11, color: '#97a2b0', margin: '8px 0 0' }}>{t('se_rename_datalist_hint')}</p>
               </>
             )}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #eef1f4' }}>
-              <input
-                value={newStoreName}
-                onChange={(e) => setNewStoreName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') addNewStore(); }}
-                placeholder={t('se_new_store_placeholder')}
-                style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13, width: 240 }}
-              />
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={merging || !newStoreName.trim()}
-                onClick={addNewStore}
-                style={{ padding: '6px 14px', fontSize: 12.5 }}
-              >
-                {t('se_new_store_button')}
-              </button>
-            </div>
+            {!readOnly && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #eef1f4' }}>
+                <input
+                  value={newStoreName}
+                  onChange={(e) => setNewStoreName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addNewStore(); }}
+                  placeholder={t('se_new_store_placeholder')}
+                  style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13, width: 240 }}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={merging || !newStoreName.trim()}
+                  onClick={addNewStore}
+                  style={{ padding: '6px 14px', fontSize: 12.5 }}
+                >
+                  {t('se_new_store_button')}
+                </button>
+              </div>
+            )}
           </div>
         )}
         {!readOnly && duplicateGroups.length > 0 && (
@@ -887,109 +883,8 @@ export default function StoreEquipmentView({ readOnly = false }) {
             ))}
           </div>
         )}
-        {loading ? (
+        {loading && (
           <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>
-        ) : viewMode === 'table' ? (
-          <>
-            {filtered.length === 0 ? (
-              <p style={{ color: '#97a2b0' }}>{t('se_no_records')}</p>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff', borderRadius: 8, overflow: 'hidden' }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
-                    {COLUMNS.map((col) => (
-                      <th
-                        key={col.key}
-                        onClick={() => toggleSort(col.key)}
-                        title={t('common_sort_hint')}
-                        style={{ padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}
-                      >
-                        {col.label}
-                        {sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
-                      </th>
-                    ))}
-                    {!readOnly && <th style={{ padding: '10px 12px' }}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r) => (
-                    <tr key={r.id} style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '6px 12px' }}>
-                        {readOnly ? (r.store || '—') : (
-                          <select
-                            value={r.store || ''}
-                            onChange={(e) => handleFieldChange(r.id, 'store', e.target.value)}
-                            style={{ width: '100%', border: '1px solid #e1e5ea', borderRadius: 6, padding: '5px 6px', fontSize: 13 }}
-                          >
-                            <option value="">{t('common_select_placeholder')}</option>
-                            {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        )}
-                      </td>
-                      <td style={{ padding: '6px 12px' }}>
-                        {renderEquipmentPairs(r)}
-                      </td>
-                      {!readOnly && (
-                        <td style={{ padding: '6px 12px' }}>
-                          <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDelete(r.id)}>{t('common_delete')}</button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {!readOnly && (
-              <button className="btn-primary" style={{ marginTop: 14 }} onClick={handleCreate}>{t('common_new')}</button>
-            )}
-          </>
-        ) : (
-          <div style={{ maxWidth: 420, margin: '0 auto' }}>
-            {filtered.length === 0 ? (
-              <p style={{ color: '#97a2b0' }}>{t('se_no_records')}</p>
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <button
-                    onClick={() => setCardIndex((i) => Math.max(0, i - 1))}
-                    disabled={cardIndex === 0}
-                    style={{ border: '1px solid #d7dce2', background: '#fff', borderRadius: 6, padding: '6px 12px', cursor: cardIndex === 0 ? 'default' : 'pointer', opacity: cardIndex === 0 ? 0.4 : 1 }}
-                  >‹</button>
-                  <span style={{ fontSize: 12.5, color: '#6b7684' }}>{cardIndex + 1} / {filtered.length}</span>
-                  <button
-                    onClick={() => setCardIndex((i) => Math.min(filtered.length - 1, i + 1))}
-                    disabled={cardIndex === filtered.length - 1}
-                    style={{ border: '1px solid #d7dce2', background: '#fff', borderRadius: 6, padding: '6px 12px', cursor: cardIndex === filtered.length - 1 ? 'default' : 'pointer', opacity: cardIndex === filtered.length - 1 ? 0.4 : 1 }}
-                  >›</button>
-                </div>
-                {current && (
-                  <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 20 }}>
-                    <div className="field" style={{ marginBottom: 14 }}>
-                      <label>{t('se_col_store')}</label>
-                      <select
-                        disabled={readOnly}
-                        value={current.store || ''}
-                        onChange={(e) => handleFieldChange(current.id, 'store', e.target.value)}
-                      >
-                        <option value="">{t('common_select_placeholder')}</option>
-                        {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    <div className="field" style={{ marginBottom: 18 }}>
-                      <label>{t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}</label>
-                      {renderEquipmentPairs(current, 90)}
-                    </div>
-                    {!readOnly && (
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn-primary" onClick={handleCreate}>{t('common_new')}</button>
-                        <button className="btn-danger" onClick={() => handleDelete(current.id)}>{t('common_delete')}</button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
         )}
       </div>
     </div>
