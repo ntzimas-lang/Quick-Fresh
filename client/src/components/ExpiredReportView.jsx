@@ -206,6 +206,32 @@ export default function ExpiredReportView({ canDelete = false }) {
     [salesProducts, latestSalesBatchByStore]
   );
 
+  // Η "Sales Analysis Report" περίοδος (π.χ. "01/05/2026 00:00 to 24/07/2026 23:59")
+  // μπορεί να καλύπτει πολύ μεγαλύτερο διάστημα (π.χ. 3 μήνες) από όσο έχουμε ξεκινήσει
+  // να καταχωρούμε παραλαβές σε αυτή την εφαρμογή (π.χ. λίγες μέρες). Αν αφαιρούσαμε
+  // απευθείας το ΣΥΝΟΛΟ των πωλήσεων 3 μηνών από ενεργές καταχωρήσεις λίγων ημερών, θα
+  // έβγαινε πάντα ψευδώς "πουλήθηκε όλο". Γι' αυτό υπολογίζουμε μέση ημερήσια πώληση και
+  // την αναλογίζουμε μόνο στις μέρες που πραγματικά επικαλύπτονται με την καταχώρηση.
+  function parsePeriod(periodLabel) {
+    if (!periodLabel) return null;
+    const m = periodLabel.match(/(\d{2})\/(\d{2})\/(\d{4}).*?to.*?(\d{2})\/(\d{2})\/(\d{4})/i);
+    if (!m) return null;
+    const start = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    const end = new Date(Number(m[6]), Number(m[5]) - 1, Number(m[4]));
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+    return { start, end };
+  }
+
+  const periodByStore = useMemo(() => {
+    const map = {};
+    latestSalesProducts.forEach((sp) => {
+      if (map[sp.store]) return;
+      const period = parsePeriod(sp.periodLabel);
+      if (period) map[sp.store] = period;
+    });
+    return map;
+  }, [latestSalesProducts]);
+
   const destroyedTotals = useMemo(() => {
     const map = {};
     destructions.forEach((d) => {
@@ -219,7 +245,8 @@ export default function ExpiredReportView({ canDelete = false }) {
   // Ανά (προϊόν, κατάστημα): άθροισμα ενεργών καταχωρήσεων (ό,τι δεν έχει ακόμα
   // καταστραφεί), πωλήσεις της τελευταίας περιόδου (ταιριασμένες μέσω barcode — τα
   // sales_products δεν έχουν δικό τους productId, μόνο scancode/όνομα από το αρχείο του
-  // προμηθευτή), και εκτιμώμενο πραγματικό υπόλοιπο = ενεργές − πωλήθηκαν.
+  // προμηθευτή) αναλογισμένες στις μέρες που έχουμε ενεργές καταχωρήσεις, και εκτιμώμενο
+  // πραγματικό υπόλοιπο = ενεργές − αναλογισμένες πωλήσεις.
   const stockReport = useMemo(() => {
     const groups = {};
     entries.forEach((e) => {
@@ -233,18 +260,20 @@ export default function ExpiredReportView({ canDelete = false }) {
           itemCode: e.productItemCode || '',
           description: e.productDescription || '',
           activeQty: 0,
-          earliestExpiry: null
+          earliestExpiry: null,
+          earliestCreatedAt: null
         };
       }
       const g = groups[key];
       const q = Number(e.quantity);
       g.activeQty += Number.isFinite(q) ? q : 0;
       if (e.expiryDate && (!g.earliestExpiry || e.expiryDate < g.earliestExpiry)) g.earliestExpiry = e.expiryDate;
+      if (e.createdAt && (!g.earliestCreatedAt || e.createdAt < g.earliestCreatedAt)) g.earliestCreatedAt = e.createdAt;
     });
 
     return Object.values(groups).map((g) => {
       const product = products.find((p) => p.id === g.productId);
-      let sold = 0;
+      let soldRaw = 0;
       let hasSalesData = false;
       if (product) {
         const barcodes = (product.barcodes || []).map((b) => (b || '').trim()).filter(Boolean);
@@ -252,17 +281,36 @@ export default function ExpiredReportView({ canDelete = false }) {
           latestSalesProducts.forEach((sp) => {
             if (sp.store !== g.store) return;
             if (barcodes.includes((sp.scancode || '').trim())) {
-              sold += Number(sp.sold) || 0;
+              soldRaw += Number(sp.sold) || 0;
               hasSalesData = true;
             }
           });
         }
       }
       const destroyed = destroyedTotals[g.key] || 0;
+      const period = periodByStore[g.store];
+      let sold = 0;
+      let prorated = false;
+      if (hasSalesData && period && g.earliestCreatedAt) {
+        const trackingStart = new Date(g.earliestCreatedAt);
+        const overlapStart = trackingStart > period.start ? trackingStart : period.start;
+        const now = new Date();
+        const overlapEnd = period.end < now ? period.end : now;
+        const periodDays = Math.max(1, (period.end.getTime() - period.start.getTime()) / 86400000);
+        const overlapDays = Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / 86400000);
+        const dailyRate = soldRaw / periodDays;
+        sold = Math.round(dailyRate * overlapDays * 10) / 10;
+        prorated = true;
+      } else if (hasSalesData) {
+        // Δεν μπορέσαμε να προσδιορίσουμε την περίοδο (ή δεν έχουμε ακόμα καταχώρηση) —
+        // δείχνουμε το σύνολο πωλήσεων μόνο πληροφοριακά, ΔΕΝ το αφαιρούμε από το
+        // εκτιμώμενο υπόλοιπο (για να μην εμφανίζεται ψευδώς "πουλήθηκε όλο").
+        sold = 0;
+      }
       const estimated = g.activeQty - sold;
-      return { ...g, sold, hasSalesData, destroyed, estimated };
+      return { ...g, soldRaw, sold, hasSalesData, prorated, destroyed, estimated };
     });
-  }, [entries, products, latestSalesProducts, destroyedTotals]);
+  }, [entries, products, latestSalesProducts, destroyedTotals, periodByStore]);
 
   const stockReportFiltered = useMemo(() => {
     let rows = stockReport;
@@ -447,7 +495,15 @@ export default function ExpiredReportView({ canDelete = false }) {
                             </td>
                             <td style={{ padding: '7px 10px', textAlign: 'right' }}>{r.activeQty}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-                              {r.hasSalesData ? r.sold : <span style={{ color: '#c1c8d1', fontStyle: 'italic' }}>{t('r_stock_no_sales_data')}</span>}
+                              {!r.hasSalesData ? (
+                                <span style={{ color: '#c1c8d1', fontStyle: 'italic' }}>{t('r_stock_no_sales_data')}</span>
+                              ) : r.prorated ? (
+                                r.sold
+                              ) : (
+                                <span title={t('r_stock_unprorated_hint')} style={{ color: '#c98a1f' }}>
+                                  {r.soldRaw} <span style={{ fontSize: 10 }}>ⓘ</span>
+                                </span>
+                              )}
                             </td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', color: '#6b7684' }}>{r.destroyed || '—'}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: r.estimated <= 0 ? '#2f8f8a' : diffColor(diff ?? 99) }}>
