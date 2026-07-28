@@ -128,7 +128,11 @@ export default function App() {
   }
 
   const role = profile?.role || 'viewer';
-  const readOnly = role !== 'super_user';
+  // Ο ρόλος "Χρήστης" (user) μπορεί να κάνει καταχωρήσεις/επεξεργασίες παντού όπως ο
+  // Super User — μόνο ο Viewer (και ο περιορισμένος Οδηγός, μέσω των ξεχωριστών nav-guards
+  // παρακάτω) μένει readOnly. Η διαγραφή παραμένει ξεχωριστό δικαίωμα (canDelete), μόνο
+  // για τον Super User.
+  const readOnly = role !== 'super_user' && role !== 'user';
 
   return (
     <div className="app">
@@ -247,7 +251,7 @@ export default function App() {
         <div style={{ marginTop: 'auto', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 11.5, color: '#b9c3d6' }}>
           <div style={{ marginBottom: 6 }}>{profile?.email || session.user.email}</div>
           <div style={{ marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.3, color: '#7fd6cf' }}>
-            {role === 'super_user' ? t('role_super_user') : role === 'driver' ? t('role_driver') : t('role_viewer')}
+            {role === 'super_user' ? t('role_super_user') : role === 'driver' ? t('role_driver') : role === 'user' ? t('role_user') : t('role_viewer')}
           </div>
           <button
             onClick={() => Auth.signOut()}
