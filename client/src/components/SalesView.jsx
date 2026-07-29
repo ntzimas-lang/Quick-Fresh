@@ -111,11 +111,19 @@ function parseDailySalesSummary(workbook, knownStores) {
 
 // Ψάχνει μέσα σε ένα ελεύθερο κείμενο (τίτλος report, όνομα αρχείου) για κάποιο από
 // τα γνωστά ονόματα καταστημάτων — δεύτερη γραμμή άμυνας όταν το φύλλο "Details" δεν
-// βοηθάει (δεν υπάρχει, ή έχει παραπάνω από ένα Location μέσα στο ίδιο αρχείο).
+// βοηθάει (δεν υπάρχει, ή δεν έχει καθόλου στήλη Location).
 function guessStoreFromText(text, knownStores) {
   if (!text) return '';
   const low = String(text).toLowerCase();
   return (knownStores || []).find((s) => low.includes(s.toLowerCase())) || '';
+}
+
+// Για αντιστοίχιση ονομάτων προϊόντων ανάμεσα στα φύλλα "Summary" και "Details" (το
+// "Details" δεν έχει Scancode) — τα ονόματα δεν είναι πάντα byte-for-byte ίδια μεταξύ
+// των δύο φύλλων (π.χ. διαφορετικά κεφαλαία, ή "35gr" vs "35g"), οπότε κάνουμε μια
+// ήπια κανονικοποίηση (lowercase + συμπίεση κενών) πριν το ταίριασμα.
+function normalizeProductName(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName) {
@@ -146,31 +154,97 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
   const titleCell = rowsSummary[0] && rowsSummary[0][0];
   const periodLabel = titleCell ? String(titleCell).replace(/^Sales Analysis-?/i, '').trim() : '';
 
-  // Προσπαθούμε να βρούμε το κατάστημα από το φύλλο "Details" (έχει στήλη Location).
-  let resolvedStore = storeOverride || '';
-  if (!resolvedStore && detailsSheetName) {
+  // Scancode/κατηγορίες ανά (κανονικοποιημένο) όνομα προϊόντος — χρησιμοποιείται όταν
+  // σπάμε το report ανά κατάστημα μέσω του φύλλου "Details" παρακάτω, αφού εκείνο το
+  // φύλλο δεν έχει Scancode.
+  const summaryByName = {};
+  rowsSummary.slice(headerIdx + 1).forEach((r) => {
+    if (!r || !r[iName]) return;
+    summaryByName[normalizeProductName(r[iName])] = {
+      scancode: r[iScancode] ? String(r[iScancode]).trim() : '',
+      cat1: r[iCat1] ? String(r[iCat1]).trim() : '',
+      cat2: r[iCat2] ? String(r[iCat2]).trim() : '',
+      cat3: r[iCat3] ? String(r[iCat3]).trim() : ''
+    };
+  });
+
+  // Διαβάζουμε το φύλλο "Details" (Location ανά γραμμή) για να δούμε ΠΟΣΑ και ΠΟΙΑ
+  // καταστήματα καλύπτει στην πραγματικότητα το αρχείο — ένα report μπορεί να περιέχει
+  // αναμεμειγμένες πωλήσεις από πολλά καταστήματα μαζί.
+  let detailsRows = null;
+  let iLoc = -1, iDName = -1, iDSold = -1, iDPrice = -1, iDTax = -1, iDDeposit = -1, iDDiscount = -1, iDTotalPrice = -1, iDCost = -1, iDNet = -1, iDGm = -1;
+  if (detailsSheetName) {
     const wsDetails = workbook.Sheets[detailsSheetName];
     const rowsDetails = XLSX.utils.sheet_to_json(wsDetails, { header: 1, defval: null, raw: true });
     const dHeaderIdx = findHeaderRow(rowsDetails, ['Location']);
     if (dHeaderIdx !== -1) {
       const dHeader = rowsDetails[dHeaderIdx].map((h) => String(h || '').trim());
-      const iLoc = dHeader.indexOf('Location');
-      const locs = new Set();
-      for (let i = dHeaderIdx + 1; i < rowsDetails.length; i++) {
-        const loc = rowsDetails[i] && rowsDetails[i][iLoc];
-        if (loc) locs.add(normalizeStoreName(loc, knownStores));
-      }
-      if (locs.size === 1) resolvedStore = [...locs][0];
+      iLoc = dHeader.indexOf('Location');
+      iDName = dHeader.indexOf('Product Name');
+      iDSold = dHeader.indexOf('Sold');
+      iDPrice = dHeader.indexOf('Price');
+      iDTax = dHeader.indexOf('Tax');
+      iDDeposit = dHeader.indexOf('Deposit');
+      iDDiscount = dHeader.indexOf('Discount');
+      iDTotalPrice = dHeader.indexOf('Total Price');
+      iDCost = dHeader.indexOf('Cost');
+      iDNet = dHeader.indexOf('Net');
+      iDGm = dHeader.indexOf('GM%');
+      detailsRows = rowsDetails.slice(dHeaderIdx + 1).filter((r) => r && r[iLoc]);
     }
   }
-  // Δεύτερη προσπάθεια: ψάχνουμε το όνομα καταστήματος μέσα στον τίτλο του report
-  // ή στο όνομα του αρχείου (π.χ. "Sales Analysis Report - Gefsinus Kryoneri Q&F.xlsx").
-  if (!resolvedStore) resolvedStore = guessStoreFromText(titleCell, knownStores);
-  if (!resolvedStore) resolvedStore = guessStoreFromText(fileName, knownStores);
+
+  const distinctLocs = detailsRows ? new Set(detailsRows.map((r) => String(r[iLoc]).trim())) : new Set();
 
   const batchId = 'batch-' + Date.now();
   const uploadedAt = new Date().toISOString();
   const out = [];
+
+  if (distinctLocs.size > 1) {
+    // ΠΟΛΛΑ καταστήματα μέσα στο ίδιο αρχείο — σπάμε ανά πραγματική γραμμή του "Details"
+    // (που ήδη κουβαλάει Location + Sold/Price/Tax/... ανά κατάστημα), εμπλουτισμένη με
+    // Scancode/κατηγορία από το "Summary" μέσω αντιστοίχισης ονόματος. Αν κάποιο προϊόν
+    // δεν αντιστοιχιστεί (σπάνιο, διαφορές μορφοποίησης ονόματος), κρατάμε τη γραμμή
+    // χωρίς scancode — απλά δεν θα μπορεί να «δει» barcode-based αναφορές (π.χ. Εκτιμώμενο
+    // Απόθεμα), όπως ακριβώς συμβαίνει σήμερα με προϊόντα χωρίς καταχωρημένο barcode.
+    detailsRows.forEach((r) => {
+      if (!r[iDName]) return;
+      const store = normalizeStoreName(r[iLoc], knownStores);
+      const match = summaryByName[normalizeProductName(r[iDName])] || {};
+      const totalPrice = num(r[iDTotalPrice]);
+      const tax = num(r[iDTax]);
+      out.push({
+        batchId,
+        uploadedAt,
+        periodLabel,
+        store,
+        productName: String(r[iDName]).trim(),
+        scancode: match.scancode || '',
+        cat1: match.cat1 || '',
+        cat2: match.cat2 || '',
+        cat3: match.cat3 || '',
+        sold: num(r[iDSold]),
+        price: num(r[iDPrice]),
+        tax,
+        deposit: num(r[iDDeposit]),
+        discount: num(r[iDDiscount]),
+        totalPrice,
+        netRevenue: totalPrice - tax,
+        cost: num(r[iDCost]),
+        netProfit: num(r[iDNet]),
+        gmPercent: num(r[iDGm])
+      });
+    });
+    return { rows: out, resolvedStore: '', periodLabel, multiStore: true };
+  }
+
+  // ΕΝΑ μόνο κατάστημα σε όλο το αρχείο (η κοινή περίπτωση) — χρησιμοποιούμε απευθείας
+  // το "Summary" (πιο αξιόπιστο, έχει ήδη Scancode) και του βάζουμε το ένα κατάστημα.
+  let resolvedStore = storeOverride || '';
+  if (!resolvedStore && distinctLocs.size === 1) resolvedStore = normalizeStoreName([...distinctLocs][0], knownStores);
+  if (!resolvedStore) resolvedStore = guessStoreFromText(titleCell, knownStores);
+  if (!resolvedStore) resolvedStore = guessStoreFromText(fileName, knownStores);
+
   for (let i = headerIdx + 1; i < rowsSummary.length; i++) {
     const r = rowsSummary[i];
     if (!r || !r[iName]) continue;
@@ -198,7 +272,7 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
       gmPercent: num(r[iGm])
     });
   }
-  return { rows: out, resolvedStore, periodLabel };
+  return { rows: out, resolvedStore, periodLabel, multiStore: false };
 }
 
 export default function SalesView({ canDelete = false }) {
@@ -212,6 +286,13 @@ export default function SalesView({ canDelete = false }) {
   const [allProducts, setAllProducts] = useState([]);
   const dailyInputRef = useRef(null);
   const productsInputRef = useRef(null);
+  // Όταν η αυτόματη αναγνώριση καταστήματος αποτύχει, δεν αποθηκεύουμε πλέον σιωπηλά ως
+  // "—" — κρατάμε τις γραμμές σε αναμονή και ζητάμε από τον χρήστη να διαλέξει κατάστημα.
+  const [pendingUpload, setPendingUpload] = useState(null); // { rows, fileName, count }
+  const [pendingStorePick, setPendingStorePick] = useState('');
+  // Επεξεργασία καταστήματος σε ήδη ανεβασμένη παρτίδα (π.χ. διόρθωση ενός "—").
+  const [editingBatchId, setEditingBatchId] = useState(null);
+  const [editStoreValue, setEditStoreValue] = useState('');
 
   // Η λίστα καταστημάτων προέρχεται από την ίδια κεντρική λίστα με παντού αλλού
   // στην εφαρμογή (Προϊόντα → Cost → Κατάστημα) — όχι από ξεχωριστή/παλιωμένη λίστα.
@@ -268,11 +349,12 @@ export default function SalesView({ canDelete = false }) {
     }
   }
 
-  // Χωρίς επιλογή καταστήματος από τον χρήστη — προσπαθούμε αυτόματη αναγνώριση από
-  // το φύλλο "Details" του αρχείου (στήλη Location). Αν δεν βρεθεί και υπάρχει μόνο
-  // ΕΝΑ κατάστημα καταχωρημένο συνολικά στην εφαρμογή, χρησιμοποιούμε αυτό ως μοναδική
-  // λογική επιλογή. Αν κάποτε υπάρξουν πολλά καταστήματα και δεν μπορεί να αναγνωριστεί
-  // αυτόματα, αποθηκεύεται ως "—" και μπορεί να διορθωθεί αργότερα.
+  // Αν το αρχείο περιέχει πωλήσεις από ΠΟΛΛΑ καταστήματα μαζί, το parseSalesAnalysisReport
+  // τις σπάει ήδη σωστά ανά πραγματικό κατάστημα (μέσω του φύλλου "Details") — κάθε γραμμή
+  // έρχεται με το δικό της store, οπότε αποθηκεύουμε απευθείας χωρίς να ρωτήσουμε τίποτα.
+  // Μόνο όταν δεν μπορεί να αναγνωριστεί ΚΑΝΕΝΑ κατάστημα αυτόματα (σπάνια περίπτωση, π.χ.
+  // λείπει εντελώς το φύλλο "Details") ζητάμε από τον χρήστη να διαλέξει ένα κατάστημα για
+  // όλο το αρχείο πριν αποθηκευτεί η παρτίδα (βλ. pendingUpload) — ποτέ πια σιωπηλό "—".
   async function handleProductsFile(e) {
     const file = e.target.files && e.target.files[0];
     if (productsInputRef.current) productsInputRef.current.value = '';
@@ -281,10 +363,21 @@ export default function SalesView({ canDelete = false }) {
     setMessage(null);
     try {
       const wb = await readWorkbook(file);
-      const { rows, resolvedStore } = parseSalesAnalysisReport(wb, '', storeOptions, file.name);
+      const { rows, resolvedStore, multiStore } = parseSalesAnalysisReport(wb, '', storeOptions, file.name);
       if (!rows.length) throw new Error('no_rows');
+      if (multiStore) {
+        await SalesProducts.insertBatch(rows);
+        setMessage({ type: 'ok', text: t('sales_upload_products_ok').replace('{n}', rows.length) });
+        refresh();
+        return;
+      }
       const finalStore = resolvedStore || (storeOptions.length === 1 ? storeOptions[0] : '');
-      const finalRows = finalStore ? rows.map((r) => ({ ...r, store: finalStore })) : rows;
+      if (!finalStore) {
+        setPendingUpload({ rows, fileName: file.name, count: rows.length });
+        setPendingStorePick('');
+        return;
+      }
+      const finalRows = rows.map((r) => ({ ...r, store: finalStore }));
       await SalesProducts.insertBatch(finalRows);
       setMessage({ type: 'ok', text: t('sales_upload_products_ok').replace('{n}', rows.length) });
       refresh();
@@ -295,9 +388,53 @@ export default function SalesView({ canDelete = false }) {
     }
   }
 
+  async function confirmPendingUpload() {
+    if (!pendingUpload || !pendingStorePick) return;
+    setBusyProducts(true);
+    setMessage(null);
+    try {
+      const finalRows = pendingUpload.rows.map((r) => ({ ...r, store: pendingStorePick }));
+      await SalesProducts.insertBatch(finalRows);
+      setMessage({ type: 'ok', text: t('sales_upload_products_ok').replace('{n}', finalRows.length) });
+      setPendingUpload(null);
+      refresh();
+    } catch (err) {
+      setMessage({ type: 'error', text: t('sales_upload_error') + ' ' + (err.message || err) });
+    } finally {
+      setBusyProducts(false);
+    }
+  }
+
+  function cancelPendingUpload() {
+    setPendingUpload(null);
+    setPendingStorePick('');
+  }
+
   async function handleDeleteBatch(batchId) {
     try {
       await SalesProducts.removeBatch(batchId);
+      refresh();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || String(err) });
+    }
+  }
+
+  function startEditBatchStore(b) {
+    setEditingBatchId(b.batchId);
+    setEditStoreValue(b.store === '—' ? '' : b.store);
+  }
+
+  function cancelEditBatchStore() {
+    setEditingBatchId(null);
+    setEditStoreValue('');
+  }
+
+  async function saveEditBatchStore(batchId) {
+    if (!editStoreValue) return;
+    try {
+      await SalesProducts.updateBatchStore(batchId, editStoreValue);
+      setEditingBatchId(null);
+      setEditStoreValue('');
       refresh();
     } catch (err) {
       setMessage({ type: 'error', text: err.message || String(err) });
@@ -322,6 +459,37 @@ export default function SalesView({ canDelete = false }) {
           >
             <span>{message.text}</span>
             <button type="button" onClick={() => setMessage(null)} style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+          </div>
+        )}
+
+        {pendingUpload && (
+          <div style={{ background: '#fff8e6', border: '1px solid #f0d998', borderRadius: 12, padding: 18, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#8a6d1f', marginBottom: 6 }}>{t('sales_pick_store_title')}</div>
+            <p style={{ fontSize: 12.5, color: '#8a6d1f', margin: '0 0 12px' }}>
+              {t('sales_pick_store_desc').replace('{file}', pendingUpload.fileName).replace('{n}', pendingUpload.count)}
+            </p>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <select
+                value={pendingStorePick}
+                onChange={(e) => setPendingStorePick(e.target.value)}
+                style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d8c78a', fontSize: 13, minWidth: 220 }}
+              >
+                <option value="">{t('sales_pick_store_placeholder')}</option>
+                {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={!pendingStorePick || busyProducts}
+                onClick={confirmPendingUpload}
+                style={{ opacity: !pendingStorePick || busyProducts ? 0.6 : 1 }}
+              >
+                {busyProducts ? t('sales_uploading') : t('sales_pick_store_save')}
+              </button>
+              <button type="button" onClick={cancelPendingUpload} style={{ background: 'transparent', border: '1px solid #d8c78a', color: '#8a6d1f', borderRadius: 6, padding: '7px 12px', fontSize: 13, cursor: 'pointer' }}>
+                {t('common_cancel')}
+              </button>
+            </div>
           </div>
         )}
 
@@ -379,7 +547,27 @@ export default function SalesView({ canDelete = false }) {
               <tbody>
                 {batches.map((b) => (
                   <tr key={b.batchId} style={{ borderTop: '1px solid #eef1f4' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600 }}>{b.store}</td>
+                    <td style={{ padding: '8px 0', fontWeight: 600 }}>
+                      {editingBatchId === b.batchId ? (
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <select
+                            value={editStoreValue}
+                            onChange={(e) => setEditStoreValue(e.target.value)}
+                            style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #d5dae2', fontSize: 12.5 }}
+                          >
+                            <option value="">{t('sales_pick_store_placeholder')}</option>
+                            {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                          <button type="button" onClick={() => saveEditBatchStore(b.batchId)} disabled={!editStoreValue} title={t('sales_pick_store_save')} style={{ border: 'none', background: 'transparent', color: '#1f7a52', cursor: 'pointer', fontWeight: 700 }}>✓</button>
+                          <button type="button" onClick={cancelEditBatchStore} title={t('common_cancel')} style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+                        </div>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          {b.store === '—' ? <span title={t('sales_store_unresolved_hint')} style={{ color: '#c0392b' }}>⚠ {b.store}</span> : b.store}
+                          <button type="button" onClick={() => startEditBatchStore(b)} title={t('sales_edit_store_button')} style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '8px 0', color: '#6b7684' }}>{b.periodLabel || '—'}</td>
                     <td style={{ padding: '8px 0' }}>{b.count}</td>
                     <td style={{ padding: '8px 0', color: '#6b7684', whiteSpace: 'nowrap' }}>
