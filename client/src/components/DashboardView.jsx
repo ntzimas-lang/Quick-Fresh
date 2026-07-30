@@ -220,7 +220,7 @@ export default function DashboardView({ isDriver = false } = {}) {
     productTotals[name].sold += p.sold || 0;
     productTotals[name].netRevenue += p.netRevenue || 0;
 
-    const cat = p.cat1 || '—';
+    const cat = p.cat1 || t('d_category_uncategorized_label');
     categoryTotals[cat] = (categoryTotals[cat] || 0) + (p.netRevenue || 0);
 
     const label = p.periodLabel || '';
@@ -251,7 +251,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   // παραπάνω flat Top20/Worst20 block, ομαδοποιημένα κατά Cat1.
   const categoryProductTotals = {};
   currentProducts.forEach((p) => {
-    const cat = p.cat1 || '—';
+    const cat = p.cat1 || t('d_category_uncategorized_label');
     const name = p.productName || '—';
     if (!categoryProductTotals[cat]) categoryProductTotals[cat] = {};
     categoryProductTotals[cat][name] = (categoryProductTotals[cat][name] || 0) + (p.sold || 0);

@@ -126,6 +126,20 @@ function normalizeProductName(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Δεύτερο, πιο "χαλαρό" πέρασμα κανονικοποίησης — χρησιμοποιείται ΜΟΝΟ όταν το αυστηρό
+// ταίριασμα (normalizeProductName) αποτύχει. Εξομαλύνει τις πιο συνηθισμένες διαφορές
+// μορφοποίησης ανάμεσα στα φύλλα "Summary"/"Details" του ίδιου report (π.χ. "300 ml" vs
+// "300ml", "35gr" vs "35g", σημεία στίξης) ώστε να πιάνει περισσότερα ταιριάσματα χωρίς να
+// ρισκάρει να μπερδέψει εντελώς διαφορετικά προϊόντα.
+function normalizeProductNameLoose(s) {
+  return normalizeProductName(s)
+    .replace(/(\d)\s+(ml|gr|g|kg|lt|l)\b/g, '$1$2')
+    .replace(/(\d)gr\b/g, '$1g')
+    .replace(/[.,()&]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName) {
   const summarySheetName = workbook.SheetNames.find((n) => /summary/i.test(n)) || workbook.SheetNames[0];
   const detailsSheetName = workbook.SheetNames.find((n) => /details/i.test(n));
@@ -158,15 +172,29 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
   // σπάμε το report ανά κατάστημα μέσω του φύλλου "Details" παρακάτω, αφού εκείνο το
   // φύλλο δεν έχει Scancode.
   const summaryByName = {};
+  const summaryByNameLoose = {};
   rowsSummary.slice(headerIdx + 1).forEach((r) => {
     if (!r || !r[iName]) return;
-    summaryByName[normalizeProductName(r[iName])] = {
+    const info = {
       scancode: r[iScancode] ? String(r[iScancode]).trim() : '',
       cat1: r[iCat1] ? String(r[iCat1]).trim() : '',
       cat2: r[iCat2] ? String(r[iCat2]).trim() : '',
       cat3: r[iCat3] ? String(r[iCat3]).trim() : ''
     };
+    summaryByName[normalizeProductName(r[iName])] = info;
+    // Στο χαλαρό ευρετήριο δεν ξαναγράφουμε μια εγγραφή που ταιριάζει ήδη με άλλο προϊόν
+    // (θα σήμαινε 2 διαφορετικά προϊόντα να "συγκρούονται" στο ίδιο χαλαρό κλειδί) — σε
+    // τέτοια σπάνια περίπτωση προτιμάμε να ΜΗΝ ταιριάξουμε παρά να ταιριάξουμε λάθος.
+    const looseKey = normalizeProductNameLoose(r[iName]);
+    if (looseKey in summaryByNameLoose) summaryByNameLoose[looseKey] = null;
+    else summaryByNameLoose[looseKey] = info;
   });
+
+  function lookupSummaryInfo(productName) {
+    return summaryByName[normalizeProductName(productName)]
+      || summaryByNameLoose[normalizeProductNameLoose(productName)]
+      || {};
+  }
 
   // Διαβάζουμε το φύλλο "Details" (Location ανά γραμμή) για να δούμε ΠΟΣΑ και ΠΟΙΑ
   // καταστήματα καλύπτει στην πραγματικότητα το αρχείο — ένα report μπορεί να περιέχει
@@ -210,7 +238,7 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
     detailsRows.forEach((r) => {
       if (!r[iDName]) return;
       const store = normalizeStoreName(r[iLoc], knownStores);
-      const match = summaryByName[normalizeProductName(r[iDName])] || {};
+      const match = lookupSummaryInfo(r[iDName]);
       const totalPrice = num(r[iDTotalPrice]);
       const tax = num(r[iDTax]);
       out.push({
