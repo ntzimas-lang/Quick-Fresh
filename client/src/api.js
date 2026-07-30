@@ -251,6 +251,60 @@ export const SalesProducts = {
   async removeBatch(batchId) {
     const { error } = await supabase.from('sales_products').delete().eq('data->>batchId', batchId);
     if (error) throw error;
+  },
+  // Διόρθωση καταστήματος σε ήδη ανεβασμένη παρτίδα (π.χ. όταν η αυτόματη αναγνώριση
+  // απέτυχε και αποθηκεύτηκε ως "—") — ξαναγράφει το πεδίο store σε όλες τις γραμμές
+  // της παρτίδας χωρίς να πειράξει τίποτα άλλο.
+  async updateBatchStore(batchId, store) {
+    const { data: rows, error: selErr } = await supabase.from('sales_products').select('*').eq('data->>batchId', batchId);
+    if (selErr) throw selErr;
+    if (!rows.length) return [];
+    const payload = rows.map((r) => ({ id: r.id, data: { ...r.data, store }, updated_at: new Date().toISOString() }));
+    const { data, error } = await supabase.from('sales_products').upsert(payload, { onConflict: 'id' }).select();
+    if (error) throw error;
+    return data.map(rowToRecord);
+  }
+};
+
+// Πωλήσεις ανά μισάωρο της ημέρας, ΣΥΝΟΛΙΚΑ (χωρίς κατάστημα) — από το report
+// "Sales By 30 Minutes" (ή "Sales By 15 Minutes") — τροφοδοτεί το γράφημα "Ώρες Αιχμής".
+export const SalesTimeBuckets = {
+  async list() {
+    const { data, error } = await supabase.from('sales_time_buckets').select('*');
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async insertBatch(rows) {
+    if (!rows.length) return [];
+    const payload = rows.map((r) => ({ id: newId(), data: r }));
+    const { data, error } = await supabase.from('sales_time_buckets').insert(payload).select();
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async removeBatch(batchId) {
+    const { error } = await supabase.from('sales_time_buckets').delete().eq('data->>batchId', batchId);
+    if (error) throw error;
+  }
+};
+
+// Πωλήσεις ανά ΚΑΤΑΣΤΗΜΑ, σπασμένες σε 4 βάρδιες της ημέρας — από το report
+// "Sales Time Details".
+export const SalesShiftBreakdown = {
+  async list() {
+    const { data, error } = await supabase.from('sales_shift_breakdown').select('*');
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async insertBatch(rows) {
+    if (!rows.length) return [];
+    const payload = rows.map((r) => ({ id: newId(), data: r }));
+    const { data, error } = await supabase.from('sales_shift_breakdown').insert(payload).select();
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async removeBatch(batchId) {
+    const { error } = await supabase.from('sales_shift_breakdown').delete().eq('data->>batchId', batchId);
+    if (error) throw error;
   }
 };
 

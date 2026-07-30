@@ -420,6 +420,9 @@ export const translations = {
     d_category_top20_label: 'Top 20',
     d_category_worst20_label: 'Χειρότερα 20',
     d_category_uncategorized_label: 'Χωρίς κατηγορία',
+    d_peak_hours_title: 'Ώρες Αιχμής',
+    d_peak_hours_peak_prefix: 'Αιχμή στις',
+    d_shift_breakdown_title: 'Βάρδιες ανά Κατάστημα',
 
     // Πεδίο "Πωλήσεις" — upload
     sales_daily_title: 'Daily Sales Summary',
@@ -447,6 +450,15 @@ export const translations = {
     sales_pick_store_save: 'Αποθήκευση',
     sales_store_unresolved_hint: 'Αυτή η παρτίδα δεν έχει κατάστημα — δεν προσμετράται σε καμία αναφορά. Πάτησε ✏️ για να το διορθώσεις.',
     sales_edit_store_button: 'Διόρθωση καταστήματος',
+    sales_col_stores: 'Καταστήματα',
+    sales_time_buckets_title: 'Sales By 30/15 Minutes',
+    sales_time_buckets_desc: 'Ανέβασε το report πωλήσεων ανά μισάωρο/τέταρτο της ημέρας (.xlsx) — τροφοδοτεί το γράφημα "Ώρες Αιχμής" στον Πίνακα Ελέγχου.',
+    sales_shift_details_title: 'Sales Time Details',
+    sales_shift_details_desc: 'Ανέβασε το report πωλήσεων ανά κατάστημα σε 4 βάρδιες (.xlsx) — τροφοδοτεί τον πίνακα βαρδιών ανά κατάστημα στον Πίνακα Ελέγχου.',
+    sales_upload_time_buckets_ok: 'Εισήχθησαν {n} χρονικά διαστήματα.',
+    sales_upload_shift_details_ok: 'Εισήχθησαν {n} γραμμές βαρδιών.',
+    sales_time_buckets_history_title: 'Ιστορικό εισαγωγών (Ώρες Αιχμής)',
+    sales_shift_details_history_title: 'Ιστορικό εισαγωγών (Βάρδιες ανά Κατάστημα)',
 
     // Καταστροφή προϊόντος
     x_date_label: 'Ημερομηνία καταστροφής',
@@ -880,6 +892,9 @@ export const translations = {
     d_category_top20_label: 'Top 20',
     d_category_worst20_label: 'Worst 20',
     d_category_uncategorized_label: 'Uncategorized',
+    d_peak_hours_title: 'Peak Hours',
+    d_peak_hours_peak_prefix: 'Peak at',
+    d_shift_breakdown_title: 'Shift Breakdown by Store',
 
     sales_daily_title: 'Daily Sales Summary',
     sales_daily_desc: 'Upload the daily sales report (.xlsx). Re-uploading an existing date updates it instead of duplicating.',
@@ -906,6 +921,15 @@ export const translations = {
     sales_pick_store_save: 'Save',
     sales_store_unresolved_hint: 'This batch has no store — it isn\'t counted in any report. Click ✏️ to fix it.',
     sales_edit_store_button: 'Fix store',
+    sales_col_stores: 'Stores',
+    sales_time_buckets_title: 'Sales By 30/15 Minutes',
+    sales_time_buckets_desc: 'Upload the sales-by-half-hour/quarter-hour report (.xlsx) — feeds the "Peak Hours" chart on the Dashboard.',
+    sales_shift_details_title: 'Sales Time Details',
+    sales_shift_details_desc: 'Upload the per-store, 4-shift sales report (.xlsx) — feeds the per-store shift breakdown table on the Dashboard.',
+    sales_upload_time_buckets_ok: '{n} time buckets imported.',
+    sales_upload_shift_details_ok: '{n} shift rows imported.',
+    sales_time_buckets_history_title: 'Import history (Peak Hours)',
+    sales_shift_details_history_title: 'Import history (Shift Breakdown)',
 
     x_date_label: 'Destruction date',
     x_reason_label: 'Reason (optional)',
