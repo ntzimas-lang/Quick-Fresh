@@ -336,6 +336,7 @@ export const translations = {
     r_stock_no_sales_data: 'χωρίς δεδομένα πωλήσεων',
     r_stock_likely_sold_out: 'πιθανώς πουλήθηκε',
     r_stock_unprorated_hint: 'Δεν μπορέσαμε να προσδιορίσουμε την περίοδο πωλήσεων ή δεν υπάρχει ακόμα καταχώρηση — δείχνουμε το σύνολο πωλήσεων μόνο ενημερωτικά, χωρίς να το αφαιρούμε από το εκτιμώμενο υπόλοιπο.',
+    r_stock_unresolved_batch_warning: 'Υπάρχει ανέβασμα πωλήσεων ({n} γραμμές) χωρίς αντιστοιχισμένο κατάστημα — δεν υπολογίζεται εδώ. Πήγαινε στο "Πωλήσεις" και διόρθωσε το κατάστημα της παρτίδας.',
 
     // Ιστορικό
     h_filter_all: 'Όλα',
@@ -417,6 +418,7 @@ export const translations = {
     d_category_breakdown_hide: 'Απόκρυψη',
     d_category_top20_label: 'Top 20',
     d_category_worst20_label: 'Χειρότερα 20',
+    d_category_uncategorized_label: 'Χωρίς κατηγορία',
 
     // Πεδίο "Πωλήσεις" — upload
     sales_daily_title: 'Daily Sales Summary',
@@ -438,6 +440,12 @@ export const translations = {
     sales_col_period: 'Περίοδος',
     sales_col_rows: 'Προϊόντα',
     sales_col_uploaded: 'Ανέβηκε',
+    sales_pick_store_title: 'Για ποιο κατάστημα είναι αυτό το report;',
+    sales_pick_store_desc: 'Δεν αναγνωρίστηκε αυτόματα το κατάστημα για το αρχείο "{file}" ({n} προϊόντα). Διάλεξε κατάστημα για να αποθηκευτεί σωστά — διαφορετικά δεν θα υπολογίζεται πουθενά.',
+    sales_pick_store_placeholder: '— Διάλεξε κατάστημα —',
+    sales_pick_store_save: 'Αποθήκευση',
+    sales_store_unresolved_hint: 'Αυτή η παρτίδα δεν έχει κατάστημα — δεν προσμετράται σε καμία αναφορά. Πάτησε ✏️ για να το διορθώσεις.',
+    sales_edit_store_button: 'Διόρθωση καταστήματος',
 
     // Καταστροφή προϊόντος
     x_date_label: 'Ημερομηνία καταστροφής',
@@ -792,6 +800,7 @@ export const translations = {
     r_stock_no_sales_data: 'no sales data',
     r_stock_likely_sold_out: 'likely sold out',
     r_stock_unprorated_hint: "We couldn't determine the sales period, or there's no entry yet — showing the total sales figure for reference only, not subtracted from the estimated remaining.",
+    r_stock_unresolved_batch_warning: 'There\'s a sales upload ({n} rows) with no store assigned — it isn\'t counted here. Go to "Sales" and fix the batch\'s store.',
 
     h_filter_all: 'All',
     h_action_insert: 'Created',
@@ -868,6 +877,7 @@ export const translations = {
     d_category_breakdown_hide: 'Hide',
     d_category_top20_label: 'Top 20',
     d_category_worst20_label: 'Worst 20',
+    d_category_uncategorized_label: 'Uncategorized',
 
     sales_daily_title: 'Daily Sales Summary',
     sales_daily_desc: 'Upload the daily sales report (.xlsx). Re-uploading an existing date updates it instead of duplicating.',
@@ -888,6 +898,12 @@ export const translations = {
     sales_col_period: 'Period',
     sales_col_rows: 'Products',
     sales_col_uploaded: 'Uploaded',
+    sales_pick_store_title: 'Which store is this report for?',
+    sales_pick_store_desc: 'The store could not be auto-detected for file "{file}" ({n} products). Pick a store so it saves correctly — otherwise it won\'t count anywhere.',
+    sales_pick_store_placeholder: '— Pick a store —',
+    sales_pick_store_save: 'Save',
+    sales_store_unresolved_hint: 'This batch has no store — it isn\'t counted in any report. Click ✏️ to fix it.',
+    sales_edit_store_button: 'Fix store',
 
     x_date_label: 'Destruction date',
     x_reason_label: 'Reason (optional)',
