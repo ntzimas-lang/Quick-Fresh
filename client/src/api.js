@@ -81,12 +81,11 @@ function defaultContact(overrides) {
     responsible: '',
     email: '',
     phone2: '',
-    firstCallDate: null,
-    firstMailDate: null,
-    firstVisitDate: null,
-    secondCallDate: null,
-    secondMailDate: null,
-    secondVisitDate: null,
+    // Λίστες ημερομηνιών (όχι πια σταθερός αριθμός "1η/2η") — μπορεί να έχει όσες
+    // χρειάζεται, καμία, ή πολλές.
+    callDates: [],
+    mailDates: [],
+    visitDates: [],
     notes: '',
     ...overrides,
     id
