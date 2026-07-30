@@ -16,24 +16,31 @@ function buildContactColumns(t) {
     { key: 'responsible', label: t('c_col_responsible') },
     { key: 'email', label: t('c_col_email') },
     { key: 'phone2', label: t('c_col_phone2') },
-    { key: 'firstCallDate', label: t('c_col_firstCallDate') },
-    { key: 'firstMailDate', label: t('c_col_firstMailDate') },
-    { key: 'firstVisitDate', label: t('c_col_firstVisitDate') },
-    { key: 'secondCallDate', label: t('c_col_secondCallDate') },
-    { key: 'secondMailDate', label: t('c_col_secondMailDate') },
-    { key: 'secondVisitDate', label: t('c_col_secondVisitDate') },
+    { key: 'callDates', label: t('c_col_callDates') },
+    { key: 'mailDates', label: t('c_col_mailDates') },
+    { key: 'visitDates', label: t('c_col_visitDates') },
     { key: 'notes', label: t('c_col_notes') }
   ];
 }
 
 const DEFAULT_VISIBLE_CONTACT_COLUMNS = [
   'company', 'department', 'phone', 'emailInfo', 'status', 'autoSeller', 'interest',
-  'peopleCount', 'responsible', 'email', 'phone2', 'firstCallDate', 'firstMailDate',
-  'firstVisitDate', 'secondCallDate', 'secondMailDate', 'secondVisitDate', 'notes'
+  'peopleCount', 'responsible', 'email', 'phone2', 'callDates', 'mailDates', 'visitDates', 'notes'
 ];
 
-const DATE_KEYS = new Set(['firstCallDate', 'firstMailDate', 'firstVisitDate', 'secondCallDate', 'secondMailDate', 'secondVisitDate']);
+// Λίστες ημερομηνιών ελεύθερου μήκους (αντί για σταθερά "1η/2η") — η στήλη στον πίνακα
+// δείχνει μόνο μια σύνοψη (πλήθος + πιο πρόσφατη), η επεξεργασία (προσθήκη/αφαίρεση)
+// γίνεται στην Κάρτα.
+const LIST_DATE_KEYS = new Set(['callDates', 'mailDates', 'visitDates']);
 const TEXT_KEYS = new Set(['company', 'department', 'phone', 'emailInfo', 'responsible', 'email', 'phone2', 'notes']);
+
+function formatDateShort(iso) {
+  if (!iso) return '';
+  const parts = String(iso).split('-');
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
+}
 
 // Η "τιμή" (value) που αποθηκεύεται στην εγγραφή παραμένει πάντα η ίδια (Ελληνικά),
 // ανεξάρτητα από τη γλώσσα διεπαφής — μόνο η ετικέτα (label) που φαίνεται μεταφράζεται.
@@ -74,16 +81,41 @@ function buildOptions(t, values) {
 // μία φορά, κατά τη φόρτωση, σε peopleCount — ώστε μετά να είναι πάντα ένας
 // συγκεκριμένος αριθμός και να μην "ξαναϋπολογίζεται" ενώ ο χρήστης πληκτρολογεί
 // (αυτό προκαλούσε το πρόβλημα που δεν μπορούσες να γράψεις ελεύθερα το νούμερο).
+//
+// Παλιές επαφές είχαν επίσης σταθερά πεδία firstCallDate/secondCallDate (κ.λπ., 2 ανά
+// τύπο επικοινωνίας) — τα μετατρέπουμε μία φορά σε λίστες ελεύθερου μήκους
+// (callDates/mailDates/visitDates), ώστε να μπορεί κάποιος να έχει όσες επικοινωνίες
+// χρειάζεται, όχι ακριβώς 2.
+function migrateDateList(c, legacyKeys) {
+  return legacyKeys.map((k) => c[k]).filter(Boolean);
+}
 function normalizeContact(c) {
-  if (c.peopleCount !== undefined && c.peopleCount !== null) return c;
-  return { ...c, peopleCount: Array.isArray(c.people) ? c.people.length : 0 };
+  let next = c;
+  if (next.peopleCount === undefined || next.peopleCount === null) {
+    next = { ...next, peopleCount: Array.isArray(next.people) ? next.people.length : 0 };
+  }
+  if (!Array.isArray(next.callDates)) {
+    next = { ...next, callDates: migrateDateList(next, ['firstCallDate', 'secondCallDate']) };
+  }
+  if (!Array.isArray(next.mailDates)) {
+    next = { ...next, mailDates: migrateDateList(next, ['firstMailDate', 'secondMailDate']) };
+  }
+  if (!Array.isArray(next.visitDates)) {
+    next = { ...next, visitDates: migrateDateList(next, ['firstVisitDate', 'secondVisitDate']) };
+  }
+  return next;
 }
 
 function getContactColumnValue(c, key) {
   if (key === 'peopleCount') return c.peopleCount ?? '';
+  if (LIST_DATE_KEYS.has(key)) {
+    const arr = (c[key] || []).filter(Boolean).slice().sort();
+    return arr.length ? arr[arr.length - 1] : ''; // πιο πρόσφατη ημερομηνία -> χρησιμοποιείται στην ταξινόμηση
+  }
   return c[key];
 }
 function getContactFilterText(c, key) {
+  if (LIST_DATE_KEYS.has(key)) return (c[key] || []).map(formatDateShort).join(' ');
   const v = getContactColumnValue(c, key);
   return v === null || v === undefined ? '' : String(v);
 }
@@ -132,17 +164,23 @@ export default function ContactsView({ readOnly = false }) {
   const [columnFilters, setColumnFilters] = useState({});
   const [sortKey, setSortKey] = useState(() => loadContactSortState()?.sortKey ?? null);
   const [sortDir, setSortDir] = useState(() => loadContactSortState()?.sortDir || 'asc');
+  // Η ΠΡΟΗΓΟΥΜΕΝΗ στήλη ταξινόμησης — όταν ταξινομείς πρώτα στήλη Α και μετά στήλη Β, η
+  // σειρά της Β γίνεται η κύρια, αλλά μέσα σε ίδιες τιμές Β κρατάμε τη σειρά της Α (σαν
+  // Excel "sort by A, then by B"). Ενημερώνεται μόνο όταν αλλάζεις σε ΔΙΑΦΟΡΕΤΙΚΗ στήλη
+  // (όχι όταν απλά αντιστρέφεις την κατεύθυνση της ίδιας στήλης).
+  const [prevSortKey, setPrevSortKey] = useState(() => loadContactSortState()?.prevSortKey ?? null);
+  const [prevSortDir, setPrevSortDir] = useState(() => loadContactSortState()?.prevSortDir || 'asc');
 
   const cardSaveTimer = useRef(null);
   const inlineSaveTimers = useRef({});
 
   useEffect(() => {
     try {
-      localStorage.setItem(CONTACT_SORT_KEY, JSON.stringify({ sortKey, sortDir }));
+      localStorage.setItem(CONTACT_SORT_KEY, JSON.stringify({ sortKey, sortDir, prevSortKey, prevSortDir }));
     } catch (e) {
       // ignore storage errors
     }
-  }, [sortKey, sortDir]);
+  }, [sortKey, sortDir, prevSortKey, prevSortDir]);
 
   useEffect(() => {
     Contacts.list().then((list) => setContacts(list.map(normalizeContact)));
@@ -190,6 +228,53 @@ export default function ContactsView({ readOnly = false }) {
 
   function updateField(key, value) {
     applyCardUpdate((prev) => ({ ...prev, [key]: value }));
+  }
+
+  // Λίστα ημερομηνιών ελεύθερου μήκους (callDates/mailDates/visitDates) — αντικαθιστά
+  // τα παλιά σταθερά "1η/2η" πεδία. Μπορεί να έχει 0, 1, ή όσες χρειάζεται.
+  function renderDateListField(key, label) {
+    const list = current[key] || [];
+    return (
+      <div className="field">
+        <label>{label}</label>
+        {list.length === 0 && (
+          <div style={{ fontSize: 12.5, color: '#97a2b0', margin: '2px 0 6px' }}>{t('c_dates_none')}</div>
+        )}
+        {list.map((d, idx) => (
+          <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+            <input
+              disabled={readOnly}
+              type="date"
+              value={d || ''}
+              onChange={(e) => {
+                const next = list.slice();
+                next[idx] = e.target.value || null;
+                updateField(key, next);
+              }}
+              style={{ flex: 1 }}
+            />
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => updateField(key, list.filter((_, i) => i !== idx))}
+                title={t('common_delete')}
+                style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontWeight: 700, fontSize: 14 }}
+              >✕</button>
+            )}
+          </div>
+        ))}
+        {!readOnly && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => updateField(key, [...list, new Date().toISOString().slice(0, 10)])}
+            style={{ fontSize: 12, padding: '4px 10px' }}
+          >
+            + {t('c_add_date')}
+          </button>
+        )}
+      </div>
+    );
   }
 
   async function handleDelete() {
@@ -254,33 +339,59 @@ export default function ContactsView({ readOnly = false }) {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
+      // Αλλαγή σε διαφορετική στήλη — η μέχρι τώρα στήλη γίνεται η "προηγούμενη", ώστε
+      // να χρησιμοποιηθεί σαν tiebreaker μέσα στη νέα ταξινόμηση.
+      if (sortKey) {
+        setPrevSortKey(sortKey);
+        setPrevSortDir(sortDir);
+      }
       setSortKey(key);
       setSortDir('asc');
     }
   }
 
+  function compareByKey(c1, c2, key, dir) {
+    let av = getContactColumnValue(c1, key);
+    let bv = getContactColumnValue(c2, key);
+    const aEmpty = av === null || av === undefined || av === '';
+    const bEmpty = bv === null || bv === undefined || bv === '';
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    av = String(av).toLowerCase();
+    bv = String(bv).toLowerCase();
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  }
+
   const sortedContacts = (() => {
     if (!sortKey) return filteredContacts;
-    const withVal = filteredContacts.map((c) => ({ c, v: getContactColumnValue(c, sortKey) }));
-    withVal.sort((a, b) => {
-      let av = a.v;
-      let bv = b.v;
-      const aEmpty = av === null || av === undefined || av === '';
-      const bEmpty = bv === null || bv === undefined || bv === '';
-      if (aEmpty && bEmpty) return 0;
-      if (aEmpty) return 1;
-      if (bEmpty) return -1;
-      av = String(av).toLowerCase();
-      bv = String(bv).toLowerCase();
-      if (av < bv) return sortDir === 'asc' ? -1 : 1;
-      if (av > bv) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-    return withVal.map((x) => x.c);
+    let list = filteredContacts;
+    // Πρώτα ταξινομούμε (σταθερά) με την ΠΡΟΗΓΟΥΜΕΝΗ στήλη — μετά η ταξινόμηση με τη
+    // ΝΕΑ στήλη από πάνω κρατάει, χάρη στο ότι το Array.sort της JS είναι stable, τη
+    // σχετική σειρά της προηγούμενης εκεί που οι τιμές της νέας στήλης είναι ίδιες.
+    if (prevSortKey && prevSortKey !== sortKey) {
+      list = [...list].sort((a, b) => compareByKey(a, b, prevSortKey, prevSortDir));
+    }
+    return [...list].sort((a, b) => compareByKey(a, b, sortKey, sortDir));
   })();
 
   function renderCell(c, col) {
     const stop = (e) => e.stopPropagation();
+    // Οι λίστες ημερομηνιών (callDates/mailDates/visitDates) δεν επεξεργάζονται μέσα
+    // στον πίνακα — μόνο σύνοψη (πλήθος + πιο πρόσφατη). Κλικ στο κελί ανοίγει την
+    // Κάρτα (ίδιο με κλικ οπουδήποτε αλλού στη γραμμή) όπου γίνεται η πραγματική
+    // προσθήκη/αφαίρεση.
+    if (LIST_DATE_KEYS.has(col.key)) {
+      const arr = (c[col.key] || []).filter(Boolean).slice().sort();
+      if (!arr.length) return <span style={{ color: '#c7cdd6' }}>—</span>;
+      return (
+        <span>
+          {arr.length}× <span style={{ color: '#97a2b0' }}>({formatDateShort(arr[arr.length - 1])})</span>
+        </span>
+      );
+    }
     if (readOnly) {
       if (col.key === 'status') {
         const opt = STATUS_OPTIONS.find((o) => o.value === c.status);
@@ -353,17 +464,6 @@ export default function ContactsView({ readOnly = false }) {
         />
       );
     }
-    if (DATE_KEYS.has(col.key)) {
-      return (
-        <input
-          type="date"
-          value={c[col.key] || ''}
-          onClick={stop}
-          onChange={(e) => updateContactInline(c.id, (rec) => ({ ...rec, [col.key]: e.target.value || null }))}
-          style={inlineInputStyle}
-        />
-      );
-    }
     // people: read-only preview, κλικ ανοίγει την κάρτα για επεξεργασία
     const value = getContactColumnValue(c, col.key);
     return value || '—';
@@ -405,8 +505,10 @@ export default function ContactsView({ readOnly = false }) {
                       key={col.key}
                       style={{ textAlign: 'left', fontWeight: 600, padding: '8px 12px', whiteSpace: 'nowrap', userSelect: 'none' }}
                     >
-                      <span onClick={() => toggleSort(col.key)} style={{ cursor: 'pointer' }} title={t('common_sort_hint')}>
-                        {col.label}{sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      <span onClick={() => toggleSort(col.key)} style={{ cursor: 'pointer' }} title={sortKey === col.key && prevSortKey && prevSortKey !== col.key ? t('common_sort_secondary_hint').replace('{col}', CONTACT_COLUMNS.find((c) => c.key === prevSortKey)?.label || prevSortKey) : t('common_sort_hint')}>
+                        {col.label}
+                        {sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                        {prevSortKey === col.key && sortKey !== col.key ? <sup style={{ color: '#97a2b0', fontSize: 9.5 }}>2</sup> : ''}
                       </span>
                       <span style={{ marginLeft: 6, display: 'inline-flex', gap: 1 }}>
                         <button
@@ -534,12 +636,9 @@ export default function ContactsView({ readOnly = false }) {
             </div>
 
             <div className="grid-3">
-              <div className="field"><label>{t('c_col_firstCallDate')}</label><input disabled={readOnly} type="date" value={current.firstCallDate || ''} onChange={(e) => updateField('firstCallDate', e.target.value || null)} /></div>
-              <div className="field"><label>{t('c_col_firstMailDate')}</label><input disabled={readOnly} type="date" value={current.firstMailDate || ''} onChange={(e) => updateField('firstMailDate', e.target.value || null)} /></div>
-              <div className="field"><label>{t('c_col_firstVisitDate')}</label><input disabled={readOnly} type="date" value={current.firstVisitDate || ''} onChange={(e) => updateField('firstVisitDate', e.target.value || null)} /></div>
-              <div className="field"><label>{t('c_col_secondCallDate')}</label><input disabled={readOnly} type="date" value={current.secondCallDate || ''} onChange={(e) => updateField('secondCallDate', e.target.value || null)} /></div>
-              <div className="field"><label>{t('c_col_secondMailDate')}</label><input disabled={readOnly} type="date" value={current.secondMailDate || ''} onChange={(e) => updateField('secondMailDate', e.target.value || null)} /></div>
-              <div className="field"><label>{t('c_col_secondVisitDate')}</label><input disabled={readOnly} type="date" value={current.secondVisitDate || ''} onChange={(e) => updateField('secondVisitDate', e.target.value || null)} /></div>
+              {renderDateListField('callDates', t('c_col_callDates'))}
+              {renderDateListField('mailDates', t('c_col_mailDates'))}
+              {renderDateListField('visitDates', t('c_col_visitDates'))}
             </div>
 
             <div className="field">
