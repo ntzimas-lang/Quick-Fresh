@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Contacts, Entries, SalesDaily, SalesProducts } from '../api.js';
+import { Contacts, Entries, SalesDaily, SalesProducts, SalesTimeBuckets, SalesShiftBreakdown, Products } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const SALES_LINE_COLORS = { net: '#2f8f8a', tx: '#c98a1f' };
@@ -83,6 +83,9 @@ export default function DashboardView({ isDriver = false } = {}) {
   const [entries, setEntries] = useState([]);
   const [salesDaily, setSalesDaily] = useState([]);
   const [salesProducts, setSalesProducts] = useState([]);
+  const [salesTimeBuckets, setSalesTimeBuckets] = useState([]);
+  const [salesShiftBreakdown, setSalesShiftBreakdown] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   // Το ανά-κατηγορία breakdown (top20/worst20 μέσα σε ΚΑΘΕ κατηγορία) μπορεί να βγάλει
   // πολλά δεδομένα στην οθόνη (μία κάρτα ανά κατηγορία) — κρυμμένο by default, ο χρήστης
   // το ανοίγει όποτε το χρειάζεται.
@@ -97,7 +100,10 @@ export default function DashboardView({ isDriver = false } = {}) {
           Contacts.list().then(setContacts),
           Entries.list().then(setEntries),
           SalesDaily.list().then(setSalesDaily),
-          SalesProducts.list().then(setSalesProducts)
+          SalesProducts.list().then(setSalesProducts),
+          SalesTimeBuckets.list().then(setSalesTimeBuckets),
+          SalesShiftBreakdown.list().then(setSalesShiftBreakdown),
+          Products.list().then(setAllProducts)
         ];
     Promise.all(tasks)
       .then(() => setLoading(false))
@@ -266,6 +272,39 @@ export default function DashboardView({ isDriver = false } = {}) {
     })
     .sort((a, b) => b.categoryTotal - a.categoryTotal);
 
+  // --- Ώρες Αιχμής (peak hours) --------------------------------------------
+  // Ένα report "Sales By 30/15 Minutes" καλύπτει όλη την εφαρμογή μαζί (όχι ανά
+  // κατάστημα) — κρατάμε μόνο την πιο πρόσφατη ανεβασμένη παρτίδα.
+  const latestTimeBucketUploadedAt = salesTimeBuckets.reduce((max, r) => (!max || new Date(r.uploadedAt) > new Date(max) ? r.uploadedAt : max), null);
+  const peakHoursBuckets = salesTimeBuckets
+    .filter((r) => r.uploadedAt === latestTimeBucketUploadedAt)
+    .sort((a, b) => (a.bucketStart > b.bucketStart ? 1 : a.bucketStart < b.bucketStart ? -1 : 0));
+  const peakHoursMax = peakHoursBuckets.length ? Math.max(...peakHoursBuckets.map((b) => b.grossSales)) : 0;
+  const peakHoursPeriodLabel = peakHoursBuckets.length ? peakHoursBuckets[0].periodLabel : '';
+  const peakHourBucket = peakHoursBuckets.reduce((best, b) => (!best || b.grossSales > best.grossSales ? b : best), null);
+
+  // --- Βάρδιες ανά κατάστημα -------------------------------------------------
+  // Μόνο καταστήματα από την κεντρική λίστα (Προϊόντα → Cost → Κατάστημα) — το report
+  // περιέχει και μη-πραγματικά "καταστήματα" όπως "Inventory Units", που δεν έχει νόημα
+  // να εμφανιστούν εδώ.
+  const knownStoreNames = new Set();
+  allProducts.forEach((p) => (p.stores || []).forEach((s) => s && s.name && knownStoreNames.add(s.name)));
+  const latestShiftUploadedAt = salesShiftBreakdown.reduce((max, r) => (!max || new Date(r.uploadedAt) > new Date(max) ? r.uploadedAt : max), null);
+  const shiftRowsLatest = salesShiftBreakdown.filter((r) => r.uploadedAt === latestShiftUploadedAt && knownStoreNames.has(r.store));
+  const shiftPeriodLabel = shiftRowsLatest.length ? shiftRowsLatest[0].periodLabel : '';
+  const shiftLabelsOrder = [];
+  const shiftByStore = {};
+  shiftRowsLatest.forEach((r) => {
+    if (!shiftLabelsOrder.includes(r.shiftLabel)) shiftLabelsOrder.push(r.shiftLabel);
+    if (!shiftByStore[r.store]) shiftByStore[r.store] = {};
+    shiftByStore[r.store][r.shiftLabel] = r;
+  });
+  const shiftStoreRows = Object.entries(shiftByStore).sort((a, b) => {
+    const totalA = Object.values(a[1]).reduce((s, r) => s + (r.sales || 0), 0);
+    const totalB = Object.values(b[1]).reduce((s, r) => s + (r.sales || 0), 0);
+    return totalB - totalA;
+  });
+
   const hasSalesData = salesDaily.length > 0 || salesProducts.length > 0;
 
   return (
@@ -428,6 +467,86 @@ export default function DashboardView({ isDriver = false } = {}) {
                     </div>
                   )}
                 </div>
+
+                {peakHoursBuckets.length > 0 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                      <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                        {t('d_peak_hours_title')}
+                      </span>
+                      {peakHoursPeriodLabel && (
+                        <span style={{ fontSize: 11.5, color: '#97a2b0' }}>{t('d_sales_period_label')} {peakHoursPeriodLabel}</span>
+                      )}
+                      {peakHourBucket && (
+                        <span style={{ fontSize: 11.5, color: '#2f8f8a', fontWeight: 700 }}>
+                          {t('d_peak_hours_peak_prefix')} {peakHourBucket.bucketStart} ({formatEuro(peakHourBucket.grossSales)})
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 100, overflowX: 'auto' }}>
+                      {peakHoursBuckets.map((b) => {
+                        const pct = peakHoursMax ? Math.max(2, Math.round((b.grossSales / peakHoursMax) * 100)) : 2;
+                        const isPeak = peakHourBucket && b.bucketStart === peakHourBucket.bucketStart;
+                        return (
+                          <div
+                            key={b.bucketStart}
+                            title={`${b.bucketLabel}: ${formatEuro(b.grossSales)} (${b.transactions} ${t('d_sales_tx')})`}
+                            style={{ flex: '1 0 4px', minWidth: 4, height: pct + '%', background: isPeak ? '#c98a1f' : '#2f8f8a', borderRadius: '2px 2px 0 0' }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: '#97a2b0', marginTop: 4 }}>
+                      {peakHoursBuckets.filter((b, i) => i % Math.ceil(peakHoursBuckets.length / 12) === 0).map((b) => (
+                        <span key={b.bucketStart}>{b.bucketStart}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {shiftStoreRows.length > 0 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                      <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                        {t('d_shift_breakdown_title')}
+                      </span>
+                      {shiftPeriodLabel && (
+                        <span style={{ fontSize: 11.5, color: '#97a2b0' }}>{t('d_sales_period_label')} {shiftPeriodLabel}</span>
+                      )}
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #eef1f4' }}>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#97a2b0', fontWeight: 700 }}>{t('sales_col_store')}</th>
+                            {shiftLabelsOrder.map((label) => (
+                              <th key={label} style={{ textAlign: 'right', padding: '6px 8px', color: '#97a2b0', fontWeight: 700, whiteSpace: 'nowrap' }}>{label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {shiftStoreRows.map(([store, shifts]) => {
+                            const busiestSales = Math.max(...shiftLabelsOrder.map((l) => (shifts[l] ? shifts[l].sales : 0)));
+                            return (
+                              <tr key={store} style={{ borderTop: '1px solid #eef1f4' }}>
+                                <td style={{ padding: '7px 8px', fontWeight: 600 }}>{store}</td>
+                                {shiftLabelsOrder.map((label) => {
+                                  const r = shifts[label];
+                                  const isBusiest = r && busiestSales > 0 && r.sales === busiestSales;
+                                  return (
+                                    <td key={label} style={{ padding: '7px 8px', textAlign: 'right', color: isBusiest ? '#16233f' : '#6b7684', fontWeight: isBusiest ? 700 : 400 }}>
+                                      {r ? formatEuro(r.sales) : '—'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>

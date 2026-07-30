@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { SalesDaily, SalesProducts, Products } from '../api.js';
+import { SalesDaily, SalesProducts, SalesTimeBuckets, SalesShiftBreakdown, Products } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 // Το "Location" στα reports της POS δεν γράφεται πάντα ίδιο ακριβώς με το όνομα
@@ -303,6 +303,96 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
   return { rows: out, resolvedStore, periodLabel, multiStore: false };
 }
 
+// "Sales By 30 Minutes" / "Sales By 15 Minutes" — πωλήσεις ανά μισάωρο/τέταρτο της ημέρας,
+// ΣΥΝΟΛΙΚΑ (χωρίς διάκριση καταστήματος). Χρησιμοποιείται για το γράφημα "Ώρες Αιχμής".
+function parseSalesByMinutes(workbook) {
+  const sheetName = workbook.SheetNames[0];
+  const ws = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  const headerIdx = findHeaderRow(rows, ['Period']);
+  if (headerIdx === -1) throw new Error('header_not_found');
+  const header = rows[headerIdx].map((h) => String(h || '').trim());
+  const col = (name) => header.indexOf(name);
+  const iPeriod = col('Period');
+  const iGross = col('Gross Sales');
+  const iRedeemed = col('Redeemed Value');
+  const iDiscount = col('Discount Value');
+  const iTx = col('Transactions');
+
+  const titleText = rows[0] && rows[0][0] ? String(rows[0][0]) : '';
+  const granMatch = titleText.match(/By (\d+) Minutes?/i);
+  const granularity = granMatch ? Number(granMatch[1]) : null;
+  const periodLabel = titleText.replace(/^Sales By \d+ Minutes?\s*-?\s*/i, '').trim();
+
+  const batchId = 'batch-' + Date.now();
+  const uploadedAt = new Date().toISOString();
+  const out = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[iPeriod]) continue;
+    const label = String(r[iPeriod]).trim();
+    if (/^total/i.test(label)) continue; // η τελευταία γραμμή "Total:" δεν είναι bucket
+    out.push({
+      batchId,
+      uploadedAt,
+      periodLabel,
+      granularity,
+      bucketLabel: label,
+      bucketStart: label.split(' ')[0], // "00:30 (12:30 AM)" -> "00:30"
+      grossSales: num(r[iGross]),
+      redeemedValue: num(r[iRedeemed]),
+      discountValue: num(r[iDiscount]),
+      transactions: num(r[iTx])
+    });
+  }
+  return { rows: out, periodLabel, granularity };
+}
+
+// "Sales Time Details" — ένα μπλοκ ανά κατάστημα μέσα στο ίδιο φύλλο: γραμμή τίτλου
+// ("<Κατάστημα> - <περίοδος>"), γραμμή επικεφαλίδας ("Time, Transactions, Sales, ..."),
+// γραμμές βαρδιών, γραμμή "Total", κενή γραμμή, επόμενο μπλοκ. Καταστήματα χωρίς καμία
+// πώληση έχουν μόνο τη γραμμή "Total" (καμία βάρδια) — απλά δεν παράγουν καμία γραμμή.
+function parseSalesTimeDetails(workbook, knownStores) {
+  const sheetName = workbook.SheetNames[0];
+  const ws = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  const batchId = 'batch-' + Date.now();
+  const uploadedAt = new Date().toISOString();
+  const out = [];
+  let i = 0;
+  while (i < rows.length) {
+    const row = rows[i];
+    if (!row || !row[0]) { i++; continue; }
+    const titleText = String(row[0]).trim();
+    const headerRow = rows[i + 1];
+    const isHeader = headerRow && String(headerRow[0] || '').trim() === 'Time';
+    if (!isHeader) { i++; continue; }
+    const m = titleText.match(/^(.*?)\s-\s(\d{2}\/\d{2}\/\d{4}.*)$/);
+    const rawStore = m ? m[1].trim() : titleText;
+    const periodLabel = m ? m[2].trim() : '';
+    const store = normalizeStoreName(rawStore, knownStores);
+    i += 2; // προσπερνάμε τίτλο + επικεφαλίδα
+    while (i < rows.length && rows[i] && rows[i][0] && String(rows[i][0]).trim().toLowerCase() !== 'total') {
+      const r = rows[i];
+      out.push({
+        batchId,
+        uploadedAt,
+        periodLabel,
+        store,
+        shiftLabel: String(r[0]).trim(),
+        transactions: num(r[1]),
+        sales: num(r[2]),
+        discounts: num(r[3]),
+        taxes: num(r[4]),
+        salesInclTax: num(r[5])
+      });
+      i++;
+    }
+    if (i < rows.length && rows[i] && rows[i][0] && String(rows[i][0]).trim().toLowerCase() === 'total') i++;
+  }
+  return { rows: out, batchId };
+}
+
 export default function SalesView({ canDelete = false }) {
   const { t } = useLanguage();
   const [dailyCount, setDailyCount] = useState(null);
@@ -310,10 +400,16 @@ export default function SalesView({ canDelete = false }) {
   const [loading, setLoading] = useState(true);
   const [busyDaily, setBusyDaily] = useState(false);
   const [busyProducts, setBusyProducts] = useState(false);
+  const [busyTimeBuckets, setBusyTimeBuckets] = useState(false);
+  const [busyShiftDetails, setBusyShiftDetails] = useState(false);
+  const [timeBucketBatches, setTimeBucketBatches] = useState([]);
+  const [shiftBatches, setShiftBatches] = useState([]);
   const [message, setMessage] = useState(null); // { type: 'ok'|'error', text }
   const [allProducts, setAllProducts] = useState([]);
   const dailyInputRef = useRef(null);
   const productsInputRef = useRef(null);
+  const timeBucketsInputRef = useRef(null);
+  const shiftDetailsInputRef = useRef(null);
   // Όταν η αυτόματη αναγνώριση καταστήματος αποτύχει, δεν αποθηκεύουμε πλέον σιωπηλά ως
   // "—" — κρατάμε τις γραμμές σε αναμονή και ζητάμε από τον χρήστη να διαλέξει κατάστημα.
   const [pendingUpload, setPendingUpload] = useState(null); // { rows, fileName, count }
@@ -337,7 +433,9 @@ export default function SalesView({ canDelete = false }) {
   async function refresh() {
     setLoading(true);
     try {
-      const [daily, products] = await Promise.all([SalesDaily.list(), SalesProducts.list()]);
+      const [daily, products, timeBuckets, shiftRows] = await Promise.all([
+        SalesDaily.list(), SalesProducts.list(), SalesTimeBuckets.list(), SalesShiftBreakdown.list()
+      ]);
       setDailyCount(daily.length);
       const byBatch = {};
       products.forEach((p) => {
@@ -346,6 +444,21 @@ export default function SalesView({ canDelete = false }) {
       });
       const list = Object.values(byBatch).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
       setBatches(list);
+
+      const byTimeBucketBatch = {};
+      timeBuckets.forEach((p) => {
+        if (!byTimeBucketBatch[p.batchId]) byTimeBucketBatch[p.batchId] = { batchId: p.batchId, granularity: p.granularity, periodLabel: p.periodLabel, uploadedAt: p.uploadedAt, count: 0 };
+        byTimeBucketBatch[p.batchId].count += 1;
+      });
+      setTimeBucketBatches(Object.values(byTimeBucketBatch).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)));
+
+      const byShiftBatch = {};
+      shiftRows.forEach((p) => {
+        if (!byShiftBatch[p.batchId]) byShiftBatch[p.batchId] = { batchId: p.batchId, periodLabel: p.periodLabel, uploadedAt: p.uploadedAt, count: 0, stores: new Set() };
+        byShiftBatch[p.batchId].count += 1;
+        byShiftBatch[p.batchId].stores.add(p.store);
+      });
+      setShiftBatches(Object.values(byShiftBatch).map((b) => ({ ...b, storeCount: b.stores.size })).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)));
     } catch (err) {
       setMessage({ type: 'error', text: err.message || String(err) });
     } finally {
@@ -441,6 +554,69 @@ export default function SalesView({ canDelete = false }) {
   async function handleDeleteBatch(batchId) {
     try {
       await SalesProducts.removeBatch(batchId);
+      refresh();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || String(err) });
+    }
+  }
+
+  // "Sales By 30 Minutes" / "Sales By 15 Minutes" -> τροφοδοτεί το γράφημα "Ώρες Αιχμής"
+  // στον Πίνακα Ελέγχου. Δεν χρειάζεται επιλογή καταστήματος (το report είναι συνολικό).
+  async function handleTimeBucketsFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (timeBucketsInputRef.current) timeBucketsInputRef.current.value = '';
+    if (!file) return;
+    setBusyTimeBuckets(true);
+    setMessage(null);
+    try {
+      const wb = await readWorkbook(file);
+      const { rows } = parseSalesByMinutes(wb);
+      if (!rows.length) throw new Error('no_rows');
+      await SalesTimeBuckets.insertBatch(rows);
+      setMessage({ type: 'ok', text: t('sales_upload_time_buckets_ok').replace('{n}', rows.length) });
+      refresh();
+    } catch (err) {
+      setMessage({ type: 'error', text: t('sales_upload_error') + ' ' + (err.message || err) });
+    } finally {
+      setBusyTimeBuckets(false);
+    }
+  }
+
+  async function handleDeleteTimeBucketBatch(batchId) {
+    try {
+      await SalesTimeBuckets.removeBatch(batchId);
+      refresh();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || String(err) });
+    }
+  }
+
+  // "Sales Time Details" -> τροφοδοτεί τον πίνακα βαρδιών ανά κατάστημα στον Πίνακα
+  // Ελέγχου. Το ίδιο το αρχείο ήδη κουβαλάει το κατάστημα ανά μπλοκ, άρα δεν χρειάζεται
+  // καμία επιλογή από τον χρήστη.
+  async function handleShiftDetailsFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (shiftDetailsInputRef.current) shiftDetailsInputRef.current.value = '';
+    if (!file) return;
+    setBusyShiftDetails(true);
+    setMessage(null);
+    try {
+      const wb = await readWorkbook(file);
+      const { rows } = parseSalesTimeDetails(wb, storeOptions);
+      if (!rows.length) throw new Error('no_rows');
+      await SalesShiftBreakdown.insertBatch(rows);
+      setMessage({ type: 'ok', text: t('sales_upload_shift_details_ok').replace('{n}', rows.length) });
+      refresh();
+    } catch (err) {
+      setMessage({ type: 'error', text: t('sales_upload_error') + ' ' + (err.message || err) });
+    } finally {
+      setBusyShiftDetails(false);
+    }
+  }
+
+  async function handleDeleteShiftBatch(batchId) {
+    try {
+      await SalesShiftBreakdown.removeBatch(batchId);
       refresh();
     } catch (err) {
       setMessage({ type: 'error', text: err.message || String(err) });
@@ -550,6 +726,30 @@ export default function SalesView({ canDelete = false }) {
               {busyProducts ? t('sales_uploading') : t('sales_choose_file')}
             </label>
           </div>
+
+          {/* Upload Sales By 30/15 Minutes -> γράφημα "Ώρες Αιχμής" στον Πίνακα Ελέγχου */}
+          <div style={{ flex: '1 1 360px', background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
+            <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
+              {t('sales_time_buckets_title')}
+            </div>
+            <p style={{ fontSize: 12.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sales_time_buckets_desc')}</p>
+            <input ref={timeBucketsInputRef} type="file" accept=".xlsx,.xls" onChange={handleTimeBucketsFile} style={{ display: 'none' }} id="time-buckets-upload" />
+            <label htmlFor="time-buckets-upload" className="btn-primary" style={{ display: 'inline-block', cursor: 'pointer', opacity: busyTimeBuckets ? 0.6 : 1 }}>
+              {busyTimeBuckets ? t('sales_uploading') : t('sales_choose_file')}
+            </label>
+          </div>
+
+          {/* Upload Sales Time Details -> πίνακας βαρδιών ανά κατάστημα στον Πίνακα Ελέγχου */}
+          <div style={{ flex: '1 1 360px', background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
+            <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
+              {t('sales_shift_details_title')}
+            </div>
+            <p style={{ fontSize: 12.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sales_shift_details_desc')}</p>
+            <input ref={shiftDetailsInputRef} type="file" accept=".xlsx,.xls" onChange={handleShiftDetailsFile} style={{ display: 'none' }} id="shift-details-upload" />
+            <label htmlFor="shift-details-upload" className="btn-primary" style={{ display: 'inline-block', cursor: 'pointer', opacity: busyShiftDetails ? 0.6 : 1 }}>
+              {busyShiftDetails ? t('sales_uploading') : t('sales_choose_file')}
+            </label>
+          </div>
         </div>
 
         {/* Import history */}
@@ -604,6 +804,82 @@ export default function SalesView({ canDelete = false }) {
                     {canDelete && (
                       <td style={{ padding: '8px 0' }}>
                         <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDeleteBatch(b.batchId)}>{t('common_delete')}</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Import history: Ώρες Αιχμής */}
+        <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20, marginTop: 14 }}>
+          <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+            {t('sales_time_buckets_history_title')}
+          </div>
+          {timeBucketBatches.length === 0 ? (
+            <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('sales_no_batches')}</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: '#97a2b0', fontSize: 11.5, textTransform: 'uppercase' }}>
+                  <th style={{ padding: '6px 0' }}>{t('sales_col_period')}</th>
+                  <th style={{ padding: '6px 0' }}>{t('sales_col_rows')}</th>
+                  <th style={{ padding: '6px 0' }}>{t('sales_col_uploaded')}</th>
+                  {canDelete && <th style={{ padding: '6px 0' }}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {timeBucketBatches.map((b) => (
+                  <tr key={b.batchId} style={{ borderTop: '1px solid #eef1f4' }}>
+                    <td style={{ padding: '8px 0', color: '#6b7684' }}>{b.periodLabel || '—'}{b.granularity ? ` (${b.granularity}′)` : ''}</td>
+                    <td style={{ padding: '8px 0' }}>{b.count}</td>
+                    <td style={{ padding: '8px 0', color: '#6b7684', whiteSpace: 'nowrap' }}>
+                      {new Date(b.uploadedAt).toLocaleString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    {canDelete && (
+                      <td style={{ padding: '8px 0' }}>
+                        <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDeleteTimeBucketBatch(b.batchId)}>{t('common_delete')}</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Import history: Βάρδιες ανά κατάστημα */}
+        <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20, marginTop: 14 }}>
+          <div style={{ fontSize: 12, color: '#6b7684', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>
+            {t('sales_shift_details_history_title')}
+          </div>
+          {shiftBatches.length === 0 ? (
+            <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('sales_no_batches')}</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: '#97a2b0', fontSize: 11.5, textTransform: 'uppercase' }}>
+                  <th style={{ padding: '6px 0' }}>{t('sales_col_period')}</th>
+                  <th style={{ padding: '6px 0' }}>{t('sales_col_stores')}</th>
+                  <th style={{ padding: '6px 0' }}>{t('sales_col_rows')}</th>
+                  <th style={{ padding: '6px 0' }}>{t('sales_col_uploaded')}</th>
+                  {canDelete && <th style={{ padding: '6px 0' }}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {shiftBatches.map((b) => (
+                  <tr key={b.batchId} style={{ borderTop: '1px solid #eef1f4' }}>
+                    <td style={{ padding: '8px 0', color: '#6b7684' }}>{b.periodLabel || '—'}</td>
+                    <td style={{ padding: '8px 0' }}>{b.storeCount}</td>
+                    <td style={{ padding: '8px 0' }}>{b.count}</td>
+                    <td style={{ padding: '8px 0', color: '#6b7684', whiteSpace: 'nowrap' }}>
+                      {new Date(b.uploadedAt).toLocaleString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    {canDelete && (
+                      <td style={{ padding: '8px 0' }}>
+                        <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDeleteShiftBatch(b.batchId)}>{t('common_delete')}</button>
                       </td>
                     )}
                   </tr>
