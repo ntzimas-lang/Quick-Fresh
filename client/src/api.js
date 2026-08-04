@@ -342,15 +342,19 @@ export const Destructions = {
       .single();
     if (error) throw error;
 
+    // Χρησιμοποιούμε RPC σε συνάρτηση (security definer) αντί για απευθείας delete —
+    // το RLS delete policy του product_entries επιτρέπει διαγραφή μόνο σε super_user,
+    // οπότε ένα απευθείας delete εδώ αποτύγχανε σιωπηλά (χωρίς error) όταν την
+    // καταστροφή την έκανε Οδηγός ή ο ρόλος "Χρήστης" — η καταχώρηση Ληγμένα ποτέ δεν
+    // έφευγε. Η συνάρτηση κάνει ΑΚΡΙΒΩΣ την ίδια στοχευμένη διαγραφή (by productId+store)
+    // αλλά δουλεύει για όλους τους ρόλους. Βλ. supabase/fix_destruction_removes_entry.sql.
     let removedEntries = 0;
     if (productId && store) {
-      const { data: removed, error: removeError } = await supabase
-        .from('product_entries')
-        .delete()
-        .eq('data->>productId', productId)
-        .eq('data->>store', store)
-        .select();
-      if (!removeError && removed) removedEntries = removed.length;
+      const { data: removedCount, error: removeError } = await supabase.rpc('remove_entries_after_destruction', {
+        p_product_id: productId,
+        p_store: store
+      });
+      if (!removeError && typeof removedCount === 'number') removedEntries = removedCount;
     }
 
     return { record: rowToRecord(data), removedEntries };
