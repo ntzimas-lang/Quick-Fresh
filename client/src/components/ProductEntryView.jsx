@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Products, Entries, Destructions, PendingDeliveries } from '../api.js';
+import { Products, Entries, Destructions, PendingDeliveries, DeliveryShortages } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const METHODS = [
@@ -425,8 +425,11 @@ export default function ProductEntryView({ canDeletePending = false }) {
       return;
     }
     const toSave = batchRows.filter((r) => r.include);
+    // Γραμμές που ΔΕΝ παραλήφθηκαν (checkbox απενεργοποιημένο) — δεν χάνονται πια σιωπηλά,
+    // καταγράφονται στις "Ελλείψεις Παραλαβής" ώστε να φαίνονται και να διαγράφονται αργότερα.
+    const notReceived = batchRows.filter((r) => !r.include);
     const invalid = toSave.some((r) => !r.matchedProduct || !r.expiryDate || !r.qty || Number(r.qty) <= 0);
-    if (invalid || toSave.length === 0) {
+    if (invalid || (toSave.length === 0 && notReceived.length === 0)) {
       setBatchError(t('e_batch_incomplete_error'));
       return;
     }
@@ -447,6 +450,21 @@ export default function ProductEntryView({ canDeletePending = false }) {
         created.push(entry);
       }
       setRecentEntries((prev) => [...created.map((entry) => ({ ...entry, type: 'expiry' })), ...prev].slice(0, 8));
+
+      if (notReceived.length > 0) {
+        await DeliveryShortages.insertMany(notReceived.map((r) => ({
+          sku: r.sku,
+          pdfName: r.pdfName,
+          productId: r.matchedProduct ? r.matchedProduct.id : null,
+          productItemCode: r.matchedProduct ? r.matchedProduct.itemCode : null,
+          productDescription: r.matchedProduct ? (r.matchedProduct.descriptionErp || r.matchedProduct.descriptionGr) : (r.pdfName || ''),
+          qty: r.qty,
+          store: batchStore,
+          orderNumber: (batchMeta && batchMeta.orderNumber) || '',
+          shipDate: (batchMeta && batchMeta.shipDate) || ''
+        })));
+      }
+
       if (openPendingRecord) {
         const updated = await PendingDeliveries.update(openPendingRecord.id, {
           ...openPendingRecord,
@@ -460,6 +478,10 @@ export default function ProductEntryView({ canDeletePending = false }) {
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
       resetBatch();
+      if (notReceived.length > 0) {
+        setBatchFlash(t('e_batch_shortages_flash').replace('{n}', String(notReceived.length)));
+        setTimeout(() => setBatchFlash(''), 4000);
+      }
     } catch (err) {
       setBatchError(t('e_save_error_prefix') + ' ' + (err && err.message ? err.message : String(err)));
     } finally {
