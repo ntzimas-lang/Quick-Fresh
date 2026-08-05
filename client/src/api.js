@@ -376,6 +376,52 @@ export const Destructions = {
   }
 };
 
+// Γραμμές από Δελτίο Αποστολής (PDF) που παραγγέλθηκαν αλλά ΔΕΝ παραλήφθηκαν
+// (checkbox "include" απενεργοποιημένο κατά την ολοκλήρωση μιας μαζικής καταχώρησης)
+// — καταγράφονται εδώ αντί να χάνονται σιωπηλά, ώστε να φαίνονται και να μπορούν
+// να διαγραφούν αργότερα (Super User ή ρόλος "Χρήστης").
+export const DeliveryShortages = {
+  async list() {
+    const { data, error } = await supabase.from('delivery_shortages').select('*').order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async insertMany(rows) {
+    if (!rows || !rows.length) return [];
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const createdAt = new Date().toISOString();
+    const date = createdAt.slice(0, 10);
+    const payload = rows.map((r) => {
+      const id = newId();
+      const record = {
+        id,
+        sku: r.sku || '',
+        pdfName: r.pdfName || '',
+        productId: r.productId || null,
+        productItemCode: r.productItemCode || '',
+        productDescription: r.productDescription || '',
+        qty: r.qty === '' || r.qty === undefined || r.qty === null ? null : Number(r.qty),
+        store: r.store || '',
+        orderNumber: r.orderNumber || '',
+        shipDate: r.shipDate || '',
+        date,
+        createdBy: user?.id || null,
+        createdByEmail: user?.email || null,
+        createdAt
+      };
+      return { id, data: record };
+    });
+    const { data, error } = await supabase.from('delivery_shortages').insert(payload).select();
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async remove(id) {
+    const { error } = await supabase.from('delivery_shortages').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const NewCustomers = {
   async list() {
     const { data, error } = await supabase.from('new_customers').select('*').order('updated_at', { ascending: false });
