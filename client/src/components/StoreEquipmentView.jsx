@@ -475,6 +475,10 @@ export default function StoreEquipmentView({ readOnly = false }) {
   const [pairDrafts, setPairDrafts] = useState({});
   const [editingPair, setEditingPair] = useState(null); // { id, idx }
   const [editDraft, setEditDraft] = useState(emptyPair);
+  // Ποιας γραμμής (store id) δείχνουμε αυτή τη στιγμή τα 3 πεδία προσθήκης νέου ζευγαριού —
+  // κρυμμένα πίσω από ένα μικρό "+ Προσθήκη" ώστε ο πίνακας να μη γεμίζει άδεια πεδία εισαγωγής
+  // σε κάθε γραμμή, ακόμα και όταν δεν προσθέτει κανείς τίποτα εκείνη τη στιγμή.
+  const [addingPairFor, setAddingPairFor] = useState(null);
 
   function getPairDraft(id) {
     return pairDrafts[id] || emptyPair;
@@ -578,12 +582,10 @@ export default function StoreEquipmentView({ readOnly = false }) {
             );
           }
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#eef1f4', borderRadius: 5, padding: '3px 4px 3px 8px', fontSize: 12.5, whiteSpace: 'nowrap' }}>
-              <span>🧊 {p.fridgeNo || '—'}</span>
-              <span style={{ color: '#c7cdd4' }}>↔</span>
-              <span>📟 {p.picoNo || '—'}</span>
-              <span style={{ color: '#c7cdd4' }}>↔</span>
-              <span>📦 {p.stockwellNo || '—'}</span>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '58px 58px 58px auto auto', alignItems: 'center', columnGap: 6, fontSize: 12.5, color: '#3a4353' }}>
+              <span title={t('se_col_fridgeNo')}>🧊 {p.fridgeNo || '—'}</span>
+              <span title={t('se_col_picoNo')}>📟 {p.picoNo || '—'}</span>
+              <span title={t('se_col_stockwellNo')}>📦 {p.stockwellNo || '—'}</span>
               <button
                 type="button"
                 onClick={() => startEditPair(r.id, i, p)}
@@ -599,52 +601,62 @@ export default function StoreEquipmentView({ readOnly = false }) {
             </div>
           );
         })}
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <input
-            value={draft.fridgeNo}
-            onChange={(e) => setPairDraftField(r.id, 'fridgeNo', e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } }}
-            placeholder={t('se_add_fridge_placeholder')}
-            style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
-          />
-          <input
-            value={draft.picoNo}
-            onChange={(e) => setPairDraftField(r.id, 'picoNo', e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } }}
-            placeholder={t('se_add_pico_placeholder')}
-            style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
-          />
-          <input
-            value={draft.stockwellNo}
-            onChange={(e) => setPairDraftField(r.id, 'stockwellNo', e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } }}
-            placeholder={t('se_add_stockwell_placeholder')}
-            style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
-          />
+        {addingPairFor === r.id ? (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: pairs.length ? 3 : 0 }}>
+            <input
+              autoFocus
+              value={draft.fridgeNo}
+              onChange={(e) => setPairDraftField(r.id, 'fridgeNo', e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } if (e.key === 'Escape') setAddingPairFor(null); }}
+              placeholder={t('se_add_fridge_placeholder')}
+              style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 60 }}
+            />
+            <input
+              value={draft.picoNo}
+              onChange={(e) => setPairDraftField(r.id, 'picoNo', e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } if (e.key === 'Escape') setAddingPairFor(null); }}
+              placeholder={t('se_add_pico_placeholder')}
+              style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 60 }}
+            />
+            <input
+              value={draft.stockwellNo}
+              onChange={(e) => setPairDraftField(r.id, 'stockwellNo', e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } if (e.key === 'Escape') setAddingPairFor(null); }}
+              placeholder={t('se_add_stockwell_placeholder')}
+              style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 60 }}
+            />
+            <button
+              type="button"
+              onClick={() => addEquipmentPair(r.id)}
+              title={t('se_add_pair_button')}
+              style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: 'pointer', fontSize: 13, padding: '4px 8px', lineHeight: 1 }}
+            >+</button>
+            <button
+              type="button"
+              onClick={() => setAddingPairFor(null)}
+              title={t('common_cancel')}
+              style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 12, padding: '4px 3px', lineHeight: 1 }}
+            >✕</button>
+          </div>
+        ) : (
           <button
             type="button"
-            onClick={() => addEquipmentPair(r.id)}
-            title={t('se_add_pair_button')}
-            style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: 'pointer', fontSize: 13, padding: '4px 8px', lineHeight: 1 }}
-          >+</button>
-        </div>
+            onClick={() => setAddingPairFor(r.id)}
+            style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: '#2f8f8a', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: pairs.length ? '2px 0 0' : 0 }}
+          >
+            + {t('se_add_pair_button')}
+          </button>
+        )}
       </div>
     );
   }
 
-  // Κοινή φόρμα "στοιχείων" καταστήματος (μετρητές/διεύθυνση/αρχεία/εξοπλισμός) —
-  // επαναχρησιμοποιείται και στην αναδιπλούμενη γραμμή του πίνακα ΚΑΙ στην Κάρτα, ώστε να
-  // μην υπάρχει διπλός κώδικας.
+  // Κοινή φόρμα "στοιχείων" καταστήματος (μετρητές/διεύθυνση/αρχεία) — επαναχρησιμοποιείται
+  // και στην αναδιπλούμενη γραμμή του πίνακα ΚΑΙ στην Κάρτα, ώστε να μην υπάρχει διπλός κώδικας.
   function renderDetailsForm(rec) {
     const draft = getDetailsDraft(rec.id);
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-        <div style={{ gridColumn: '1 / -1', borderBottom: '1px solid #eef1f4', paddingBottom: 12 }}>
-          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>
-            🧊 {t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}
-          </label>
-          {renderEquipmentPairs(rec, 100)}
-        </div>
         <div>
           <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_electricity_meter')}</label>
           <input
@@ -767,7 +779,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase', background: '#f4f6f8' }}>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_store_name')}</th>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_address_preview')}</th>
-                  <th style={{ padding: '7px 10px' }}>{t('se_col_equipment')}</th>
+                  <th style={{ padding: '7px 10px' }}>{t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}</th>
                   <th style={{ padding: '7px 10px' }}></th>
                 </tr>
               </thead>
@@ -805,20 +817,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                           )}
                         </td>
                         <td style={{ padding: '7px 10px', color: '#6b7684', fontSize: 12.5 }}>{(rec && rec.address) || '—'}</td>
-                        <td style={{ padding: '7px 10px' }}>
-                          {rec && toPairs(rec).length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleDetails(name)}
-                              title={t('se_details_button')}
-                              style={{ border: '1px solid #cfe8e6', background: '#eef7f6', color: '#2f8f8a', borderRadius: 12, padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-                            >
-                              🧊 {toPairs(rec).length}
-                            </button>
-                          ) : (
-                            <span style={{ color: '#c7cdd4', fontSize: 12.5 }}>—</span>
-                          )}
-                        </td>
+                        <td style={{ padding: '7px 10px' }}>{rec ? renderEquipmentPairs(rec, 60) : '—'}</td>
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           <button type="button" onClick={() => toggleDetails(name)} title={t('se_details_button')} style={{ border: '1px solid #d7dce2', background: isExpanded ? '#eef7f6' : '#fff', cursor: 'pointer', fontSize: 12, color: '#2f8f8a', padding: '4px 9px', borderRadius: 5, marginRight: 4 }}>
                             📄 {isExpanded ? t('se_details_hide_button') : t('se_details_button')}
