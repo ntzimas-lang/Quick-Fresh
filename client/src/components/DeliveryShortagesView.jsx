@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { DeliveryShortages } from '../api.js';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 function formatDate(isoStr) {
@@ -136,10 +139,38 @@ export default function DeliveryShortagesView({ canDelete = false }) {
     return sorted;
   }, [rows, storeFilter, search, columnFilters, sortKey, sortDir]);
 
+  function exportPDF() {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
+    doc.setFontSize(12);
+    doc.text(`Quick & Fresh — ${t('title_delivery_shortages')}`, 14, 12);
+    autoTable(doc, {
+      startY: 18,
+      head: [[t('r_col_itemCode'), t('r_col_description'), t('r_col_store'), t('r_col_quantity'), t('e_batch_meta_order'), t('x_col_date'), t('r_col_createdBy')]],
+      body: filtered.map((d) => [
+        d.productItemCode || '',
+        d.productDescription || d.pdfName || '',
+        d.store || '',
+        d.qty ?? '',
+        d.orderNumber || '',
+        formatDate(d.date || d.createdAt),
+        d.createdByEmail || ''
+      ]),
+      styles: { fontSize: 8, cellPadding: 2, font: 'DejaVuSans' },
+      headStyles: { fillColor: [201, 138, 31], font: 'DejaVuSans' }
+    });
+    doc.save(`quick-fresh-elleipseis-paralavis-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15 }}>{t('title_delivery_shortages')}</strong>
+        <button className="btn-primary" style={{ background: '#c98a1f' }} onClick={exportPDF} title={t('common_export_pdf')}>
+          PDF
+        </button>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
