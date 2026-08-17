@@ -632,12 +632,19 @@ export default function StoreEquipmentView({ readOnly = false }) {
     );
   }
 
-  // Κοινή φόρμα "στοιχείων" καταστήματος (μετρητές/διεύθυνση/αρχεία) — επαναχρησιμοποιείται
-  // και στην αναδιπλούμενη γραμμή του πίνακα ΚΑΙ στην Κάρτα, ώστε να μην υπάρχει διπλός κώδικας.
+  // Κοινή φόρμα "στοιχείων" καταστήματος (μετρητές/διεύθυνση/αρχεία/εξοπλισμός) —
+  // επαναχρησιμοποιείται και στην αναδιπλούμενη γραμμή του πίνακα ΚΑΙ στην Κάρτα, ώστε να
+  // μην υπάρχει διπλός κώδικας.
   function renderDetailsForm(rec) {
     const draft = getDetailsDraft(rec.id);
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        <div style={{ gridColumn: '1 / -1', borderBottom: '1px solid #eef1f4', paddingBottom: 12 }}>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>
+            🧊 {t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}
+          </label>
+          {renderEquipmentPairs(rec, 100)}
+        </div>
         <div>
           <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_electricity_meter')}</label>
           <input
@@ -760,7 +767,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase', background: '#f4f6f8' }}>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_store_name')}</th>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_address_preview')}</th>
-                  <th style={{ padding: '7px 10px' }}>{t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}</th>
+                  <th style={{ padding: '7px 10px' }}>{t('se_col_equipment')}</th>
                   <th style={{ padding: '7px 10px' }}></th>
                 </tr>
               </thead>
@@ -798,7 +805,20 @@ export default function StoreEquipmentView({ readOnly = false }) {
                           )}
                         </td>
                         <td style={{ padding: '7px 10px', color: '#6b7684', fontSize: 12.5 }}>{(rec && rec.address) || '—'}</td>
-                        <td style={{ padding: '7px 10px' }}>{rec ? renderEquipmentPairs(rec, 70) : '—'}</td>
+                        <td style={{ padding: '7px 10px' }}>
+                          {rec && toPairs(rec).length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleDetails(name)}
+                              title={t('se_details_button')}
+                              style={{ border: '1px solid #cfe8e6', background: '#eef7f6', color: '#2f8f8a', borderRadius: 12, padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              🧊 {toPairs(rec).length}
+                            </button>
+                          ) : (
+                            <span style={{ color: '#c7cdd4', fontSize: 12.5 }}>—</span>
+                          )}
+                        </td>
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           <button type="button" onClick={() => toggleDetails(name)} title={t('se_details_button')} style={{ border: '1px solid #d7dce2', background: isExpanded ? '#eef7f6' : '#fff', cursor: 'pointer', fontSize: 12, color: '#2f8f8a', padding: '4px 9px', borderRadius: 5, marginRight: 4 }}>
                             📄 {isExpanded ? t('se_details_hide_button') : t('se_details_button')}
