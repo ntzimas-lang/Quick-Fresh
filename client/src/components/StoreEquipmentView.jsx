@@ -548,7 +548,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
     const draft = getPairDraft(r.id);
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
         {pairs.map((p, i) => {
           const isEditing = editingPair && editingPair.id === r.id && editingPair.idx === i;
           if (isEditing) {
@@ -581,28 +581,30 @@ export default function StoreEquipmentView({ readOnly = false }) {
               </div>
             );
           }
+          // Layout "μόνο αριθμός ψυγείου" — δείχνουμε μόνο τον αριθμό ψυγείου ως ετικέτα·
+          // Pico/Stockwell φαίνονται στο tooltip (hover), όχι μόνιμα στην οθόνη. Κλικ στον
+          // αριθμό ανοίγει την επεξεργασία (και των 3 πεδίων).
+          const tooltip = `${t('se_col_picoNo')}: ${p.picoNo || '—'} · ${t('se_col_stockwellNo')}: ${p.stockwellNo || '—'}`;
           return (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '58px 58px 58px auto auto', alignItems: 'center', columnGap: 6, fontSize: 12.5, color: '#3a4353' }}>
-              <span title={t('se_col_fridgeNo')}>🧊 {p.fridgeNo || '—'}</span>
-              <span title={t('se_col_picoNo')}>📟 {p.picoNo || '—'}</span>
-              <span title={t('se_col_stockwellNo')}>📦 {p.stockwellNo || '—'}</span>
-              <button
-                type="button"
-                onClick={() => startEditPair(r.id, i, p)}
-                title={t('se_rename_button')}
-                style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 12, padding: '0 3px', lineHeight: 1 }}
-              >✎</button>
+            <span
+              key={i}
+              title={tooltip}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#eef1f4', borderRadius: 10, padding: '2px 3px 2px 9px', fontSize: 12 }}
+            >
+              <span onClick={() => startEditPair(r.id, i, p)} style={{ cursor: 'pointer', color: '#3a4353' }}>
+                {p.fridgeNo || '—'}
+              </span>
               <button
                 type="button"
                 onClick={() => removeEquipmentPair(r.id, i)}
                 title={t('common_delete')}
-                style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 12, padding: '0 3px', lineHeight: 1 }}
+                style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 11, padding: '0 4px', lineHeight: 1.6 }}
               >✕</button>
-            </div>
+            </span>
           );
         })}
         {addingPairFor === r.id ? (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: pairs.length ? 3 : 0 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <input
               autoFocus
               value={draft.fridgeNo}
@@ -642,7 +644,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
           <button
             type="button"
             onClick={() => setAddingPairFor(r.id)}
-            style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: '#2f8f8a', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: pairs.length ? '2px 0 0' : 0 }}
+            style={{ border: 'none', background: 'transparent', color: '#2f8f8a', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}
           >
             + {t('se_add_pair_button')}
           </button>
