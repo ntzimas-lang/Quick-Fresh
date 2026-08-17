@@ -422,6 +422,58 @@ export const DeliveryShortages = {
   }
 };
 
+// Προϊόντα από τα Ληγμένα που ΔΕΝ καταστράφηκαν αλλά πουλήθηκαν πριν προλάβουν να
+// λήξουν (δηλαδή δεν υπάρχουν πια, αλλά όχι λόγω σπατάλης) — ξεχωριστό αρχείο από τις
+// Καταστροφές, ώστε το Report Καταστροφές να δείχνει μόνο πραγματική σπατάλη.
+export const ExpiredSales = {
+  async list() {
+    const { data, error } = await supabase.from('expired_sales').select('*').order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  // Καταγράφει την πώληση ΚΑΙ αφαιρεί αυτόματα την αντίστοιχη καταχώρηση "Ληγμένα" —
+  // ίδια λογική/RPC με τις Καταστροφές (Destructions.create), απλά σε διαφορετικό
+  // πίνακα ώστε να μη μπερδεύονται οι δύο στατιστικές.
+  async create({ productId, productItemCode, productDescription, store, quantity, date }) {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const id = newId();
+    const record = {
+      id,
+      productId,
+      productItemCode: productItemCode || '',
+      productDescription: productDescription || '',
+      store,
+      quantity: quantity === '' || quantity === undefined || quantity === null ? null : Number(quantity),
+      date: date || new Date().toISOString().slice(0, 10),
+      soldBy: user?.id || null,
+      soldByEmail: user?.email || null,
+      createdAt: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('expired_sales')
+      .insert({ id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+
+    let removedEntries = 0;
+    if (productId && store) {
+      const { data: removedCount, error: removeError } = await supabase.rpc('remove_entries_after_destruction', {
+        p_product_id: productId,
+        p_store: store
+      });
+      if (!removeError && typeof removedCount === 'number') removedEntries = removedCount;
+    }
+
+    return { record: rowToRecord(data), removedEntries };
+  },
+  async remove(id) {
+    const { error } = await supabase.from('expired_sales').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const NewCustomers = {
   async list() {
     const { data, error } = await supabase.from('new_customers').select('*').order('updated_at', { ascending: false });
