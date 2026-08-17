@@ -548,7 +548,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
     const draft = getPairDraft(r.id);
     return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
         {pairs.map((p, i) => {
           const isEditing = editingPair && editingPair.id === r.id && editingPair.idx === i;
           if (isEditing) {
@@ -581,18 +581,15 @@ export default function StoreEquipmentView({ readOnly = false }) {
               </div>
             );
           }
-          // Layout "μόνο αριθμός ψυγείου" — δείχνουμε μόνο τον αριθμό ψυγείου ως ετικέτα·
-          // Pico/Stockwell φαίνονται στο tooltip (hover), όχι μόνιμα στην οθόνη. Κλικ στον
-          // αριθμό ανοίγει την επεξεργασία (και των 3 πεδίων).
-          const tooltip = `${t('se_col_picoNo')}: ${p.picoNo || '—'} · ${t('se_col_stockwellNo')}: ${p.stockwellNo || '—'}`;
+          // Και τα 3 πεδία μαζί, μία γραμμή ανά ζευγάρι (Ψυγείο / Pico / Stockwell) — κλικ
+          // στη γραμμή ανοίγει επεξεργασία και των 3 πεδίων.
           return (
             <span
               key={i}
-              title={tooltip}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#eef1f4', borderRadius: 10, padding: '2px 3px 2px 9px', fontSize: 12 }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#eef1f4', borderRadius: 6, padding: '2px 3px 2px 9px', fontSize: 12.5 }}
             >
-              <span onClick={() => startEditPair(r.id, i, p)} style={{ cursor: 'pointer', color: '#3a4353' }}>
-                {p.fridgeNo || '—'}
+              <span onClick={() => startEditPair(r.id, i, p)} style={{ cursor: 'pointer', color: '#3a4353', whiteSpace: 'nowrap' }}>
+                {p.fridgeNo || '—'} / {p.picoNo || '—'} / {p.stockwellNo || '—'}
               </span>
               <button
                 type="button"
