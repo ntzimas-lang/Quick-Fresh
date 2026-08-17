@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Entries, Products, Destructions, SalesProducts } from '../api.js';
+import { Entries } from '../api.js';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
@@ -69,22 +69,6 @@ export default function ExpiredReportView({ canDelete = false }) {
   const [columnFilters, setColumnFilters] = useState({});
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
-
-  // Εκτιμώμενο Απόθεμα ανά Κατάστημα — cross-reference με Προϊόντα (barcode) / Πωλήσεις /
-  // Καταστροφές, ώστε να δείχνει όχι μόνο "τι έχει καταχωρηθεί" αλλά μια εκτίμηση του τι
-  // πραγματικά μένει ακόμα στο σημείο (βλ. συζήτηση: οι πωλήσεις δεν αφαιρούνται αυτόματα
-  // από τις καταχωρήσεις Ληγμένα σήμερα).
-  const [products, setProducts] = useState([]);
-  const [destructions, setDestructions] = useState([]);
-  const [salesProducts, setSalesProducts] = useState([]);
-  const [showStockReport, setShowStockReport] = useState(false);
-  const [stockSearch, setStockSearch] = useState('');
-
-  useEffect(() => {
-    Promise.all([Products.list(), Destructions.list(), SalesProducts.list()])
-      .then(([p, d, sp]) => { setProducts(p); setDestructions(d); setSalesProducts(sp); })
-      .catch(() => {});
-  }, []);
 
   function toggleSort(key) {
     if (sortKey === key) {
@@ -189,146 +173,6 @@ export default function ExpiredReportView({ canDelete = false }) {
     }
     return sorted;
   }, [entries, storeFilter, search, fromDate, toDate, columnFilters, sortKey, sortDir, t, lang]);
-
-  // Μόνο η ΠΙΟ ΠΡΟΣΦΑΤΗ ανεβασμένη περίοδο πωλήσεων ανά κατάστημα (ίδια λογική με τον
-  // Πίνακα Ελέγχου) — ώστε να μη μετράμε διπλά παλιότερες περιόδους.
-  const latestSalesBatchByStore = useMemo(() => {
-    const map = {};
-    salesProducts.forEach((p) => {
-      const cur = map[p.store];
-      if (!cur || new Date(p.uploadedAt) > new Date(cur)) map[p.store] = p.uploadedAt;
-    });
-    return map;
-  }, [salesProducts]);
-
-  const latestSalesProducts = useMemo(
-    () => salesProducts.filter((p) => p.uploadedAt === latestSalesBatchByStore[p.store]),
-    [salesProducts, latestSalesBatchByStore]
-  );
-
-  // Η "Sales Analysis Report" περίοδος (π.χ. "01/05/2026 00:00 to 24/07/2026 23:59")
-  // μπορεί να καλύπτει πολύ μεγαλύτερο διάστημα (π.χ. 3 μήνες) από όσο έχουμε ξεκινήσει
-  // να καταχωρούμε παραλαβές σε αυτή την εφαρμογή (π.χ. λίγες μέρες). Αν αφαιρούσαμε
-  // απευθείας το ΣΥΝΟΛΟ των πωλήσεων 3 μηνών από ενεργές καταχωρήσεις λίγων ημερών, θα
-  // έβγαινε πάντα ψευδώς "πουλήθηκε όλο". Γι' αυτό υπολογίζουμε μέση ημερήσια πώληση και
-  // την αναλογίζουμε μόνο στις μέρες που πραγματικά επικαλύπτονται με την καταχώρηση.
-  function parsePeriod(periodLabel) {
-    if (!periodLabel) return null;
-    const m = periodLabel.match(/(\d{2})\/(\d{2})\/(\d{4}).*?to.*?(\d{2})\/(\d{2})\/(\d{4})/i);
-    if (!m) return null;
-    const start = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-    const end = new Date(Number(m[6]), Number(m[5]) - 1, Number(m[4]));
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
-    return { start, end };
-  }
-
-  const periodByStore = useMemo(() => {
-    const map = {};
-    latestSalesProducts.forEach((sp) => {
-      if (map[sp.store]) return;
-      const period = parsePeriod(sp.periodLabel);
-      if (period) map[sp.store] = period;
-    });
-    return map;
-  }, [latestSalesProducts]);
-
-  const destroyedTotals = useMemo(() => {
-    const map = {};
-    destructions.forEach((d) => {
-      if (!d.productId || !d.store) return;
-      const key = `${d.productId}|${d.store}`;
-      map[key] = (map[key] || 0) + (Number(d.quantity) || 0);
-    });
-    return map;
-  }, [destructions]);
-
-  // Ανά (προϊόν, κατάστημα): άθροισμα ενεργών καταχωρήσεων (ό,τι δεν έχει ακόμα
-  // καταστραφεί), πωλήσεις της τελευταίας περιόδου (ταιριασμένες μέσω barcode — τα
-  // sales_products δεν έχουν δικό τους productId, μόνο scancode/όνομα από το αρχείο του
-  // προμηθευτή) αναλογισμένες στις μέρες που έχουμε ενεργές καταχωρήσεις, και εκτιμώμενο
-  // πραγματικό υπόλοιπο = ενεργές − αναλογισμένες πωλήσεις.
-  const stockReport = useMemo(() => {
-    const groups = {};
-    entries.forEach((e) => {
-      if (!e.productId || !e.store) return;
-      const key = `${e.productId}|${e.store}`;
-      if (!groups[key]) {
-        groups[key] = {
-          key,
-          productId: e.productId,
-          store: e.store,
-          itemCode: e.productItemCode || '',
-          description: e.productDescription || '',
-          activeQty: 0,
-          earliestExpiry: null,
-          earliestCreatedAt: null
-        };
-      }
-      const g = groups[key];
-      const q = Number(e.quantity);
-      g.activeQty += Number.isFinite(q) ? q : 0;
-      if (e.expiryDate && (!g.earliestExpiry || e.expiryDate < g.earliestExpiry)) g.earliestExpiry = e.expiryDate;
-      if (e.createdAt && (!g.earliestCreatedAt || e.createdAt < g.earliestCreatedAt)) g.earliestCreatedAt = e.createdAt;
-    });
-
-    return Object.values(groups).map((g) => {
-      const product = products.find((p) => p.id === g.productId);
-      let soldRaw = 0;
-      let hasSalesData = false;
-      if (product) {
-        const barcodes = (product.barcodes || []).map((b) => (b || '').trim()).filter(Boolean);
-        if (barcodes.length) {
-          latestSalesProducts.forEach((sp) => {
-            if (sp.store !== g.store) return;
-            if (barcodes.includes((sp.scancode || '').trim())) {
-              soldRaw += Number(sp.sold) || 0;
-              hasSalesData = true;
-            }
-          });
-        }
-      }
-      const destroyed = destroyedTotals[g.key] || 0;
-      const period = periodByStore[g.store];
-      let sold = 0;
-      let prorated = false;
-      if (hasSalesData && period && g.earliestCreatedAt) {
-        const trackingStart = new Date(g.earliestCreatedAt);
-        const overlapStart = trackingStart > period.start ? trackingStart : period.start;
-        const now = new Date();
-        const overlapEnd = period.end < now ? period.end : now;
-        const periodDays = Math.max(1, (period.end.getTime() - period.start.getTime()) / 86400000);
-        const overlapDays = Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / 86400000);
-        const dailyRate = soldRaw / periodDays;
-        sold = Math.round(dailyRate * overlapDays * 10) / 10;
-        prorated = true;
-      } else if (hasSalesData) {
-        // Δεν μπορέσαμε να προσδιορίσουμε την περίοδο (ή δεν έχουμε ακόμα καταχώρηση) —
-        // δείχνουμε το σύνολο πωλήσεων μόνο πληροφοριακά, ΔΕΝ το αφαιρούμε από το
-        // εκτιμώμενο υπόλοιπο (για να μην εμφανίζεται ψευδώς "πουλήθηκε όλο").
-        sold = 0;
-      }
-      const estimated = g.activeQty - sold;
-      return { ...g, soldRaw, sold, hasSalesData, prorated, destroyed, estimated };
-    });
-  }, [entries, products, latestSalesProducts, destroyedTotals, periodByStore]);
-
-  const stockReportFiltered = useMemo(() => {
-    let rows = stockReport;
-    if (stockSearch.trim()) {
-      const q = stockSearch.trim().toLowerCase();
-      rows = rows.filter((r) =>
-        (r.itemCode || '').toLowerCase().includes(q) ||
-        (r.description || '').toLowerCase().includes(q) ||
-        (r.store || '').toLowerCase().includes(q)
-      );
-    }
-    return [...rows].sort((a, b) => {
-      if (!a.earliestExpiry && !b.earliestExpiry) return 0;
-      if (!a.earliestExpiry) return 1;
-      if (!b.earliestExpiry) return -1;
-      return new Date(a.earliestExpiry) - new Date(b.earliestExpiry);
-    });
-  }, [stockReport, stockSearch]);
 
   function exportPDF() {
     const doc = new jsPDF({ orientation: 'landscape' });
@@ -442,92 +286,6 @@ export default function ExpiredReportView({ canDelete = false }) {
             >✕</button>
           </div>
         )}
-
-        <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <div>
-              <strong style={{ fontSize: 13, color: '#16233f' }}>📦 {t('r_stock_report_title')}</strong>
-              <p style={{ fontSize: 12, color: '#97a2b0', margin: '4px 0 0', maxWidth: 640 }}>{t('r_stock_report_desc')}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowStockReport((v) => !v)}
-              style={{ border: '1px solid #2f8f8a', background: showStockReport ? '#2f8f8a' : '#fff', color: showStockReport ? '#fff' : '#2f8f8a', borderRadius: 6, padding: '6px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-            >
-              {showStockReport ? t('r_stock_report_hide') : t('r_stock_report_show')}
-            </button>
-          </div>
-
-          {showStockReport && (
-            <div style={{ marginTop: 14, borderTop: '1px solid #eef1f4', paddingTop: 14 }}>
-              <input
-                value={stockSearch}
-                onChange={(e) => setStockSearch(e.target.value)}
-                placeholder={t('common_filter_placeholder')}
-                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13, width: 220, marginBottom: 12 }}
-              />
-              {stockReportFiltered.length === 0 ? (
-                <p style={{ color: '#97a2b0', fontSize: 13 }}>{t('r_stock_report_empty')}</p>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 760 }}>
-                    <thead>
-                      <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase', background: '#f4f6f8' }}>
-                        <th style={{ padding: '7px 10px' }}>{t('r_stock_col_store')}</th>
-                        <th style={{ padding: '7px 10px' }}>{t('r_stock_col_product')}</th>
-                        <th style={{ padding: '7px 10px', textAlign: 'right' }}>{t('r_stock_col_active')}</th>
-                        <th style={{ padding: '7px 10px', textAlign: 'right' }}>{t('r_stock_col_sold')}</th>
-                        <th style={{ padding: '7px 10px', textAlign: 'right' }}>{t('r_stock_col_destroyed')}</th>
-                        <th style={{ padding: '7px 10px', textAlign: 'right' }}>{t('r_stock_col_estimated')}</th>
-                        <th style={{ padding: '7px 10px' }}>{t('r_stock_col_nearest_expiry')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stockReportFiltered.map((r) => {
-                        const diff = r.earliestExpiry ? daysDiff(r.earliestExpiry) : null;
-                        const risky = r.estimated > 0 && diff !== null && diff <= 7;
-                        return (
-                          <tr key={r.key} style={{ borderTop: '1px solid #eef1f4', background: risky ? '#fdecea33' : 'transparent' }}>
-                            <td style={{ padding: '7px 10px' }}>{r.store}</td>
-                            <td style={{ padding: '7px 10px' }}>
-                              <strong>{r.itemCode}</strong>
-                              <span style={{ color: '#6b7684' }}> — {r.description}</span>
-                            </td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right' }}>{r.activeQty}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-                              {!r.hasSalesData ? (
-                                <span style={{ color: '#c1c8d1', fontStyle: 'italic' }}>{t('r_stock_no_sales_data')}</span>
-                              ) : r.prorated ? (
-                                r.sold
-                              ) : (
-                                <span title={t('r_stock_unprorated_hint')} style={{ color: '#c98a1f' }}>
-                                  {r.soldRaw} <span style={{ fontSize: 10 }}>ⓘ</span>
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', color: '#6b7684' }}>{r.destroyed || '—'}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: r.estimated <= 0 ? '#2f8f8a' : diffColor(diff ?? 99) }}>
-                              {r.estimated <= 0 ? (
-                                <span style={{ fontWeight: 400, fontSize: 11.5, fontStyle: 'italic' }}>{t('r_stock_likely_sold_out')}</span>
-                              ) : r.estimated}
-                            </td>
-                            <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                              {r.earliestExpiry ? (
-                                <span style={{ color: '#fff', background: diffColor(diff), padding: '3px 9px', borderRadius: 10, fontSize: 11, fontWeight: 600 }}>
-                                  {diffLabel(diff, t, lang)}
-                                </span>
-                              ) : '—'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
 
         {loading ? (
           <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>

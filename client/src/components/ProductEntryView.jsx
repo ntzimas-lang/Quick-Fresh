@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Products, Entries, Destructions, PendingDeliveries, DeliveryShortages } from '../api.js';
+import { Products, Entries, Destructions, ExpiredSales, PendingDeliveries, DeliveryShortages } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const METHODS = [
@@ -66,6 +66,10 @@ export default function ProductEntryView({ canDeletePending = false }) {
   const [quantity, setQuantity] = useState('1');
   const [reason, setReason] = useState('');
   const [destructionDate, setDestructionDate] = useState(todayIso());
+  // Όταν επεξεργαζόμαστε ένα ληγμένο: 'destroyed' (πραγματικά πετάχτηκε) ή 'sold'
+  // (πουλήθηκε πριν προλάβει να λήξει — δεν υπάρχει πια, αλλά δεν είναι σπατάλη).
+  // Κρατάει το Report Καταστροφές καθαρό από πωλήσεις.
+  const [destructionOutcome, setDestructionOutcome] = useState('destroyed');
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [recentEntries, setRecentEntries] = useState([]);
@@ -510,6 +514,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
     setQuantity('1');
     setReason('');
     setDestructionDate(todayIso());
+    setDestructionOutcome('destroyed');
     setNoBarcodeQuery('');
     setDescQuery('');
     setEntryQuery('');
@@ -533,6 +538,18 @@ export default function ProductEntryView({ canDeletePending = false }) {
           quantity
         });
         setRecentEntries((prev) => [{ ...entry, type: 'expiry' }, ...prev].slice(0, 8));
+      } else if (destructionOutcome === 'sold') {
+        const { record, removedEntries } = await ExpiredSales.create({
+          productId: matchedProduct.id,
+          productItemCode: matchedProduct.itemCode,
+          productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
+          store,
+          quantity,
+          date: destructionDate
+        });
+        setRecentEntries((prev) => [{ ...record, removedEntries, type: 'sold' }, ...prev].slice(0, 8));
+        // Ίδια λογική με την καταστροφή: αφαιρεί αυτόματα την καταχώρηση Ληγμένα στο backend.
+        Entries.list().then(setExpiredEntries).catch(() => {});
       } else {
         const { record, removedEntries } = await Destructions.create({
           productId: matchedProduct.id,
@@ -977,20 +994,61 @@ export default function ProductEntryView({ canDeletePending = false }) {
               ) : (
                 <>
                   <div className="field" style={{ marginBottom: 14 }}>
-                    <label>{t('x_date_label')}</label>
+                    <label>{t('x_outcome_label')}</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => setDestructionOutcome('destroyed')}
+                        style={{
+                          padding: '9px 8px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                          border: destructionOutcome === 'destroyed' ? '2px solid #c0392b' : '1px solid #e1e5ea',
+                          background: destructionOutcome === 'destroyed' ? '#fdecea' : '#fff',
+                          color: destructionOutcome === 'destroyed' ? '#16233f' : '#6b7684'
+                        }}
+                      >
+                        🗑️ {t('x_outcome_destroyed')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDestructionOutcome('sold')}
+                        style={{
+                          padding: '9px 8px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                          border: destructionOutcome === 'sold' ? '2px solid #2f8f8a' : '1px solid #e1e5ea',
+                          background: destructionOutcome === 'sold' ? '#eef7f6' : '#fff',
+                          color: destructionOutcome === 'sold' ? '#16233f' : '#6b7684'
+                        }}
+                      >
+                        💰 {t('x_outcome_sold')}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label>{destructionOutcome === 'sold' ? t('x_sold_date_label') : t('x_date_label')}</label>
                     <input type="date" value={destructionDate} onChange={(e) => setDestructionDate(e.target.value)} required />
                   </div>
-                  <div className="field" style={{ marginBottom: 8 }}>
-                    <label>{t('x_reason_label')}</label>
-                    <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('x_reason_placeholder')} />
-                  </div>
-                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 16px' }}>{t('x_auto_remove_hint')}</p>
+                  {destructionOutcome === 'destroyed' && (
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label>{t('x_reason_label')}</label>
+                      <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('x_reason_placeholder')} />
+                    </div>
+                  )}
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 16px' }}>
+                    {destructionOutcome === 'sold' ? t('x_sold_auto_remove_hint') : t('x_auto_remove_hint')}
+                  </p>
                 </>
               )}
 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn-primary" type="submit" style={{ flex: 1, background: activeMode.color }} disabled={saving}>
-                  {saving ? t('e_saving') : savedFlash ? t('common_saved') : entryMode === 'expiry' ? t('e_submit_button') : t('x_submit_button')}
+                  {saving
+                    ? t('e_saving')
+                    : savedFlash
+                    ? t('common_saved')
+                    : entryMode === 'expiry'
+                    ? t('e_submit_button')
+                    : destructionOutcome === 'sold'
+                    ? t('x_submit_button_sold')
+                    : t('x_submit_button')}
                 </button>
                 <button className="btn-danger" type="button" onClick={resetSelection}>{t('common_cancel')}</button>
               </div>
@@ -1007,6 +1065,14 @@ export default function ProductEntryView({ canDeletePending = false }) {
                   {e.type === 'destruction' ? (
                     <>
                       <span style={{ marginRight: 4 }}>🗑️</span>
+                      <strong>{e.productItemCode}</strong> — {e.store} — {t('e_quantity_label').toLowerCase()}: {e.quantity ?? '—'}
+                      {e.removedEntries > 0 && (
+                        <span style={{ color: '#2f8f8a' }}> · {t('x_removed_from_expired').replace('{n}', e.removedEntries)}</span>
+                      )}
+                    </>
+                  ) : e.type === 'sold' ? (
+                    <>
+                      <span style={{ marginRight: 4 }}>💰</span>
                       <strong>{e.productItemCode}</strong> — {e.store} — {t('e_quantity_label').toLowerCase()}: {e.quantity ?? '—'}
                       {e.removedEntries > 0 && (
                         <span style={{ color: '#2f8f8a' }}> · {t('x_removed_from_expired').replace('{n}', e.removedEntries)}</span>
