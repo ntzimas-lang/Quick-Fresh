@@ -797,6 +797,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
                                     <strong>{pd.store || '—'}</strong>
                                     <span style={{ color: '#6b7684' }}>
                                       {pd.orderNumber ? ` · ${t('e_batch_meta_order')} ${pd.orderNumber}` : ''}
+                                      {pd.shipDate ? ` · ${t('e_batch_meta_ship_date')} ${pd.shipDate}` : ''}
                                       {` · ${(pd.rows || []).length} ${t('e_batch_pending_items_suffix')}`}
                                       {pd.createdByEmail ? ` · ${t('e_batch_pending_created_by_prefix')} ${pd.createdByEmail}` : ''}
                                     </span>
