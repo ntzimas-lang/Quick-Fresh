@@ -15,6 +15,15 @@ const ENTRY_MODES = [
   { key: 'destruction', icon: '🗑️', labelKey: 'e_mode_destruction', color: '#c0392b', bg: '#fdecea' }
 ];
 
+// Μετατροπή "YYYY-MM-DD" (όπως το αποθηκεύουμε) σε "DD/MM/YYYY" για εμφάνιση.
+function formatDMY(isoDate) {
+  if (!isoDate) return '';
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
+}
+
 // Placeholder που παίρνει αυτόματα ένα προϊόν όταν δημιουργείται από τα "Προϊόντα"
 // χωρίς να συμπληρωθεί ακόμα — δεν έχει νόημα να εμφανίζεται στις λίστες αναζήτησης εδώ.
 function isUnfinishedPlaceholder(p) {
@@ -806,7 +815,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
                                     <strong>{pd.store || '—'}</strong>
                                     <span style={{ color: '#6b7684' }}>
                                       {pd.orderNumber ? ` · ${t('e_batch_meta_order')} ${pd.orderNumber}` : ''}
-                                      {pd.receivedDate ? ` · ${t('e_batch_received_date_label')} ${pd.receivedDate}` : ''}
+                                      {pd.receivedDate ? ` · ${t('e_batch_received_date_label')} ${formatDMY(pd.receivedDate)}` : ''}
                                       {` · ${(pd.rows || []).length} ${t('e_batch_pending_items_suffix')}`}
                                       {pd.createdByEmail ? ` · ${t('e_batch_pending_created_by_prefix')} ${pd.createdByEmail}` : ''}
                                     </span>
