@@ -87,6 +87,10 @@ export default function ProductEntryView({ canDeletePending = false }) {
   const [batchRows, setBatchRows] = useState([]);
   const [batchStore, setBatchStore] = useState('');
   const [batchSaving, setBatchSaving] = useState(false);
+  // Ημερομηνία που παραλήφθηκε πραγματικά η παραγγελία στο κατάστημα — ξεχωριστή από την
+  // "Ημ/νία Αποστολής" που είναι τυπωμένη στο Δελτίο (πότε στάλθηκε, όχι πότε έφτασε).
+  // Προεπιλογή σήμερα, αλλά επεξεργάσιμη.
+  const [receivedDate, setReceivedDate] = useState(todayIso());
   // Όταν επεξεργαζόμαστε (ή ολοκληρώνουμε) μια ήδη αποθηκευμένη "εκκρεμότητα" — κρατάμε
   // ολόκληρη την υπάρχουσα εγγραφή (όχι μόνο το id) ώστε να μη χαθούν πεδία όπως
   // createdBy/createdAt όταν κάνουμε update.
@@ -291,6 +295,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
     setBatchStore('');
     setBatchSaving(false);
     setOpenPendingRecord(null);
+    setReceivedDate(todayIso());
   }
 
   // Ανοίγει μια ήδη αποθηκευμένη εκκρεμότητα για συμπλήρωση/ολοκλήρωση (π.χ. ο οδηγός
@@ -302,6 +307,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
     setBatchFlash('');
     setBatchMeta({ orderNumber: pd.orderNumber, shipDate: pd.shipDate, storeHint: pd.storeHint });
     setBatchStore(pd.store || '');
+    setReceivedDate(pd.receivedDate || todayIso());
     setBatchRows((pd.rows || []).map((r) => ({
       sku: r.sku,
       pdfName: r.pdfName || r.productDescription || '',
@@ -356,6 +362,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
           ...openPendingRecord,
           status: 'pending',
           store: batchStore,
+          receivedDate,
           rows: serializeBatchRows()
         });
         setPendingDeliveries((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
@@ -366,6 +373,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
           shipDate: (batchMeta && batchMeta.shipDate) || '',
           storeHint: (batchMeta && batchMeta.storeHint) || '',
           store: batchStore,
+          receivedDate,
           rows: serializeBatchRows()
         });
         setPendingDeliveries((prev) => [...prev, created]);
@@ -474,6 +482,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
           ...openPendingRecord,
           status: 'completed',
           store: batchStore,
+          receivedDate,
           rows: serializeBatchRows(),
           completedAt: new Date().toISOString()
         });
@@ -797,7 +806,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
                                     <strong>{pd.store || '—'}</strong>
                                     <span style={{ color: '#6b7684' }}>
                                       {pd.orderNumber ? ` · ${t('e_batch_meta_order')} ${pd.orderNumber}` : ''}
-                                      {pd.shipDate ? ` · ${t('e_batch_meta_ship_date')} ${pd.shipDate}` : ''}
+                                      {pd.receivedDate ? ` · ${t('e_batch_received_date_label')} ${pd.receivedDate}` : ''}
                                       {` · ${(pd.rows || []).length} ${t('e_batch_pending_items_suffix')}`}
                                       {pd.createdByEmail ? ` · ${t('e_batch_pending_created_by_prefix')} ${pd.createdByEmail}` : ''}
                                     </span>
@@ -849,6 +858,11 @@ export default function ProductEntryView({ canDeletePending = false }) {
                             <option value="">{t('common_select_placeholder')}</option>
                             {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                           </select>
+                        </div>
+
+                        <div className="field" style={{ marginBottom: 14 }}>
+                          <label>{t('e_batch_received_date_label')}</label>
+                          <input type="date" value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
                         </div>
 
                         <div style={{ overflowX: 'auto', border: '1px solid #eef1f4', borderRadius: 8, marginBottom: 14 }}>
