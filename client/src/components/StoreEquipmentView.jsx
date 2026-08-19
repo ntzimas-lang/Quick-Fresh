@@ -548,7 +548,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
     const draft = getPairDraft(r.id);
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
         {pairs.map((p, i) => {
           const isEditing = editingPair && editingPair.id === r.id && editingPair.idx === i;
           if (isEditing) {
@@ -582,20 +582,25 @@ export default function StoreEquipmentView({ readOnly = false }) {
             );
           }
           // Και τα 3 πεδία μαζί, μία γραμμή ανά ζευγάρι (Ψυγείο / Pico / Stockwell) — κλικ
-          // στη γραμμή ανοίγει επεξεργασία και των 3 πεδίων.
+          // στη γραμμή ανοίγει επεξεργασία και των 3 πεδίων. Στυλ "pill" με λεπτό περίγραμμα,
+          // monospace νούμερα και διακριτικό διαχωριστικό, για πιο καθαρή εμφάνιση.
           return (
             <span
               key={i}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#eef1f4', borderRadius: 6, padding: '2px 3px 2px 9px', fontSize: 12.5 }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #e4e8ec', borderRadius: 8, padding: '5px 5px 5px 11px', fontSize: 12.5, boxShadow: '0 1px 2px rgba(20,30,40,0.04)' }}
             >
-              <span onClick={() => startEditPair(r.id, i, p)} style={{ cursor: 'pointer', color: '#3a4353', whiteSpace: 'nowrap' }}>
-                {p.fridgeNo || '—'} / {p.picoNo || '—'} / {p.stockwellNo || '—'}
+              <span onClick={() => startEditPair(r.id, i, p)} style={{ cursor: 'pointer', color: '#2b3444', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', letterSpacing: 0.1 }}>
+                {p.fridgeNo || '—'}
+                <span style={{ color: '#c4cbd3', margin: '0 6px' }}>/</span>
+                {p.picoNo || '—'}
+                <span style={{ color: '#c4cbd3', margin: '0 6px' }}>/</span>
+                {p.stockwellNo || '—'}
               </span>
               <button
                 type="button"
                 onClick={() => removeEquipmentPair(r.id, i)}
                 title={t('common_delete')}
-                style={{ border: 'none', background: 'transparent', color: '#97a2b0', cursor: 'pointer', fontSize: 11, padding: '0 4px', lineHeight: 1.6 }}
+                style={{ border: 'none', background: 'transparent', color: '#c4cbd3', cursor: 'pointer', fontSize: 12, padding: '2px 5px', lineHeight: 1, borderRadius: 4 }}
               >✕</button>
             </span>
           );
@@ -641,7 +646,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
           <button
             type="button"
             onClick={() => setAddingPairFor(r.id)}
-            style={{ border: 'none', background: 'transparent', color: '#2f8f8a', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}
+            style={{ border: '1px dashed #cfe3e1', background: 'transparent', color: '#2f8f8a', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 8 }}
           >
             + {t('se_add_pair_button')}
           </button>
