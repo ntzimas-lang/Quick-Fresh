@@ -90,6 +90,11 @@ export default function DashboardView({ isDriver = false } = {}) {
   // πολλά δεδομένα στην οθόνη (μία κάρτα ανά κατηγορία) — κρυμμένο by default, ο χρήστης
   // το ανοίγει όποτε το χρειάζεται.
   const [showCategoryBreakdown, setShowCategoryBreakdown] = useState(false);
+  // Νέο, ξεχωριστό block: ίδια ιδέα με το Top20/Worst20 (Ποσότητα) παραπάνω, αλλά
+  // ταξινομημένο με βάση τη ΜΕΣΗ ΗΜΕΡΗΣΙΑ πώληση (σύνολο / ημέρες που είχε πωλήσεις),
+  // ώστε προϊόντα που μπήκαν πρόσφατα να συγκρίνονται δίκαια με παλιά. Κρυμμένο by
+  // default, ίδιο pattern με το showCategoryBreakdown.
+  const [showActiveDaysBreakdown, setShowActiveDaysBreakdown] = useState(false);
 
   useEffect(() => {
     // Ο Οδηγός βλέπει μόνο την κάρτα Ληγμένα — δεν χρειάζεται να φορτώσουμε
@@ -267,6 +272,75 @@ export default function DashboardView({ isDriver = false } = {}) {
       const list = Object.entries(totals).map(([name, sold]) => ({ name, sold }));
       const top20 = [...list].sort((a, b) => b.sold - a.sold).slice(0, 20);
       const worst20 = [...list].sort((a, b) => a.sold - b.sold).slice(0, 20);
+      const categoryTotal = list.reduce((s, p) => s + p.sold, 0);
+      return { cat, top20, worst20, categoryTotal };
+    })
+    .sort((a, b) => b.categoryTotal - a.categoryTotal);
+
+  // --- Top20/Worst20 ΜΕ ΒΑΣΗ ΤΗ ΜΕΣΗ ΗΜΕΡΗΣΙΑ ΠΩΛΗΣΗ (ημέρες "ενεργό") ---------
+  // Το Sales Analysis Report δεν έχει per-day γραμμές ανά προϊόν, μόνο ένα σύνολο
+  // ανά batch/period. Ορίζουμε λοιπόν "ενεργή" ημέρα ενός προϊόντος ως κάθε ημέρα
+  // μέσα σε ΟΠΟΙΟΔΗΠΟΤΕ ιστορικό batch (όχι μόνο το πιο πρόσφατο) όπου το προϊόν
+  // είχε sold > 0· "μη ενεργή" είναι κάθε άλλη ημέρα (εκτός τέτοιου period, ή μέσα
+  // σε period με sold = 0). Χρησιμοποιούμε ΟΛΑ τα batches (salesProducts, όχι μόνο
+  // currentProducts) ώστε να έχουμε όσο γίνεται μεγαλύτερο ιστορικό ενεργών ημερών.
+  function extractPeriodRange(label) {
+    const matches = [...String(label || '').matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
+    if (!matches.length) return null;
+    const first = matches[0];
+    const last = matches[matches.length - 1];
+    const start = new Date(`${first[3]}-${first[2]}-${first[1]}T00:00:00`);
+    const end = new Date(`${last[3]}-${last[2]}-${last[1]}T00:00:00`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return null;
+    return { start, end };
+  }
+
+  const activeDaysByProduct = {}; // name -> Set('yyyy-mm-dd')
+  const soldByProductAllTime = {}; // name -> σύνολο πωλήσεων στις ενεργές ημέρες
+  const activeDaysByCategoryProduct = {}; // cat -> name -> Set
+  const soldByCategoryProduct = {}; // cat -> name -> σύνολο
+
+  salesProducts.forEach((p) => {
+    if (!(p.sold > 0)) return;
+    const range = extractPeriodRange(p.periodLabel);
+    if (!range) return;
+    const name = p.productName || '—';
+    const cat = p.cat1 || t('d_category_uncategorized_label');
+
+    if (!activeDaysByProduct[name]) activeDaysByProduct[name] = new Set();
+    soldByProductAllTime[name] = (soldByProductAllTime[name] || 0) + (p.sold || 0);
+
+    if (!activeDaysByCategoryProduct[cat]) activeDaysByCategoryProduct[cat] = {};
+    if (!activeDaysByCategoryProduct[cat][name]) activeDaysByCategoryProduct[cat][name] = new Set();
+    if (!soldByCategoryProduct[cat]) soldByCategoryProduct[cat] = {};
+    soldByCategoryProduct[cat][name] = (soldByCategoryProduct[cat][name] || 0) + (p.sold || 0);
+
+    const cursor = new Date(range.start);
+    while (cursor <= range.end) {
+      const iso = cursor.toISOString().slice(0, 10);
+      activeDaysByProduct[name].add(iso);
+      activeDaysByCategoryProduct[cat][name].add(iso);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+
+  const dailyRateList = Object.keys(activeDaysByProduct).map((name) => {
+    const activeDays = activeDaysByProduct[name].size;
+    const sold = soldByProductAllTime[name] || 0;
+    return { name, activeDays, sold, rate: activeDays ? sold / activeDays : 0 };
+  });
+  const topByDailyRate = [...dailyRateList].sort((a, b) => b.rate - a.rate).slice(0, 20);
+  const worstByDailyRate = [...dailyRateList].sort((a, b) => a.rate - b.rate).slice(0, 20);
+
+  const categoryDailyRateTopWorst20 = Object.entries(activeDaysByCategoryProduct)
+    .map(([cat, byName]) => {
+      const list = Object.entries(byName).map(([name, daysSet]) => {
+        const activeDays = daysSet.size;
+        const sold = soldByCategoryProduct[cat][name] || 0;
+        return { name, activeDays, sold, rate: activeDays ? sold / activeDays : 0 };
+      });
+      const top20 = [...list].sort((a, b) => b.rate - a.rate).slice(0, 20);
+      const worst20 = [...list].sort((a, b) => a.rate - b.rate).slice(0, 20);
       const categoryTotal = list.reduce((s, p) => s + p.sold, 0);
       return { cat, top20, worst20, categoryTotal };
     })
@@ -649,6 +723,106 @@ export default function DashboardView({ isDriver = false } = {}) {
                         ))}
                       </div>
                     )
+                  )}
+                </div>
+
+                <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginTop: 22 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: showActiveDaysBreakdown ? 6 : 0 }}>
+                    <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                      {t('d_active_days_breakdown_title')}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 12px', fontSize: 11.5 }}
+                      onClick={() => setShowActiveDaysBreakdown((v) => !v)}
+                    >
+                      {showActiveDaysBreakdown ? t('d_category_breakdown_hide') : t('d_category_breakdown_show')}
+                    </button>
+                  </div>
+                  {showActiveDaysBreakdown && (
+                    <>
+                      <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('d_active_days_breakdown_hint')}</p>
+
+                      {dailyRateList.length === 0 ? (
+                        <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
+                          <div style={{ flex: '1 1 320px', minWidth: 280, maxWidth: 480 }}>
+                            <div style={{ fontSize: 11.5, color: '#2f8f8a', fontWeight: 700, marginBottom: 8 }}>
+                              {t('d_sales_top20_label')}
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                              <tbody>
+                                {topByDailyRate.map((p) => (
+                                  <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                    <td style={{ padding: '6px 0' }}>{p.name}</td>
+                                    <td style={{ padding: '6px 0', textAlign: 'right', color: '#97a2b0', whiteSpace: 'nowrap', fontSize: 11 }}>{p.activeDays} {t('d_active_days_abbr')}</td>
+                                    <td style={{ padding: '6px 0 6px 10px', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.rate.toFixed(1)} {t('d_active_days_rate_abbr')}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div style={{ flex: '1 1 320px', minWidth: 280, maxWidth: 480 }}>
+                            <div style={{ fontSize: 11.5, color: '#c0392b', fontWeight: 700, marginBottom: 8 }}>
+                              {t('d_sales_worst20_label')}
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                              <tbody>
+                                {worstByDailyRate.map((p) => (
+                                  <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                    <td style={{ padding: '6px 0' }}>{p.name}</td>
+                                    <td style={{ padding: '6px 0', textAlign: 'right', color: '#97a2b0', whiteSpace: 'nowrap', fontSize: 11 }}>{p.activeDays} {t('d_active_days_abbr')}</td>
+                                    <td style={{ padding: '6px 0 6px 10px', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.rate.toFixed(1)} {t('d_active_days_rate_abbr')}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {categoryDailyRateTopWorst20.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                          {categoryDailyRateTopWorst20.map(({ cat, top20, worst20 }) => (
+                            <div key={cat} style={{ border: '1px solid #eef1f4', borderRadius: 8, padding: 14 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 10 }}>{cat}</div>
+                              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                                <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 420 }}>
+                                  <div style={{ fontSize: 11, color: '#2f8f8a', fontWeight: 700, marginBottom: 8 }}>{t('d_category_top20_label')}</div>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                                    <tbody>
+                                      {top20.map((p) => (
+                                        <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                          <td style={{ padding: '5px 0' }}>{p.name}</td>
+                                          <td style={{ padding: '5px 0', textAlign: 'right', color: '#97a2b0', whiteSpace: 'nowrap', fontSize: 11 }}>{p.activeDays} {t('d_active_days_abbr')}</td>
+                                          <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.rate.toFixed(1)} {t('d_active_days_rate_abbr')}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 420 }}>
+                                  <div style={{ fontSize: 11, color: '#c0392b', fontWeight: 700, marginBottom: 8 }}>{t('d_category_worst20_label')}</div>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                                    <tbody>
+                                      {worst20.map((p) => (
+                                        <tr key={p.name} style={{ borderTop: '1px solid #eef1f4' }}>
+                                          <td style={{ padding: '5px 0' }}>{p.name}</td>
+                                          <td style={{ padding: '5px 0', textAlign: 'right', color: '#97a2b0', whiteSpace: 'nowrap', fontSize: 11 }}>{p.activeDays} {t('d_active_days_abbr')}</td>
+                                          <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{p.rate.toFixed(1)} {t('d_active_days_rate_abbr')}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </>
