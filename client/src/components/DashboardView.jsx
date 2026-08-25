@@ -280,10 +280,13 @@ export default function DashboardView({ isDriver = false } = {}) {
   // --- Top20/Worst20 ΜΕ ΒΑΣΗ ΤΗ ΜΕΣΗ ΗΜΕΡΗΣΙΑ ΠΩΛΗΣΗ (ημέρες "ενεργό") ---------
   // Το Sales Analysis Report δεν έχει per-day γραμμές ανά προϊόν, μόνο ένα σύνολο
   // ανά batch/period. Ορίζουμε λοιπόν "ενεργή" ημέρα ενός προϊόντος ως κάθε ημέρα
-  // μέσα σε ΟΠΟΙΟΔΗΠΟΤΕ ιστορικό batch (όχι μόνο το πιο πρόσφατο) όπου το προϊόν
-  // είχε sold > 0· "μη ενεργή" είναι κάθε άλλη ημέρα (εκτός τέτοιου period, ή μέσα
-  // σε period με sold = 0). Χρησιμοποιούμε ΟΛΑ τα batches (salesProducts, όχι μόνο
-  // currentProducts) ώστε να έχουμε όσο γίνεται μεγαλύτερο ιστορικό ενεργών ημερών.
+  // μέσα στο period του batch όπου το προϊόν είχε sold > 0.
+  // ΣΗΜΑΝΤΙΚΟ: χρησιμοποιούμε ΜΟΝΟ currentProducts (το πιο πρόσφατο batch ανά
+  // κατάστημα — ίδιο dedup με το flat Top20/Worst20 παραπάνω), ΟΧΙ όλο το ιστορικό
+  // salesProducts. Τα Sales Analysis Reports είναι συνήθως ΣΩΡΕΥΤΙΚΑ (κάθε νέο
+  // ανέβασμα ξανακαλύπτει όλη την περίοδο από την αρχή) — αν χρησιμοποιούσαμε όλα
+  // τα ιστορικά batches, οι επικαλυπτόμενες περίοδοι θα μετρούσαν τις ίδιες
+  // πωλήσεις πολλαπλές φορές και θα φούσκωναν τους αριθμούς.
   function extractPeriodRange(label) {
     const matches = [...String(label || '').matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
     if (!matches.length) return null;
@@ -300,7 +303,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   const activeDaysByCategoryProduct = {}; // cat -> name -> Set
   const soldByCategoryProduct = {}; // cat -> name -> σύνολο
 
-  salesProducts.forEach((p) => {
+  currentProducts.forEach((p) => {
     if (!(p.sold > 0)) return;
     const range = extractPeriodRange(p.periodLabel);
     if (!range) return;
