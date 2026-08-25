@@ -47,6 +47,7 @@ function formatDateShort(iso) {
 const STATUS_VALUES = [
   { value: '', labelKey: '' },
   { value: 'Έκλεισε', labelKey: 'c_status_closed', color: '#27ae60' },
+  { value: 'Σε διαδικασία να κλείσει', labelKey: 'c_status_in_progress', color: '#2f80ed' },
   { value: 'Ενδιαφέρεται', labelKey: 'c_status_interested', color: '#e0a500' },
   { value: 'Δεν Ενδιαφέρεται', labelKey: 'c_status_not_interested', color: '#c0392b' }
 ];

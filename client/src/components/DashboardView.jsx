@@ -48,6 +48,7 @@ function formatEuro(v) {
 
 const CONTACT_STATUS_COLORS = {
   'Έκλεισε': '#27ae60',
+  'Σε διαδικασία να κλείσει': '#2f80ed',
   'Ενδιαφέρεται': '#e0a500',
   'Δεν Ενδιαφέρεται': '#c0392b',
   '': '#c7cdd6'
@@ -162,8 +163,8 @@ export default function DashboardView({ isDriver = false } = {}) {
     const key = c.status || '';
     statusGroups[key] = (statusGroups[key] || 0) + 1;
   });
-  const statusOrder = ['Έκλεισε', 'Ενδιαφέρεται', 'Δεν Ενδιαφέρεται', ''];
-  const statusLabelKeys = { 'Έκλεισε': 'c_status_closed', 'Ενδιαφέρεται': 'c_status_interested', 'Δεν Ενδιαφέρεται': 'c_status_not_interested' };
+  const statusOrder = ['Έκλεισε', 'Σε διαδικασία να κλείσει', 'Ενδιαφέρεται', 'Δεν Ενδιαφέρεται', ''];
+  const statusLabelKeys = { 'Έκλεισε': 'c_status_closed', 'Σε διαδικασία να κλείσει': 'c_status_in_progress', 'Ενδιαφέρεται': 'c_status_interested', 'Δεν Ενδιαφέρεται': 'c_status_not_interested' };
 
   // --- Πωλήσεις ---------------------------------------------------------
   // KPIs — καθαρά ποσά, χωρίς ΦΠΑ (η στήλη netSales έχει ήδη αφαιρέσει τον φόρο).
