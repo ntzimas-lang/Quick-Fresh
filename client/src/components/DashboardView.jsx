@@ -49,6 +49,10 @@ function formatEuro(v) {
 const CONTACT_STATUS_COLORS = {
   'Έκλεισε': '#27ae60',
   'Σε διαδικασία να κλείσει': '#2f80ed',
+  'Έχει σταλεί 1ο mail': '#7cb9f2',
+  'Έχει σταλεί 2ο mail': '#4a90d9',
+  'Έχει σταλεί 3ο mail': '#2c5fa8',
+  'Σε αναμονή τηλεφωνικής επικοινωνίας': '#8e5cd9',
   'Ενδιαφέρεται': '#e0a500',
   'Δεν Ενδιαφέρεται': '#c0392b',
   '': '#c7cdd6'
@@ -163,8 +167,20 @@ export default function DashboardView({ isDriver = false } = {}) {
     const key = c.status || '';
     statusGroups[key] = (statusGroups[key] || 0) + 1;
   });
-  const statusOrder = ['Έκλεισε', 'Σε διαδικασία να κλείσει', 'Ενδιαφέρεται', 'Δεν Ενδιαφέρεται', ''];
-  const statusLabelKeys = { 'Έκλεισε': 'c_status_closed', 'Σε διαδικασία να κλείσει': 'c_status_in_progress', 'Ενδιαφέρεται': 'c_status_interested', 'Δεν Ενδιαφέρεται': 'c_status_not_interested' };
+  const statusOrder = [
+    'Έκλεισε', 'Σε διαδικασία να κλείσει', 'Έχει σταλεί 1ο mail', 'Έχει σταλεί 2ο mail',
+    'Έχει σταλεί 3ο mail', 'Σε αναμονή τηλεφωνικής επικοινωνίας', 'Ενδιαφέρεται', 'Δεν Ενδιαφέρεται', ''
+  ];
+  const statusLabelKeys = {
+    'Έκλεισε': 'c_status_closed',
+    'Σε διαδικασία να κλείσει': 'c_status_in_progress',
+    'Έχει σταλεί 1ο mail': 'c_status_mail1',
+    'Έχει σταλεί 2ο mail': 'c_status_mail2',
+    'Έχει σταλεί 3ο mail': 'c_status_mail3',
+    'Σε αναμονή τηλεφωνικής επικοινωνίας': 'c_status_awaiting_call',
+    'Ενδιαφέρεται': 'c_status_interested',
+    'Δεν Ενδιαφέρεται': 'c_status_not_interested'
+  };
 
   // --- Πωλήσεις ---------------------------------------------------------
   // KPIs — καθαρά ποσά, χωρίς ΦΠΑ (η στήλη netSales έχει ήδη αφαιρέσει τον φόρο).
