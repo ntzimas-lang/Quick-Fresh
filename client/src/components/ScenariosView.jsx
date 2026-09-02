@@ -220,7 +220,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_price_list_total_hint')}</div>
                       </td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }} colSpan={savedComputed.length + 1}>
-                        {fmtEuro(BASIC_PRICE_LIST_TOTAL)}
+                        {fmtEuro(BASIC_TOTAL_VALUE)}
                       </td>
                     </tr>
                     <tr style={{ borderTop: '1px solid #eef1f4' }}>
