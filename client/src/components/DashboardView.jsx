@@ -102,6 +102,8 @@ export default function DashboardView({ isDriver = false } = {}) {
   const [showActiveDaysBreakdown, setShowActiveDaysBreakdown] = useState(false);
   // Πωλήσεις (τεμάχια) ανά κατηγορία, ομαδοποιημένες ανά μήνα — κρυμμένο by default.
   const [showCategoryMonthlyQty, setShowCategoryMonthlyQty] = useState(false);
+  // Κέρδος ανά μήνα (γράφημα) — κρυμμένο by default, ίδιο pattern.
+  const [showProfitByMonth, setShowProfitByMonth] = useState(false);
   // Ποιες κατηγορίες (ανά μήνα) είναι ανοιχτές για να δείχνουν τα προϊόντα τους
   // από μέσα — key: "monthKey|category".
   const [expandedMonthCategories, setExpandedMonthCategories] = useState(() => new Set());
@@ -446,6 +448,44 @@ export default function DashboardView({ isDriver = false } = {}) {
       return { monthKey: mk, periodTexts: Array.from(monthPeriodTexts[mk] || []), categories, totalQty };
     });
 
+  // --- Κέρδος ανά Μήνα (γράφημα) ---------------------------------------------
+  // Το Sales Analysis Report δίνει ήδη το πραγματικό κέρδος ανά προϊόν (στήλη "Net",
+  // αποθηκευμένο ως p.netProfit) — υπολογισμένο από το ίδιο το ταμειακό σύστημα, όχι
+  // εκτίμηση δική μας. Χρησιμοποιούμε τον ίδιο καταμερισμό (proration) ανά μήνα με
+  // την ενότητα "Πωλήσεις ανά Κατηγορία" παραπάνω, ώστε οι δύο ενότητες να συμφωνούν.
+  const monthProfit = {}; // monthKey -> € κέρδος
+  const monthProfitPeriodTexts = {};
+  currentProducts.forEach((p) => {
+    const range = extractPeriodRange(p.periodLabel);
+    if (!range) return;
+    const { start, end } = range;
+    const totalDays = daysBetweenInclusive(start, end);
+    if (totalDays <= 0) return;
+    let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const lastMonthStart = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= lastMonthStart) {
+      const monthStart = cursor;
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      const overlapStart = start > monthStart ? start : monthStart;
+      const overlapEnd = end < monthEnd ? end : monthEnd;
+      if (overlapStart <= overlapEnd) {
+        const overlapDays = daysBetweenInclusive(overlapStart, overlapEnd);
+        const weight = overlapDays / totalDays;
+        const profit = (p.netProfit || 0) * weight;
+        const mk = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
+        monthProfit[mk] = (monthProfit[mk] || 0) + profit;
+        if (!monthProfitPeriodTexts[mk]) monthProfitPeriodTexts[mk] = new Set();
+        if (p.periodLabel) monthProfitPeriodTexts[mk].add(p.periodLabel);
+      }
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+  });
+  const profitByMonthList = Object.keys(monthProfit)
+    .sort()
+    .map((mk) => ({ monthKey: mk, profit: Math.round(monthProfit[mk]), periodTexts: Array.from(monthProfitPeriodTexts[mk] || []) }));
+  const profitChartMax = profitByMonthList.length ? Math.max(...profitByMonthList.map((m) => Math.abs(m.profit)), 1) : 1;
+  const profitTotalAllMonths = profitByMonthList.reduce((s, m) => s + m.profit, 0);
+
   // --- Ώρες Αιχμής (peak hours) --------------------------------------------
   // Ένα report "Sales By 30/15 Minutes" καλύπτει όλη την εφαρμογή μαζί (όχι ανά
   // κατάστημα) — κρατάμε μόνο την πιο πρόσφατη ανεβασμένη παρτίδα.
@@ -499,6 +539,61 @@ export default function DashboardView({ isDriver = false } = {}) {
               <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_empty')}</p>
             ) : (
               <>
+                <div style={{ borderBottom: '1px solid #eef1f4', paddingBottom: 18, marginBottom: 22 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: showProfitByMonth ? 6 : 0 }}>
+                    <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                      {t('d_profit_by_month_title')}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 12px', fontSize: 11.5 }}
+                      onClick={() => setShowProfitByMonth((v) => !v)}
+                    >
+                      {showProfitByMonth ? t('d_category_breakdown_hide') : t('d_category_breakdown_show')}
+                    </button>
+                  </div>
+                  {showProfitByMonth && (
+                    <>
+                      <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('d_profit_by_month_hint')}</p>
+                      {profitByMonthList.length === 0 ? (
+                        <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 24, fontWeight: 700, color: profitTotalAllMonths >= 0 ? '#2f8f8a' : '#c0392b', marginBottom: 10 }}>
+                            {formatEuro(profitTotalAllMonths)}
+                            <span style={{ fontSize: 12, color: '#97a2b0', fontWeight: 400, marginLeft: 8, textTransform: 'none' }}>{t('d_profit_by_month_total_label')}</span>
+                          </div>
+                          <svg viewBox="0 0 360 140" style={{ width: '100%', height: 190 }}>
+                            <line x1="6" y1="100" x2="354" y2="100" stroke="#e1e5ea" strokeWidth="1" />
+                            {profitByMonthList.map((m, i) => {
+                              const n = profitByMonthList.length;
+                              const slot = 340 / n;
+                              const bw = Math.min(38, slot * 0.55);
+                              const cx = 10 + slot * i + slot / 2;
+                              const barH = Math.max(2, (Math.abs(m.profit) / profitChartMax) * 88);
+                              const baseline = 100;
+                              const y = m.profit >= 0 ? baseline - barH : baseline;
+                              const barColor = m.profit >= 0 ? '#2f8f8a' : '#c0392b';
+                              return (
+                                <g key={m.monthKey}>
+                                  <rect x={cx - bw / 2} y={y} width={bw} height={barH} fill={barColor} rx="3" />
+                                  <text x={cx} y={m.profit >= 0 ? y - 6 : y + barH + 14} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={barColor}>
+                                    {formatEuro(m.profit)}
+                                  </text>
+                                  <text x={cx} y={baseline + 18} textAnchor="middle" fontSize="9" fill="#6b7684">
+                                    {monthLabel(m.monthKey, lang)}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 22 }}>
                   <div>
                     <div style={{ fontSize: 30, fontWeight: 700, color: '#16233f' }}>€{salesNet.toFixed(0)}</div>
