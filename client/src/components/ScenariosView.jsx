@@ -357,18 +357,28 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       cursorY += messageLines.length * 4.6 + 4;
     }
 
-    // Συνολική μηνιαία εξοικονόμηση στον πελάτη — σε όλο τον τιμοκατάλογο.
-    if (preview.revenueDrop > 0) {
-      doc.setFillColor(240, 248, 247);
-      doc.roundedRect(14, cursorY, pageWidth - 28, 14, 2, 2, 'F');
-      doc.setFontSize(10);
-      doc.setTextColor(47, 143, 138);
-      doc.text(t('sc_pdf_total_savings_label'), 18, cursorY + 6);
-      doc.setFontSize(13);
-      doc.setTextColor(22, 35, 63);
-      doc.text(fmtEuro(preview.revenueDrop) + ' / ' + t('sc_pdf_per_month'), 18, cursorY + 11.5);
-      cursorY += 20;
-    }
+    // Ποσό Επιδότησης + Μέσος Όρος Μείωσης Τιμής — δύο κουτιά δίπλα-δίπλα.
+    // Ο Μ.Ο. υπολογίζεται ΜΟΝΟ στα προϊόντα που πραγματικά επηρεάζονται από την επιδότηση
+    // (inScope) — αν υπάρχει φίλτρο κατηγοριών, τα εκτός κατηγορίας δεν "αραιώνουν" το ποσοστό.
+    const inScopeRowsForAvg = preview.rows.filter((r) => r.inScope);
+    const avgPctOff = inScopeRowsForAvg.length
+      ? inScopeRowsForAvg.reduce((s, r) => s + r.pctOff, 0) / inScopeRowsForAvg.length
+      : 0;
+    const boxGap = 6;
+    const boxWidth = (pageWidth - 28 - boxGap) / 2;
+    const boxHeight = 14;
+    doc.setFillColor(240, 248, 247);
+    doc.roundedRect(14, cursorY, boxWidth, boxHeight, 2, 2, 'F');
+    doc.roundedRect(14 + boxWidth + boxGap, cursorY, boxWidth, boxHeight, 2, 2, 'F');
+    doc.setFontSize(9.5);
+    doc.setTextColor(47, 143, 138);
+    doc.text(t('sc_pdf_subsidy_amount_label'), 18, cursorY + 6);
+    doc.text(t('sc_pdf_avg_discount_label'), 18 + boxWidth + boxGap, cursorY + 6);
+    doc.setFontSize(13);
+    doc.setTextColor(22, 35, 63);
+    doc.text(fmtEuro(Number(editing.subsidyAmount) || 0), 18, cursorY + 11.5);
+    doc.text('−' + fmtNum(avgPctOff, 1) + '%', 18 + boxWidth + boxGap, cursorY + 11.5);
+    cursorY += boxHeight + 6;
 
     doc.setFontSize(9.5);
     doc.setTextColor(22, 35, 63);
@@ -413,6 +423,135 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '') || 'senario';
     doc.save(`quick-fresh-timokatalogos-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
+  // Εξαγωγή PDF ΜΟΝΟ για εσωτερική χρήση — προς έγκριση από διευθυντή πριν σταλεί οτιδήποτε
+  // στον πελάτη. Δείχνει ΟΛΑ τα εσωτερικά οικονομικά στοιχεία (κόστος, περιθώριο, F.C.,
+  // κάλυψη επιδότησης) — ΔΕΝ προορίζεται για τον πελάτη.
+  function exportManagerPDF() {
+    if (!preview) return;
+    const doc = new jsPDF({ orientation: 'portrait' });
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const logoSize = 24;
+    doc.addImage(QUICKFRESH_LOGO_BASE64, 'PNG', 14, 10, logoSize, logoSize);
+
+    doc.setFontSize(13);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('sc_pdf_manager_title'), 14, logoSize + 16);
+
+    const dateText = new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'el-GR');
+    const companyName = (editing.customerCompanyName || '').trim();
+    doc.setFontSize(10);
+    doc.setTextColor(107, 118, 132);
+    doc.text(`${editing.name || ''}${companyName ? ' — ' + companyName : ''} — ${dateText}`, 14, logoSize + 23);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(192, 57, 43);
+    doc.text(t('sc_pdf_manager_internal_note'), 14, logoSize + 29);
+
+    let cursorY = logoSize + 38;
+
+    const catsLabel = Array.isArray(editing.selectedCategories) && editing.selectedCategories.length
+      ? editing.selectedCategories.join(', ')
+      : t('sc_pdf_manager_all_categories');
+
+    const paramRows = [
+      [t('sc_subsidy_amount_label'), fmtEuro(Number(editing.subsidyAmount) || 0)],
+      [t('sc_volume_growth_label'), fmtNum(preview.volumeGrowthPct, 0) + '%'],
+      [t('sc_destruction_pct_label'), fmtNum(preview.destructionPct, 0) + '%'],
+      [t('sc_building_people_label'), fmtNum(preview.buildingPeople, 0)],
+      [t('sc_categories_label'), catsLabel]
+    ];
+
+    doc.setFontSize(10.5);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('sc_pdf_manager_params_title'), 14, cursorY);
+    cursorY += 4;
+
+    autoTable(doc, {
+      startY: cursorY,
+      body: paramRows,
+      theme: 'plain',
+      styles: { fontSize: 9.5, cellPadding: 1.5, font: 'DejaVuSans' },
+      columnStyles: { 0: { textColor: [107, 118, 132], cellWidth: 70 }, 1: { textColor: [22, 35, 63], fontStyle: 'bold' } }
+    });
+    cursorY = doc.lastAutoTable.finalY + 8;
+
+    const resultRows = [
+      [t('sc_net_revenue_label'), fmtEuro(preview.netRevenue)],
+      [t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')', fmtEuro(Number(editing.subsidyAmount) || 0)],
+      [t('sc_actual_drop_label'), fmtEuro(preview.revenueDrop)],
+      [t('sc_cogs_label'), fmtEuro(preview.cogs)],
+      [t('sc_gross_profit_label') + ' (' + fmtPct1(preview.grossProfitPct) + ')', fmtEuro(preview.grossProfit)],
+      [t('sc_fc_new_label') + ' (' + t('sc_fc_basic_label') + ': ' + fmtNum(BASIC_FC_PCT, 1) + '%)', fmtNum(preview.fcNewPct, 1) + '%'],
+      [t('sc_fc_with_subsidy_label'), isFinite(preview.fcWithSubsidyPct) ? fmtNum(preview.fcWithSubsidyPct, 1) + '%' : '—']
+    ];
+
+    doc.setFontSize(10.5);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('sc_live_summary_title'), 14, cursorY);
+    cursorY += 4;
+
+    autoTable(doc, {
+      startY: cursorY,
+      body: resultRows,
+      theme: 'plain',
+      styles: { fontSize: 9.5, cellPadding: 1.5, font: 'DejaVuSans' },
+      columnStyles: { 0: { textColor: [107, 118, 132], cellWidth: 110 }, 1: { textColor: [22, 35, 63], fontStyle: 'bold', halign: 'right' } }
+    });
+    cursorY = doc.lastAutoTable.finalY + 8;
+
+    const coverageRows = [
+      [t('sc_destruction_cost_label') + ' (' + fmtNum(preview.destructionPct, 0) + '%)', fmtEuro(preview.destructionCost)],
+      [t('sc_grown_profit_label'), fmtEuro(preview.totalWithSubsidy)],
+      [t('sc_erosion_label'), fmtSignedCost(preview.erosion)],
+      [t('sc_net_benefit_label'), fmtEuro(preview.netBenefitVsToday)]
+    ];
+
+    doc.setFontSize(10.5);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('sc_sensitivity_title'), 14, cursorY);
+    cursorY += 4;
+
+    autoTable(doc, {
+      startY: cursorY,
+      body: coverageRows,
+      theme: 'plain',
+      styles: { fontSize: 9.5, cellPadding: 1.5, font: 'DejaVuSans' },
+      columnStyles: { 0: { textColor: [107, 118, 132], cellWidth: 110 }, 1: { textColor: [22, 35, 63], fontStyle: 'bold', halign: 'right' } },
+      didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(151, 162, 176);
+        doc.text('Quick & Fresh smart store by gefsinus — ' + t('sc_pdf_manager_internal_note'), 14, doc.internal.pageSize.getHeight() - 8);
+      }
+    });
+    cursorY = doc.lastAutoTable.finalY + 16;
+
+    // Γραμμές έγκρισης — υπογραφή/ημερομηνία.
+    if (cursorY > doc.internal.pageSize.getHeight() - 30) {
+      doc.addPage();
+      cursorY = 20;
+    }
+    doc.setDrawColor(200, 205, 212);
+    doc.setFontSize(9.5);
+    doc.setTextColor(107, 118, 132);
+    doc.text(t('sc_pdf_manager_approval_label'), 14, cursorY);
+    doc.line(14, cursorY + 14, 90, cursorY + 14);
+    doc.text(t('sc_pdf_manager_signature_label'), 14, cursorY + 19);
+    doc.line(pageWidth - 76, cursorY + 14, pageWidth - 14, cursorY + 14);
+    doc.text(t('sc_pdf_manager_date_label'), pageWidth - 76, cursorY + 19);
+
+    const slug = (editing.name || 'senario')
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'senario';
+    doc.save(`quick-fresh-egkrisi-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
   const filteredRows = useMemo(() => {
@@ -553,6 +692,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                 </button>
               )}
               <button type="button" className="btn-secondary" onClick={exportCustomerPDF}>{t('sc_pdf_export_button')}</button>
+              <button type="button" className="btn-secondary" onClick={exportManagerPDF}>{t('sc_pdf_manager_export_button')}</button>
               <button type="button" className="btn-secondary" onClick={cancelEdit}>{t('sc_cancel_button')}</button>
               {saveError && <span style={{ color: '#c0392b', fontSize: 12.5 }}>{saveError}</span>}
             </div>
