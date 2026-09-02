@@ -378,58 +378,57 @@ export default function DashboardView({ isDriver = false } = {}) {
     })
     .sort((a, b) => b.categoryTotal - a.categoryTotal);
 
-  // --- Πωλήσεις (τεμάχια) ανά Κατηγορία, ανά ΜΗΝΑ -----------------------------
-  // Το Sales Analysis Report δίνει ένα σύνολο ανά batch/period (όχι per-day), και
-  // κάθε ανέβασμα συχνά καλύπτει σωρευτικά όλη την περίοδο μέχρι τη στιγμή της
-  // εξαγωγής (βλ. σχόλιο παραπάνω). Για να δείξουμε κάτι ανά μήνα χωρίς να
-  // διπλομετρήσουμε, χρησιμοποιούμε ΓΙΑ ΚΑΘΕ (κατάστημα, μήνας) μόνο το ΠΙΟ
-  // ΠΡΟΣΦΑΤΟ batch του οποίου η περίοδος ΤΕΛΕΙΩΝΕΙ μέσα σε αυτόν τον μήνα.
-  // ΣΗΜΑΝΤΙΚΟ: δεχόμαστε ΜΟΝΟ batches που καλύπτουν έναν "καθαρό" μήνα (από την 1η
-  // έως την τελευταία ημέρα του ΙΔΙΟΥ μήνα — π.χ. 01/07–31/07). Ένα batch που
-  // καλύπτει πολλούς μήνες (π.χ. σωρευτικό 01/05–27/07) ΔΕΝ μπαίνει εδώ, γιατί δεν
-  // ξέρουμε πόσο απ' αυτό ανήκει σε κάθε μήνα ξεχωριστά — θα παραμορφωνόταν ο
-  // αριθμός του μήνα λήξης. Ο χρήστης πρέπει να ανεβάζει ένα ξεχωριστό Sales
-  // Analysis Report ανά μήνα για να εμφανιστεί εδώ.
-  function isCleanCalendarMonth(range) {
-    if (!range) return false;
-    const { start, end } = range;
-    if (start.getFullYear() !== end.getFullYear() || start.getMonth() !== end.getMonth()) return false;
-    if (start.getDate() !== 1) return false;
-    const lastDay = new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate();
-    return end.getDate() === lastDay;
+  // --- Πωλήσεις (τεμάχια) ανά Κατηγορία, ανά ΜΗΝΑ (01–31) ---------------------
+  // Το Sales Analysis Report δίνει ένα σύνολο ανά batch/period (όχι per-day). Στην
+  // πράξη οι περίοδοι που ανεβάζει ο χρήστης καλύπτουν συχνά πάνω από έναν μήνα
+  // (π.χ. 01/05–27/07), οπότε δεν υπάρχει καθόλου "καθαρό" μηνιαίο batch να δείξουμε
+  // — αυτό δοκιμάστηκε και δεν επέστρεφε τίποτα. Αντ' αυτού, καταμερίζουμε (prorate)
+  // το σύνολο κάθε προϊόντος ΑΝΑΛΟΓΙΚΑ στους μήνες που καλύπτει η περίοδός του, με
+  // βάση το πλήθος ημερών που πέφτουν σε κάθε μήνα (π.χ. αν η περίοδος έχει 88 μέρες
+  // και 27 απ' αυτές είναι μέσα στον Ιούλιο, ο Ιούλιος παίρνει 27/88 του συνόλου).
+  // Αυτό δίνει μια λογική εκτίμηση ανά μήνα (υποθέτοντας σταθερό ρυθμό πωλήσεων μέσα
+  // στην περίοδο) αντί για μηδενικά ή ολόκληρο το σύνολο σε έναν μήνα. Χρησιμοποιούμε
+  // ΜΟΝΟ currentProducts (πιο πρόσφατο batch ανά κατάστημα) ώστε να μη διπλομετρηθούν
+  // σωρευτικά reports.
+  function daysBetweenInclusive(a, b) {
+    return Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
   }
-  const latestBatchByStoreMonth = {}; // "store|monthKey" -> { uploadedAt, periodText }
-  let skippedMultiMonthBatches = 0;
-  salesProducts.forEach((p) => {
-    const range = extractPeriodRange(p.periodLabel);
-    if (!range) return;
-    if (!isCleanCalendarMonth(range)) { skippedMultiMonthBatches++; return; }
-    const mk = `${range.end.getFullYear()}-${String(range.end.getMonth() + 1).padStart(2, '0')}`;
-    const key = `${p.store}|${mk}`;
-    const cur = latestBatchByStoreMonth[key];
-    if (!cur || new Date(p.uploadedAt) > new Date(cur.uploadedAt)) {
-      latestBatchByStoreMonth[key] = { uploadedAt: p.uploadedAt, monthKey: mk, periodText: p.periodLabel };
-    }
-  });
   const monthCategoryQty = {}; // monthKey -> { cat -> qty }
   const monthCategoryProductQty = {}; // monthKey -> { cat -> { productName -> qty } }
   const monthPeriodTexts = {}; // monthKey -> Set(periodText) — για το hint
-  salesProducts.forEach((p) => {
+  currentProducts.forEach((p) => {
+    if (!(p.sold > 0)) return;
     const range = extractPeriodRange(p.periodLabel);
-    if (!range || !isCleanCalendarMonth(range)) return;
-    const mk = `${range.end.getFullYear()}-${String(range.end.getMonth() + 1).padStart(2, '0')}`;
-    const key = `${p.store}|${mk}`;
-    const latest = latestBatchByStoreMonth[key];
-    if (!latest || latest.uploadedAt !== p.uploadedAt) return; // μόνο το πιο πρόσφατο batch ανά (κατάστημα, μήνας)
+    if (!range) return;
+    const { start, end } = range;
+    const totalDays = daysBetweenInclusive(start, end);
+    if (totalDays <= 0) return;
     const cat = p.cat1 || t('d_category_uncategorized_label');
     const productName = p.productName || '—';
-    if (!monthCategoryQty[mk]) monthCategoryQty[mk] = {};
-    monthCategoryQty[mk][cat] = (monthCategoryQty[mk][cat] || 0) + (p.sold || 0);
-    if (!monthCategoryProductQty[mk]) monthCategoryProductQty[mk] = {};
-    if (!monthCategoryProductQty[mk][cat]) monthCategoryProductQty[mk][cat] = {};
-    monthCategoryProductQty[mk][cat][productName] = (monthCategoryProductQty[mk][cat][productName] || 0) + (p.sold || 0);
-    if (!monthPeriodTexts[mk]) monthPeriodTexts[mk] = new Set();
-    if (p.periodLabel) monthPeriodTexts[mk].add(p.periodLabel);
+
+    // Σπάσιμο της περιόδου σε ημερολογιακούς μήνες.
+    let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const lastMonthStart = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= lastMonthStart) {
+      const monthStart = cursor;
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      const overlapStart = start > monthStart ? start : monthStart;
+      const overlapEnd = end < monthEnd ? end : monthEnd;
+      if (overlapStart <= overlapEnd) {
+        const overlapDays = daysBetweenInclusive(overlapStart, overlapEnd);
+        const weight = overlapDays / totalDays;
+        const qty = p.sold * weight;
+        const mk = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthCategoryQty[mk]) monthCategoryQty[mk] = {};
+        monthCategoryQty[mk][cat] = (monthCategoryQty[mk][cat] || 0) + qty;
+        if (!monthCategoryProductQty[mk]) monthCategoryProductQty[mk] = {};
+        if (!monthCategoryProductQty[mk][cat]) monthCategoryProductQty[mk][cat] = {};
+        monthCategoryProductQty[mk][cat][productName] = (monthCategoryProductQty[mk][cat][productName] || 0) + qty;
+        if (!monthPeriodTexts[mk]) monthPeriodTexts[mk] = new Set();
+        if (p.periodLabel) monthPeriodTexts[mk].add(p.periodLabel);
+      }
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
   });
   const categoryMonthlyQtyList = Object.keys(monthCategoryQty)
     .sort()
@@ -437,9 +436,9 @@ export default function DashboardView({ isDriver = false } = {}) {
       const categories = Object.entries(monthCategoryQty[mk])
         .map(([cat, qty]) => ({
           cat,
-          qty,
+          qty: Math.round(qty),
           products: Object.entries(monthCategoryProductQty[mk][cat] || {})
-            .map(([name, pqty]) => ({ name, qty: pqty }))
+            .map(([name, pqty]) => ({ name, qty: Math.round(pqty) }))
             .sort((a, b) => b.qty - a.qty)
         }))
         .sort((a, b) => b.qty - a.qty);
@@ -943,10 +942,7 @@ export default function DashboardView({ isDriver = false } = {}) {
                   </div>
                   {showCategoryMonthlyQty && (
                     <>
-                      <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('d_category_monthly_qty_hint')}</p>
-                      {skippedMultiMonthBatches > 0 && (
-                        <p style={{ fontSize: 11.5, color: '#c98a1f', margin: '0 0 14px' }}>{t('d_category_monthly_qty_skipped_hint').replace('{n}', skippedMultiMonthBatches)}</p>
-                      )}
+                      <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('d_category_monthly_qty_hint')}</p>
                       {categoryMonthlyQtyList.length === 0 ? (
                         <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
                       ) : (
