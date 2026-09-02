@@ -489,6 +489,7 @@ export const PricingScenarios = {
       name: '',
       notes: '',
       subsidyAmount: 0,
+      volumeGrowthPct: 0,
       ...body,
       id,
       createdBy: user?.id || null,
