@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { PricingScenarios } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 import { SCENARIO_BASELINE_PRODUCTS } from '../data/scenarioBaseline.js';
+import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
+import { QUICKFRESH_LOGO_BASE64 } from '../quickfresh-logo.js';
 
 function fmtEuro(n) {
   const v = isFinite(n) ? n : 0;
@@ -88,8 +92,11 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct) {
 
     const fcBasic = p.basicPrice ? (p.ptk / (p.basicPrice / 1.13)) * 100 : NaN;
     const fcNew = newPrice ? (p.ptk / (newPrice / 1.13)) * 100 : NaN;
+    // Πραγματικό % μείωσης ΑΝΑ προϊόν (μετά τη στρογγυλοποίηση προς τα πάνω στο 0,10€ —
+    // γι' αυτό διαφέρει ελαφρώς προϊόν προς προϊόν από το γενικό ποσοστό discountPct).
+    const pctOff = p.basicPrice ? ((p.basicPrice - newPrice) / p.basicPrice) * 100 : 0;
 
-    return { ...p, newPrice, newValue, diff, fcBasic, fcNew };
+    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff };
   });
 
   const grossProfit = soldNetRevenue - BASIC_COGS;
@@ -121,7 +128,7 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct) {
 }
 
 export default function ScenariosView({ readOnly = false, canDelete = false }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [scenarios, setScenarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -197,6 +204,65 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     } catch (err) {
       alert(err.message || err);
     }
+  }
+
+  // Εξαγωγή τιμοκαταλόγου σε PDF, έτοιμο να σταλεί σε πελάτη — ΜΟΝΟ πληροφορίες τιμής
+  // (Παλιά/Νέα Τιμή, % Μείωσης), ΚΑΝΕΝΑ εσωτερικό στοιχείο κόστους/περιθωρίου/F.C.
+  function exportCustomerPDF() {
+    if (!preview) return;
+    const doc = new jsPDF({ orientation: 'portrait' });
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const logoSize = 30;
+    doc.addImage(QUICKFRESH_LOGO_BASE64, 'PNG', 14, 10, logoSize, logoSize);
+
+    doc.setFontSize(14);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('sc_pdf_title'), 14, logoSize + 20);
+
+    doc.setFontSize(10);
+    doc.setTextColor(107, 118, 132);
+    const dateText = new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'el-GR');
+    doc.text(`${editing.name || ''} — ${dateText}`, 14, logoSize + 27);
+
+    doc.setFontSize(9.5);
+    doc.setTextColor(22, 35, 63);
+    const noteLines = doc.splitTextToSize(t('sc_pdf_note'), pageWidth - 28);
+    doc.text(noteLines, 14, logoSize + 35);
+
+    const sortedRows = [...preview.rows].sort((a, b) => {
+      if (a.cat !== b.cat) return a.cat.localeCompare(b.cat, 'el');
+      return a.desc.localeCompare(b.desc, 'el');
+    });
+
+    autoTable(doc, {
+      startY: logoSize + 35 + noteLines.length * 4.4 + 4,
+      head: [[t('sc_col_code'), t('sc_col_desc'), t('sc_col_cat'), t('sc_pdf_col_old_price'), t('sc_pdf_col_new_price'), t('sc_col_pct_off')]],
+      body: sortedRows.map((r) => [r.code, r.desc, r.cat, fmtEuro(r.basicPrice), fmtEuro(r.newPrice), '−' + fmtNum(r.pctOff, 1) + '%']),
+      styles: { fontSize: 8, cellPadding: 2, font: 'DejaVuSans' },
+      headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' },
+      columnStyles: {
+        3: { halign: 'right' },
+        4: { halign: 'right', textColor: [47, 143, 138], fontStyle: 'bold' },
+        5: { halign: 'right', textColor: [47, 143, 138] }
+      },
+      didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(151, 162, 176);
+        doc.text('Quick & Fresh smart store by gefsinus', 14, doc.internal.pageSize.getHeight() - 8);
+      }
+    });
+
+    const slug = (editing.name || 'senario')
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'senario';
+    doc.save(`quick-fresh-timokatalogos-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
   const filteredRows = useMemo(() => {
@@ -484,6 +550,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_basic_value')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_fc_basic')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_new_price')}</th>
+                      <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_pct_off')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_new_value')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_fc_new')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_diff')}</th>
@@ -500,6 +567,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.basicValue)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7684' }}>{isFinite(r.fcBasic) ? fmtNum(r.fcBasic, 1) + '%' : '—'}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2f8f8a' }}>{fmtEuro(r.newPrice)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: '#2f8f8a' }}>−{fmtNum(r.pctOff, 1)}%</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#16233f' }}>{fmtEuro(r.newValue)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c0392b' }}>{isFinite(r.fcNew) ? fmtNum(r.fcNew, 1) + '%' : '—'}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c0392b' }}>{fmtEuro(r.diff)}</td>
@@ -518,6 +586,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                   {t('sc_save_button')}
                 </button>
               )}
+              <button type="button" className="btn-secondary" onClick={exportCustomerPDF}>{t('sc_pdf_export_button')}</button>
               <button type="button" className="btn-secondary" onClick={cancelEdit}>{t('sc_cancel_button')}</button>
             </div>
           </div>
