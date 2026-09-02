@@ -430,7 +430,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   // κάλυψη επιδότησης) — ΔΕΝ προορίζεται για τον πελάτη.
   function exportManagerPDF() {
     if (!preview) return;
-    const doc = new jsPDF({ orientation: 'portrait' });
+    const doc = new jsPDF({ orientation: 'landscape' });
     doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
     doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
     doc.setFont('DejaVuSans', 'normal');
@@ -481,9 +481,17 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     });
     cursorY = doc.lastAutoTable.finalY + 8;
 
+    // Μ.Ο. Μείωσης Τιμής — μόνο στα προϊόντα που πραγματικά επηρεάζονται (inScope), ίδιος
+    // υπολογισμός με το PDF πελάτη, ώστε τα δύο PDF να συμφωνούν.
+    const inScopeRowsForAvg = preview.rows.filter((r) => r.inScope);
+    const avgPctOff = inScopeRowsForAvg.length
+      ? inScopeRowsForAvg.reduce((s, r) => s + r.pctOff, 0) / inScopeRowsForAvg.length
+      : 0;
+
     const resultRows = [
       [t('sc_net_revenue_label'), fmtEuro(preview.netRevenue)],
       [t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')', fmtEuro(Number(editing.subsidyAmount) || 0)],
+      [t('sc_pdf_avg_discount_label'), '−' + fmtNum(avgPctOff, 1) + '%'],
       [t('sc_actual_drop_label'), fmtEuro(preview.revenueDrop)],
       [t('sc_cogs_label'), fmtEuro(preview.cogs)],
       [t('sc_gross_profit_label') + ' (' + fmtPct1(preview.grossProfitPct) + ')', fmtEuro(preview.grossProfit)],
@@ -545,6 +553,62 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     doc.text(t('sc_pdf_manager_signature_label'), 14, cursorY + 19);
     doc.line(pageWidth - 76, cursorY + 14, pageWidth - 14, cursorY + 14);
     doc.text(t('sc_pdf_manager_date_label'), pageWidth - 76, cursorY + 19);
+
+    // Αναλυτικός τιμοκατάλογος — ΟΛΕΣ οι στήλες, ίδιες με τη φόρμα επεξεργασίας σεναρίου
+    // (128 προϊόντα, ό,τι εσωτερικό στοιχείο βλέπεις κι εκεί) — σε νέα σελίδα, για τον διευθυντή.
+    doc.addPage();
+    let tableY = 16;
+    doc.setFontSize(12);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('sc_pdf_manager_pricelist_title'), 14, tableY);
+    tableY += 6;
+
+    const sortedRowsFull = [...preview.rows].sort((a, b) => {
+      if (a.cat !== b.cat) return a.cat.localeCompare(b.cat, 'el');
+      return a.desc.localeCompare(b.desc, 'el');
+    });
+
+    autoTable(doc, {
+      startY: tableY,
+      head: [[
+        t('sc_col_code'), t('sc_col_desc'), t('sc_col_cat'), t('sc_col_june_qty'),
+        t('sc_col_basic_price'), t('sc_col_basic_value'), t('sc_col_fc_basic'),
+        t('sc_col_new_price'), t('sc_col_pct_off'), t('sc_col_new_value'), t('sc_col_fc_new'), t('sc_col_diff')
+      ]],
+      body: sortedRowsFull.map((r) => [
+        r.code,
+        r.desc,
+        r.cat,
+        fmtNum(r.juneQty, 0),
+        fmtEuro(r.basicPrice),
+        fmtEuro(r.basicValue),
+        isFinite(r.fcBasic) ? fmtNum(r.fcBasic, 1) + '%' : '—',
+        fmtEuro(r.newPrice),
+        r.inScope ? '−' + fmtNum(r.pctOff, 1) + '%' : '—',
+        fmtEuro(r.newValue),
+        isFinite(r.fcNew) ? fmtNum(r.fcNew, 1) + '%' : '—',
+        fmtEuro(r.diff)
+      ]),
+      styles: { fontSize: 6.8, cellPadding: 1.3, font: 'DejaVuSans' },
+      headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans', fontSize: 6.8 },
+      columnStyles: {
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+        5: { halign: 'right' },
+        6: { halign: 'right' },
+        7: { halign: 'right', textColor: [47, 143, 138], fontStyle: 'bold' },
+        8: { halign: 'right', textColor: [47, 143, 138] },
+        9: { halign: 'right' },
+        10: { halign: 'right' },
+        11: { halign: 'right', textColor: [192, 57, 43] }
+      },
+      didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(151, 162, 176);
+        doc.text('Quick & Fresh smart store by gefsinus — ' + t('sc_pdf_manager_internal_note'), 14, doc.internal.pageSize.getHeight() - 8);
+      }
+    });
 
     const slug = (editing.name || 'senario')
       .toLowerCase()
