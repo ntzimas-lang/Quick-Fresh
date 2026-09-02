@@ -252,6 +252,13 @@ export default function DashboardView({ isDriver = false } = {}) {
   });
   const currentProducts = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
 
+  // F.C. % (Food Cost) = Κόστος / Καθ. Τζίρος × 100, από το ίδιο Sales Analysis Report
+  // (στήλες Cost / netRevenue, ήδη σε αθροίσματα — ο λόγος τους ισούται με τον λόγο
+  // κόστους/τιμής ανά μονάδα, ίδιος τύπος με το computeFC() του ProductsView.jsx).
+  const fcTotalCost = currentProducts.reduce((s, p) => s + (p.cost || 0), 0);
+  const fcTotalRevenue = currentProducts.reduce((s, p) => s + (p.netRevenue || 0), 0);
+  const fcPct = fcTotalRevenue ? (fcTotalCost / fcTotalRevenue) * 100 : 0;
+
   const productTotals = {};
   const categoryTotals = {};
   let periodStart = null;
@@ -611,6 +618,12 @@ export default function DashboardView({ isDriver = false } = {}) {
                     <div style={{ fontSize: 30, fontWeight: 700, color: '#7a4fc9' }}>{avgBasket.toFixed(2)}</div>
                     <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_avg_basket')}</div>
                   </div>
+                  {fcTotalRevenue > 0 && (
+                    <div>
+                      <div style={{ fontSize: 30, fontWeight: 700, color: '#c0392b' }}>{fcPct.toFixed(1)}%</div>
+                      <div style={{ fontSize: 12.5, color: '#6b7684' }}>{t('d_sales_fc')}</div>
+                    </div>
+                  )}
                 </div>
 
                 {monthKeys.length > 1 && (
