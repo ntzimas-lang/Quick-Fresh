@@ -383,15 +383,27 @@ export default function DashboardView({ isDriver = false } = {}) {
   // κάθε ανέβασμα συχνά καλύπτει σωρευτικά όλη την περίοδο μέχρι τη στιγμή της
   // εξαγωγής (βλ. σχόλιο παραπάνω). Για να δείξουμε κάτι ανά μήνα χωρίς να
   // διπλομετρήσουμε, χρησιμοποιούμε ΓΙΑ ΚΑΘΕ (κατάστημα, μήνας) μόνο το ΠΙΟ
-  // ΠΡΟΣΦΑΤΟ batch του οποίου η περίοδος ΤΕΛΕΙΩΝΕΙ μέσα σε αυτόν τον μήνα — έτσι
-  // κάθε κατάστημα/μήνας εμφανίζεται μία μόνο φορά. Αν η περίοδος ενός batch
-  // καλύπτει πάνω από έναν μήνα, το ΣΥΝΟΛΟ του αποδίδεται στον μήνα λήξης της
-  // περιόδου (όχι πραγματική ανά ημέρα κατανομή) — δείχνουμε την ακριβή περίοδο
-  // δίπλα σε κάθε μήνα ώστε να είναι διαφανές τι ακριβώς αντιπροσωπεύει ο αριθμός.
+  // ΠΡΟΣΦΑΤΟ batch του οποίου η περίοδος ΤΕΛΕΙΩΝΕΙ μέσα σε αυτόν τον μήνα.
+  // ΣΗΜΑΝΤΙΚΟ: δεχόμαστε ΜΟΝΟ batches που καλύπτουν έναν "καθαρό" μήνα (από την 1η
+  // έως την τελευταία ημέρα του ΙΔΙΟΥ μήνα — π.χ. 01/07–31/07). Ένα batch που
+  // καλύπτει πολλούς μήνες (π.χ. σωρευτικό 01/05–27/07) ΔΕΝ μπαίνει εδώ, γιατί δεν
+  // ξέρουμε πόσο απ' αυτό ανήκει σε κάθε μήνα ξεχωριστά — θα παραμορφωνόταν ο
+  // αριθμός του μήνα λήξης. Ο χρήστης πρέπει να ανεβάζει ένα ξεχωριστό Sales
+  // Analysis Report ανά μήνα για να εμφανιστεί εδώ.
+  function isCleanCalendarMonth(range) {
+    if (!range) return false;
+    const { start, end } = range;
+    if (start.getFullYear() !== end.getFullYear() || start.getMonth() !== end.getMonth()) return false;
+    if (start.getDate() !== 1) return false;
+    const lastDay = new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate();
+    return end.getDate() === lastDay;
+  }
   const latestBatchByStoreMonth = {}; // "store|monthKey" -> { uploadedAt, periodText }
+  let skippedMultiMonthBatches = 0;
   salesProducts.forEach((p) => {
     const range = extractPeriodRange(p.periodLabel);
     if (!range) return;
+    if (!isCleanCalendarMonth(range)) { skippedMultiMonthBatches++; return; }
     const mk = `${range.end.getFullYear()}-${String(range.end.getMonth() + 1).padStart(2, '0')}`;
     const key = `${p.store}|${mk}`;
     const cur = latestBatchByStoreMonth[key];
@@ -404,7 +416,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   const monthPeriodTexts = {}; // monthKey -> Set(periodText) — για το hint
   salesProducts.forEach((p) => {
     const range = extractPeriodRange(p.periodLabel);
-    if (!range) return;
+    if (!range || !isCleanCalendarMonth(range)) return;
     const mk = `${range.end.getFullYear()}-${String(range.end.getMonth() + 1).padStart(2, '0')}`;
     const key = `${p.store}|${mk}`;
     const latest = latestBatchByStoreMonth[key];
@@ -931,7 +943,10 @@ export default function DashboardView({ isDriver = false } = {}) {
                   </div>
                   {showCategoryMonthlyQty && (
                     <>
-                      <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('d_category_monthly_qty_hint')}</p>
+                      <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('d_category_monthly_qty_hint')}</p>
+                      {skippedMultiMonthBatches > 0 && (
+                        <p style={{ fontSize: 11.5, color: '#c98a1f', margin: '0 0 14px' }}>{t('d_category_monthly_qty_skipped_hint').replace('{n}', skippedMultiMonthBatches)}</p>
+                      )}
                       {categoryMonthlyQtyList.length === 0 ? (
                         <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
                       ) : (
