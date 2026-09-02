@@ -8,6 +8,7 @@ import DestructionsReportView from './components/DestructionsReportView.jsx';
 import DeliveryShortagesView from './components/DeliveryShortagesView.jsx';
 import StoreEquipmentView from './components/StoreEquipmentView.jsx';
 import NewCustomersView from './components/NewCustomersView.jsx';
+import ScenariosView from './components/ScenariosView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import SalesView from './components/SalesView.jsx';
@@ -17,6 +18,9 @@ import { useLanguage } from './LanguageContext.jsx';
 
 const SIDEBAR_KEY = 'qf_sidebar_open';
 const SOON_DAYS = 7; // πόσες ημέρες πριν τη λήξη θεωρείται "επικείμενη λήξη" για το badge
+// Η Επαναφορά διαγραφών στο Ιστορικό είναι σκόπιμα περιορισμένη ΜΟΝΟ σε αυτό το email
+// (όχι σε όλους τους Super User) — έτσι το ζήτησε ρητά ο ιδιοκτήτης.
+const HISTORY_RESTORE_OWNER_EMAIL = 'ntzimas@gmail.com';
 
 function daysDiff(expiryDateStr) {
   const today = new Date();
@@ -238,6 +242,14 @@ export default function App() {
               {t('nav_new_customers')}
             </button>
           )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'scenarios' ? ' active' : '')}
+              onClick={() => setView('scenarios')}
+            >
+              {t('nav_scenarios')}
+            </button>
+          )}
           <button
             className="nav-item lang-toggle"
             onClick={() => setLang(lang === 'el' ? 'en' : 'el')}
@@ -302,7 +314,7 @@ export default function App() {
         </section>
         {role !== 'driver' && (
           <section className={'view' + (view === 'history' ? ' active' : '')}>
-            <HistoryView />
+            <HistoryView canRestore={(session.user.email || '').toLowerCase() === HISTORY_RESTORE_OWNER_EMAIL} />
           </section>
         )}
         {role !== 'driver' && (
@@ -313,6 +325,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'newCustomers' ? ' active' : '')}>
             <NewCustomersView canDelete={role === 'super_user'} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'scenarios' ? ' active' : '')}>
+            <ScenariosView readOnly={readOnly} canDelete={role === 'super_user'} />
           </section>
         )}
         {role === 'super_user' && (

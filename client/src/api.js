@@ -474,6 +474,55 @@ export const NewCustomers = {
   }
 };
 
+export const PricingScenarios = {
+  async list() {
+    const { data, error } = await supabase.from('pricing_scenarios').select('*').order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data.map(rowToRecord);
+  },
+  async create(body) {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const id = newId();
+    const record = {
+      id,
+      name: '',
+      notes: '',
+      globalPricePercent: 0,
+      globalQtyPercent: 0,
+      categoryPercents: {},
+      productOverrides: {},
+      ...body,
+      id,
+      createdBy: user?.id || null,
+      createdByEmail: user?.email || null,
+      createdAt: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('pricing_scenarios')
+      .insert({ id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async update(id, body) {
+    const record = { ...body, id };
+    const { data, error } = await supabase
+      .from('pricing_scenarios')
+      .update({ data: record, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async remove(id) {
+    const { error } = await supabase.from('pricing_scenarios').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const PendingDeliveries = {
   async list() {
     const { data, error } = await supabase.from('pending_deliveries').select('*').order('updated_at', { ascending: true });
@@ -566,6 +615,19 @@ export const History = {
       .limit(limit);
     if (error) throw error;
     return data;
+  },
+  // Επαναφορά μιας διαγραμμένης εγγραφής: ξαναγράφει το old_data (που ήδη κρατάει
+  // το audit_log) στον αρχικό πίνακα, με το ίδιο id. Λειτουργεί γενικά για ΟΛΟΥΣ
+  // τους πίνακες που ακολουθούν το μοτίβο {id, data jsonb, updated_at} — δηλαδή
+  // όλους τους πίνακες που έχουν το audit trigger. Χρησιμοποιεί upsert (όχι insert)
+  // ώστε να μην πετάει σφάλμα αν η εγγραφή έχει ήδη επαναφερθεί ξανά.
+  async restore(entry) {
+    if (!entry || !entry.table_name || !entry.record_id) throw new Error('invalid_entry');
+    if (!entry.old_data) throw new Error('no_old_data');
+    const { error } = await supabase
+      .from(entry.table_name)
+      .upsert({ id: entry.record_id, data: entry.old_data, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    if (error) throw error;
   }
 };
 
