@@ -33,13 +33,29 @@ function fmtSignedCost(n) {
 // όμως σε ΟΛΑ τα 128 προϊόντα του τιμοκαταλόγου (δηλαδή κάθε προϊόν παίρνει νέα προτεινόμενη
 // τιμή, ακόμα κι αν δεν πουλήθηκε τον Ιούνιο) — απλά η ΒΑΣΗ υπολογισμού του ποσοστού είναι ο
 // πραγματικός τζίρος, όχι μια φουσκωμένη εκτίμηση.
-const BASIC_TOTAL_VALUE = SCENARIO_BASELINE_PRODUCTS.reduce((s, p) => s + p.basicValue, 0);
-const BASIC_COGS = SCENARIO_BASELINE_PRODUCTS.reduce((s, p) => s + p.ptk * p.juneQty, 0);
-const BASIC_GROSS_PROFIT = BASIC_TOTAL_VALUE - BASIC_COGS;
-const BASIC_GROSS_PROFIT_PCT = BASIC_TOTAL_VALUE ? BASIC_GROSS_PROFIT / BASIC_TOTAL_VALUE : 0;
-// F.C. = ΠΤΚ (κόστος) / καθαρή τιμή (χωρίς ΦΠΑ) × 100 — ίδιος τύπος με το computeFC() του
-// ProductsView.jsx. Στο σύνολο, F.C.% = 100 − Μικτό Κέρδος% (COGS/Revenue = 1 − GrossProfit/Revenue).
-const BASIC_FC_PCT = 100 - BASIC_GROSS_PROFIT_PCT * 100;
+// Υπολογίζει τα ίδια αθροίσματα αναφοράς (αξία, κόστος, μικτό κέρδος, F.C.) πάνω σε ΟΠΟΙΟΔΗΠΟΤΕ
+// υποσύνολο προϊόντων — χρησιμοποιείται τόσο για ολόκληρο τον τιμοκατάλογο όσο και για μόνο τις
+// επιλεγμένες κατηγορίες όταν ένα σενάριο περιορίζεται σε συγκεκριμένες κατηγορίες.
+function computeBaselineTotals(products) {
+  const totalValue = products.reduce((s, p) => s + p.basicValue, 0);
+  const cogs = products.reduce((s, p) => s + p.ptk * p.juneQty, 0);
+  const grossProfit = totalValue - cogs;
+  const grossProfitPct = totalValue ? grossProfit / totalValue : 0;
+  // F.C. = ΠΤΚ (κόστος) / καθαρή τιμή (χωρίς ΦΠΑ) × 100 — ίδιος τύπος με το computeFC() του
+  // ProductsView.jsx. Στο σύνολο, F.C.% = 100 − Μικτό Κέρδος% (COGS/Revenue = 1 − GrossProfit/Revenue).
+  const fcPct = 100 - grossProfitPct * 100;
+  return { totalValue, cogs, grossProfit, grossProfitPct, fcPct };
+}
+
+const BASIC_TOTALS = computeBaselineTotals(SCENARIO_BASELINE_PRODUCTS);
+const BASIC_TOTAL_VALUE = BASIC_TOTALS.totalValue;
+const BASIC_COGS = BASIC_TOTALS.cogs;
+const BASIC_GROSS_PROFIT = BASIC_TOTALS.grossProfit;
+const BASIC_GROSS_PROFIT_PCT = BASIC_TOTALS.grossProfitPct;
+const BASIC_FC_PCT = BASIC_TOTALS.fcPct;
+
+// Λίστα κατηγοριών του τιμοκαταλόγου — για το multi-select "εφαρμογή μόνο σε κατηγορίες".
+const ALL_CATEGORIES = Array.from(new Set(SCENARIO_BASELINE_PRODUCTS.map((p) => p.cat))).sort((a, b) => a.localeCompare(b, 'el'));
 
 // Εκτιμώμενος αριθμός ατόμων στα κεντρικά γραφεία (Gefsinus Kryoneri Q&F) — το κατάστημα από
 // όπου προέρχονται οι ΠΡΑΓΜΑΤΙΚΕΣ ποσότητες Ιουνίου (juneQty) που χρησιμοποιούνται σαν βάση σε
@@ -47,8 +63,21 @@ const BASIC_FC_PCT = 100 - BASIC_GROSS_PROFIT_PCT * 100;
 // λιγότερα άτομα αναμένεται λογικά να έχει ανάλογα μεγαλύτερη ή μικρότερη ζήτηση.
 const REFERENCE_BUILDING_PEOPLE = 200;
 
+const DEFAULT_CUSTOMER_MESSAGE_EL =
+  'Η εταιρία σας φροντίζει για εσάς! Απολαύστε φρέσκα, ποιοτικά γεύματα σε προνομιακές τιμές, κάθε μέρα στον χώρο εργασίας σας.';
+
 function emptyDraft() {
-  return { name: '', notes: '', subsidyAmount: 0, volumeGrowthPct: 0, destructionPct: 0, buildingPeople: REFERENCE_BUILDING_PEOPLE };
+  return {
+    name: '',
+    notes: '',
+    subsidyAmount: 0,
+    volumeGrowthPct: 0,
+    destructionPct: 0,
+    buildingPeople: REFERENCE_BUILDING_PEOPLE,
+    selectedCategories: [],
+    customerCompanyName: '',
+    customerMessage: DEFAULT_CUSTOMER_MESSAGE_EL
+  };
 }
 
 // Στρογγυλοποίηση ΠΑΝΤΑ προς τα πάνω, στο κοντινότερο 0,10€ (π.χ. 1,73€ → 1,80€).
@@ -91,7 +120,7 @@ function roundUpToDime(x) {
 // δείξει ΕΙΛΙΚΡΙΝΑ πραγματικό κόστος (θετικό erosion) αν δώσεις μεγαλύτερη έκπτωση σε μεγάλο
 // κτίριο χωρίς να έχεις υποθέσει αντίστοιχη Αύξηση Πωλήσεων % — έτσι βλέπεις τον πραγματικό
 // κίνδυνο αντί να κρύβεται.
-function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, buildingPeople) {
+function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, buildingPeople, selectedCategories) {
   const amount = Number(subsidyAmount) || 0;
   const growthPct = Number(volumeGrowthPct) || 0;
   const growthFactor = 1 + growthPct / 100;
@@ -106,10 +135,27 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, 
   // Το κτίριο ΔΕΝ επηρεάζει τη βάση όγκου — μόνο πόσο απ' την επιδότηση "ξεκλειδώνεται" εδώ.
   const unlockedAmount = effectiveAmount * peopleFactor;
 
+  // Επιλογή κατηγοριών: αν ο πελάτης θέλει επιδότηση μόνο σε συγκεκριμένες κατηγορίες, η
+  // βάση υπολογισμού της έκπτωσης περιορίζεται ΜΟΝΟ στην αξία αυτών των κατηγοριών — η ίδια
+  // επιδότηση "απλώνεται" σε μικρότερο τζίρο, άρα μεγαλύτερη % έκπτωση εκεί μέσα. Τα προϊόντα
+  // εκτός επιλεγμένων κατηγοριών ΔΕΝ επηρεάζονται — μένουν στην κανονική (BASIC) τιμή.
+  const categoryList = Array.isArray(selectedCategories) ? selectedCategories.filter(Boolean) : [];
+  const hasCategoryFilter = categoryList.length > 0;
+  const categorySet = new Set(categoryList);
+  const scopeTotals = hasCategoryFilter
+    ? computeBaselineTotals(SCENARIO_BASELINE_PRODUCTS.filter((p) => categorySet.has(p.cat)))
+    : BASIC_TOTALS;
+
   // Βάση προσαρμοσμένη στην αναμενόμενη αύξηση όγκου — η ίδια επιδότηση "απλώνεται" σε
   // μεγαλύτερο τζίρο, άρα η % έκπτωση μικραίνει (η τιμή ανεβαίνει) όσο μεγαλώνει η αύξηση.
-  const growthAdjustedBase = BASIC_TOTAL_VALUE * growthFactor;
-  const discountPct = growthAdjustedBase ? unlockedAmount / growthAdjustedBase : 0;
+  const growthAdjustedBase = scopeTotals.totalValue * growthFactor;
+  const rawDiscountPct = growthAdjustedBase ? unlockedAmount / growthAdjustedBase : 0;
+  // Όταν η επιδότηση περιορίζεται σε λίγες κατηγορίες μικρής αξίας, το ποσό μπορεί να είναι
+  // δυσανάλογα μεγάλο για εκείνη τη "μικρή πίτα" — χωρίς όριο, η έκπτωση θα ξεπερνούσε το 100%
+  // και οι τιμές θα γίνονταν αρνητικές. Περιορίζουμε στο 90% ώστε οι τιμές να μένουν πάντα θετικές.
+  const MAX_DISCOUNT_PCT = 0.9;
+  const discountPct = Math.min(rawDiscountPct, MAX_DISCOUNT_PCT);
+  const discountCapped = rawDiscountPct > MAX_DISCOUNT_PCT;
 
   let soldNetRevenue = 0;
   let grownNetRevenue = 0;
@@ -117,23 +163,26 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, 
   let grownRevenueNoDiscount = 0;
 
   const rows = SCENARIO_BASELINE_PRODUCTS.map((p) => {
-    const newPrice = roundUpToDime(p.basicPrice * (1 - discountPct));
+    const inScope = !hasCategoryFilter || categorySet.has(p.cat);
+    const newPrice = inScope ? roundUpToDime(p.basicPrice * (1 - discountPct)) : p.basicPrice;
     const newValue = (newPrice / 1.13) * p.juneQty;
     const diff = newValue - p.basicValue;
     soldNetRevenue += newValue;
 
-    const grownQty = p.juneQty * growthFactor;
-    grownNetRevenue += (newPrice / 1.13) * grownQty;
-    grownCOGS += p.ptk * grownQty;
-    grownRevenueNoDiscount += (p.basicPrice / 1.13) * grownQty;
+    if (inScope) {
+      const grownQty = p.juneQty * growthFactor;
+      grownNetRevenue += (newPrice / 1.13) * grownQty;
+      grownCOGS += p.ptk * grownQty;
+      grownRevenueNoDiscount += (p.basicPrice / 1.13) * grownQty;
+    }
 
     const fcBasic = p.basicPrice ? (p.ptk / (p.basicPrice / 1.13)) * 100 : NaN;
     const fcNew = newPrice ? (p.ptk / (newPrice / 1.13)) * 100 : NaN;
     // Πραγματικό % μείωσης ΑΝΑ προϊόν (μετά τη στρογγυλοποίηση προς τα πάνω στο 0,10€ —
     // γι' αυτό διαφέρει ελαφρώς προϊόν προς προϊόν από το γενικό ποσοστό discountPct).
-    const pctOff = p.basicPrice ? ((p.basicPrice - newPrice) / p.basicPrice) * 100 : 0;
+    const pctOff = inScope && p.basicPrice ? ((p.basicPrice - newPrice) / p.basicPrice) * 100 : 0;
 
-    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff };
+    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff, inScope };
   });
 
   const grossProfit = soldNetRevenue - BASIC_COGS;
@@ -147,13 +196,13 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, 
   const revenueWithSubsidy = soldNetRevenue + amount;
   const fcWithSubsidyPct = revenueWithSubsidy ? (BASIC_COGS / revenueWithSubsidy) * 100 : NaN;
 
-  const grownGrossProfit = grownNetRevenue - grownCOGS; // μικτό κέρδος στον ΝΕΟ (αυξημένο) όγκο, με τη μειωμένη τιμή
+  const grownGrossProfit = grownNetRevenue - grownCOGS; // μικτό κέρδος στον ΝΕΟ (αυξημένο) όγκο, με τη μειωμένη τιμή — μόνο εντός εύρους κατηγοριών
   // + η ΠΛΗΡΗΣ επιδότηση (πραγματικά χρήματα που μπαίνουν) − το εκτιμώμενο κόστος καταστροφών
   // (πραγματικό κόστος που φεύγει, χωρίς αντίστοιχο τζίρο).
   const totalWithSubsidy = grownGrossProfit + amount - destructionCost;
-  const noDiscountGrownProfit = grownRevenueNoDiscount - grownCOGS; // υποθετικό: ίδιος αυξημένος όγκος, ΧΩΡΙΣ έκπτωση
+  const noDiscountGrownProfit = grownRevenueNoDiscount - grownCOGS; // υποθετικό: ίδιος αυξημένος όγκος, ΧΩΡΙΣ έκπτωση (εντός εύρους)
   const erosion = noDiscountGrownProfit - totalWithSubsidy; // πόσο "τρώει" η αύξηση όγκου/καταστροφές από την επιδότηση
-  const netBenefitVsToday = totalWithSubsidy - BASIC_GROSS_PROFIT; // vs το σημερινό μικτό κέρδος (χωρίς σενάριο)
+  const netBenefitVsToday = totalWithSubsidy - scopeTotals.grossProfit; // vs το σημερινό μικτό κέρδος ΤΗΣ ΙΔΙΑΣ εμβέλειας (χωρίς σενάριο)
 
   return {
     rows,
@@ -173,7 +222,12 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, 
     grownGrossProfit,
     totalWithSubsidy,
     erosion,
-    netBenefitVsToday
+    netBenefitVsToday,
+    hasCategoryFilter,
+    selectedCategories: categoryList,
+    scopeTotalValue: scopeTotals.totalValue,
+    scopeGrossProfit: scopeTotals.grossProfit,
+    discountCapped
   };
 }
 
@@ -198,7 +252,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   useEffect(() => { load(); }, []);
 
   const preview = useMemo(
-    () => (editing ? computeSubsidyScenario(editing.subsidyAmount, editing.volumeGrowthPct, editing.destructionPct, editing.buildingPeople) : null),
+    () => (editing ? computeSubsidyScenario(editing.subsidyAmount, editing.volumeGrowthPct, editing.destructionPct, editing.buildingPeople, editing.selectedCategories) : null),
     [editing]
   );
 
@@ -233,7 +287,10 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
         subsidyAmount: Number(editing.subsidyAmount) || 0,
         volumeGrowthPct: Number(editing.volumeGrowthPct) || 0,
         destructionPct: Number(editing.destructionPct) || 0,
-        buildingPeople: Number(editing.buildingPeople) || REFERENCE_BUILDING_PEOPLE
+        buildingPeople: Number(editing.buildingPeople) || REFERENCE_BUILDING_PEOPLE,
+        selectedCategories: Array.isArray(editing.selectedCategories) ? editing.selectedCategories : [],
+        customerCompanyName: editing.customerCompanyName || '',
+        customerMessage: editing.customerMessage || DEFAULT_CUSTOMER_MESSAGE_EL
       };
       if (editing.id) {
         await PricingScenarios.update(editing.id, body);
@@ -272,19 +329,52 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     const logoSize = 30;
     doc.addImage(QUICKFRESH_LOGO_BASE64, 'PNG', 14, 10, logoSize, logoSize);
 
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(22, 35, 63);
-    doc.text(t('sc_pdf_title'), 14, logoSize + 20);
+    doc.text(t('sc_pdf_title'), 14, logoSize + 18);
 
-    doc.setFontSize(10);
-    doc.setTextColor(107, 118, 132);
     const dateText = new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'el-GR');
-    doc.text(`${editing.name || ''} — ${dateText}`, 14, logoSize + 27);
+    const companyName = (editing.customerCompanyName || '').trim();
+
+    // Επωνυμία πελάτη — εμφανίζεται πρώτη και πιο έντονα, με το όνομα σεναρίου/ημερομηνία δίπλα.
+    doc.setFontSize(18);
+    doc.setTextColor(47, 143, 138);
+    doc.text(companyName || editing.name || '', 14, logoSize + 28);
+
+    doc.setFontSize(9.5);
+    doc.setTextColor(107, 118, 132);
+    doc.text(`${editing.name || ''} — ${dateText}`, 14, logoSize + 34);
+
+    let cursorY = logoSize + 42;
+
+    // Δύο καλά λόγια για την υπηρεσία — μήνυμα προς τους υπαλλήλους του πελάτη.
+    const message = (editing.customerMessage || DEFAULT_CUSTOMER_MESSAGE_EL).trim();
+    if (message) {
+      doc.setFontSize(10);
+      doc.setTextColor(22, 35, 63);
+      const messageLines = doc.splitTextToSize(message, pageWidth - 28);
+      doc.text(messageLines, 14, cursorY);
+      cursorY += messageLines.length * 4.6 + 4;
+    }
+
+    // Συνολική μηνιαία εξοικονόμηση στον πελάτη — σε όλο τον τιμοκατάλογο.
+    if (preview.revenueDrop > 0) {
+      doc.setFillColor(240, 248, 247);
+      doc.roundedRect(14, cursorY, pageWidth - 28, 14, 2, 2, 'F');
+      doc.setFontSize(10);
+      doc.setTextColor(47, 143, 138);
+      doc.text(t('sc_pdf_total_savings_label'), 18, cursorY + 6);
+      doc.setFontSize(13);
+      doc.setTextColor(22, 35, 63);
+      doc.text(fmtEuro(preview.revenueDrop) + ' / ' + t('sc_pdf_per_month'), 18, cursorY + 11.5);
+      cursorY += 20;
+    }
 
     doc.setFontSize(9.5);
     doc.setTextColor(22, 35, 63);
     const noteLines = doc.splitTextToSize(t('sc_pdf_note'), pageWidth - 28);
-    doc.text(noteLines, 14, logoSize + 35);
+    doc.text(noteLines, 14, cursorY);
+    cursorY += noteLines.length * 4.4 + 4;
 
     const sortedRows = [...preview.rows].sort((a, b) => {
       if (a.cat !== b.cat) return a.cat.localeCompare(b.cat, 'el');
@@ -292,9 +382,16 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     });
 
     autoTable(doc, {
-      startY: logoSize + 35 + noteLines.length * 4.4 + 4,
+      startY: cursorY,
       head: [[t('sc_col_code'), t('sc_col_desc'), t('sc_col_cat'), t('sc_pdf_col_old_price'), t('sc_pdf_col_new_price'), t('sc_col_pct_off')]],
-      body: sortedRows.map((r) => [r.code, r.desc, r.cat, fmtEuro(r.basicPrice), fmtEuro(r.newPrice), '−' + fmtNum(r.pctOff, 1) + '%']),
+      body: sortedRows.map((r) => [
+        r.code,
+        r.desc,
+        r.cat,
+        fmtEuro(r.basicPrice),
+        fmtEuro(r.newPrice),
+        r.inScope ? '−' + fmtNum(r.pctOff, 1) + '%' : '—'
+      ]),
       styles: { fontSize: 8, cellPadding: 2, font: 'DejaVuSans' },
       headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' },
       columnStyles: {
@@ -310,7 +407,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       }
     });
 
-    const slug = (editing.name || 'senario')
+    const slug = (companyName || editing.name || 'senario')
       .toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
@@ -326,7 +423,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   }, [preview, search]);
 
   const savedComputed = useMemo(
-    () => scenarios.map((sc) => ({ sc, result: computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople) })),
+    () => scenarios.map((sc) => ({ sc, result: computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories) })),
     [scenarios]
   );
 
@@ -521,6 +618,64 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_volume_growth_hint')}</p>
               <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_destruction_pct_hint')}</p>
               <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sc_building_people_hint')}</p>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 6 }}>{t('sc_categories_label')}</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+                  {ALL_CATEGORIES.map((cat) => {
+                    const checked = Array.isArray(editing.selectedCategories) && editing.selectedCategories.includes(cat);
+                    return (
+                      <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#2b3644', cursor: readOnly ? 'default' : 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={readOnly}
+                          onChange={(e) => {
+                            setEditing((prev) => {
+                              const cur = Array.isArray(prev.selectedCategories) ? prev.selectedCategories : [];
+                              const next = e.target.checked ? [...cur, cat] : cur.filter((c) => c !== cat);
+                              return { ...prev, selectedCategories: next };
+                            });
+                          }}
+                        />
+                        {cat}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('sc_categories_hint')}</p>
+                {preview && preview.discountCapped && (
+                  <div style={{ marginTop: 8, background: '#fff6e6', border: '1px solid #f0d59a', borderRadius: 6, padding: '8px 10px', fontSize: 11.5, color: '#8a5a00' }}>
+                    {t('sc_discount_capped_warning')}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
+                <div style={{ flex: '1 1 260px' }}>
+                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_customer_company_label')}</label>
+                  <input
+                    type="text"
+                    value={editing.customerCompanyName || ''}
+                    placeholder={t('sc_customer_company_placeholder')}
+                    disabled={readOnly}
+                    onChange={(e) => setEditing((prev) => ({ ...prev, customerCompanyName: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                  />
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_customer_message_label')}</label>
+                <textarea
+                  value={editing.customerMessage ?? DEFAULT_CUSTOMER_MESSAGE_EL}
+                  disabled={readOnly}
+                  onChange={(e) => setEditing((prev) => ({ ...prev, customerMessage: e.target.value }))}
+                  rows={2}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13, resize: 'vertical' }}
+                />
+                <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('sc_customer_message_hint')}</p>
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_notes_label')}</label>
                 <textarea
