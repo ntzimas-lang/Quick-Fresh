@@ -184,6 +184,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null); // null | draft object (μπορεί να έχει id)
   const [search, setSearch] = useState('');
+  const [listSearch, setListSearch] = useState(''); // αναζήτηση στη λίστα σεναρίων (όχι στα προϊόντα)
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
@@ -329,6 +330,13 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     [scenarios]
   );
 
+  // Φίλτρο ονόματος για τη λίστα σεναρίων — απαραίτητο όταν υπάρχουν πολλές δεκάδες σενάρια.
+  const filteredSavedComputed = useMemo(() => {
+    const q = listSearch.trim().toLowerCase();
+    if (!q) return savedComputed;
+    return savedComputed.filter(({ sc }) => (sc.name || '').toLowerCase().includes(q));
+  }, [savedComputed, listSearch]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', flexShrink: 0 }}>
@@ -345,165 +353,113 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               </div>
             )}
 
+            <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
+              <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>{t('sc_baseline_label')}</div>
+              <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(BASIC_TOTAL_VALUE)}</div>
+                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_net_revenue_label')}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(BASIC_COGS)}</div>
+                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_cogs_label')}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(BASIC_GROSS_PROFIT)}</div>
+                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_gross_profit_label')} ({fmtPct1(BASIC_GROSS_PROFIT_PCT)})</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#c0392b' }}>{fmtNum(BASIC_FC_PCT, 1)}%</div>
+                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_label')}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtNum(REFERENCE_BUILDING_PEOPLE, 0)}</div>
+                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_building_people_ref_hint')}</div>
+                </div>
+              </div>
+            </div>
+
             {loading ? (
               <p style={{ color: '#97a2b0' }}>{t('sc_loading')}</p>
             ) : error ? (
               <p style={{ color: '#c0392b' }}>{error}</p>
             ) : (
-              <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20, overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 480 + savedComputed.length * 170 }}>
-                  <thead>
-                    <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase' }}>
-                      <th style={{ padding: '6px 10px 10px 0', minWidth: 170 }}></th>
-                      <th style={{ padding: '6px 10px 10px', minWidth: 150, color: '#16233f', fontWeight: 700 }}>{t('sc_baseline_label')}</th>
-                      {savedComputed.map(({ sc }) => (
-                        <th key={sc.id} style={{ padding: '6px 10px 10px', minWidth: 170 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                            <span style={{ color: '#16233f', fontWeight: 700, fontSize: 12.5, textTransform: 'none' }}>{sc.name || '—'}</span>
-                            <span style={{ display: 'flex', gap: 4 }}>
-                              {!readOnly && (
-                                <button type="button" onClick={() => startEdit(sc)} title={t('sc_edit_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#2f8f8a', fontSize: 13 }}>✎</button>
-                              )}
-                              {canDelete && (
-                                <button type="button" onClick={() => remove(sc.id)} title={t('sc_delete_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#c0392b', fontSize: 13 }}>✕</button>
-                              )}
-                            </span>
-                          </div>
-                        </th>
+              <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, color: '#97a2b0' }}>
+                    {filteredSavedComputed.length}{listSearch.trim() ? ` / ${savedComputed.length}` : ''} {t('sc_list_count_suffix')}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder={t('sc_list_search_placeholder')}
+                    value={listSearch}
+                    onChange={(e) => setListSearch(e.target.value)}
+                    style={{ padding: '7px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 12.5, minWidth: 240 }}
+                  />
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 980 }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 10.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
+                        <th style={{ padding: '8px 10px', minWidth: 180 }}>{t('sc_col_list_name')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_subsidy')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_discount')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_fc')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_growth')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_destruction')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_people')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_erosion')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_benefit')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center', minWidth: 64 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSavedComputed.map(({ sc, result }) => (
+                        <tr key={sc.id} style={{ borderTop: '1px solid #eef1f4' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{sc.name || '—'}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c0392b', fontWeight: 600 }}>−{fmtEuro(Number(sc.subsidyAmount) || 0)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>−{fmtPct1(result.discountPct)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c0392b' }}>{fmtNum(result.fcNewPct, 1)}%</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>+{fmtNum(result.volumeGrowthPct, 0)}%</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{fmtNum(result.destructionPct, 0)}%</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{fmtNum(result.buildingPeople, 0)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: result.erosion >= 0 ? '#c0392b' : '#2f8f8a', fontWeight: 600 }}>{fmtSignedCost(result.erosion)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#2f8f8a', fontWeight: 600 }}>+{fmtEuro(result.netBenefitVsToday)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {!readOnly && (
+                              <button type="button" onClick={() => startEdit(sc)} title={t('sc_edit_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#2f8f8a', fontSize: 13, marginRight: 6 }}>✎</button>
+                            )}
+                            {canDelete && (
+                              <button type="button" onClick={() => remove(sc.id)} title={t('sc_delete_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#c0392b', fontSize: 13 }}>✕</button>
+                            )}
+                          </td>
+                        </tr>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
-                        {t('sc_net_revenue_label')}
-                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_price_list_total_hint')}</div>
-                      </td>
-                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{fmtEuro(BASIC_TOTAL_VALUE)}</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{fmtEuro(result.netRevenue)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_subsidy_label')}</td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#c0392b', fontWeight: 600 }}>−{fmtEuro(Number(sc.subsidyAmount) || 0)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
-                        {t('sc_actual_drop_label')}
-                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_actual_drop_hint')}</div>
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#c98a1f', fontWeight: 600 }}>−{fmtEuro(result.revenueDrop)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_discount_pct_label')}</td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#16233f' }}>−{fmtPct1(result.discountPct)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_fc_label')}</td>
-                      <td style={{ padding: '8px 10px', color: '#16233f' }}>{fmtNum(BASIC_FC_PCT, 1)}%</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#c0392b' }}>{fmtNum(result.fcNewPct, 1)}%</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
-                        {t('sc_fc_with_subsidy_label')}
-                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_fc_with_subsidy_hint')}</div>
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#2f8f8a', fontWeight: 600 }}>{isFinite(result.fcWithSubsidyPct) ? fmtNum(result.fcWithSubsidyPct, 1) + '%' : '—'}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_volume_growth_label')}</td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#16233f' }}>+{fmtNum(result.volumeGrowthPct, 0)}%</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
-                        {t('sc_building_people_label')}
-                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_building_people_ref_hint')}</div>
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>{fmtNum(REFERENCE_BUILDING_PEOPLE, 0)}</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#16233f' }}>
-                          {fmtNum(result.buildingPeople, 0)} ({result.peopleFactor >= 1 ? '+' : ''}{fmtNum((result.peopleFactor - 1) * 100, 0)}%)
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
-                        {t('sc_destruction_pct_label')}
-                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_destruction_cost_hint')}</div>
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#c0392b' }}>
-                          {fmtNum(result.destructionPct, 0)}% ({fmtEuro(result.destructionCost)})
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
-                        {t('sc_erosion_label')}
-                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_erosion_hint')}</div>
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: result.erosion >= 0 ? '#c0392b' : '#2f8f8a', fontWeight: 600 }}>{fmtSignedCost(result.erosion)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_net_benefit_label')}</td>
-                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#2f8f8a', fontWeight: 600 }}>+{fmtEuro(result.netBenefitVsToday)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_cogs_label')}</td>
-                      <td style={{ padding: '8px 10px', color: '#16233f' }}>{fmtEuro(BASIC_COGS)}</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#16233f' }}>{fmtEuro(result.cogs)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_gross_profit_label')}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{fmtEuro(BASIC_GROSS_PROFIT)}</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{fmtEuro(result.grossProfit)}</td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_gross_profit_pct_label')}</td>
-                      <td style={{ padding: '8px 10px', color: '#16233f' }}>{fmtPct1(BASIC_GROSS_PROFIT_PCT)}</td>
-                      {savedComputed.map(({ sc, result }) => (
-                        <td key={sc.id} style={{ padding: '8px 10px', color: '#16233f' }}>{fmtPct1(result.grossProfitPct)}</td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                </div>
                 {savedComputed.length === 0 && (
                   <p style={{ fontSize: 12.5, color: '#97a2b0', marginTop: 14, marginBottom: 0 }}>{t('sc_empty_list')}</p>
+                )}
+                {savedComputed.length > 0 && filteredSavedComputed.length === 0 && (
+                  <p style={{ fontSize: 12.5, color: '#97a2b0', marginTop: 14, marginBottom: 0 }}>{t('sc_list_no_match')}</p>
                 )}
               </div>
             )}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 14 }}>
+              {!readOnly && (
+                <button type="button" className="btn-primary" onClick={save} disabled={saving}>
+                  {t('sc_save_button')}
+                </button>
+              )}
+              <button type="button" className="btn-secondary" onClick={exportCustomerPDF}>{t('sc_pdf_export_button')}</button>
+              <button type="button" className="btn-secondary" onClick={cancelEdit}>{t('sc_cancel_button')}</button>
+              {saveError && <span style={{ color: '#c0392b', fontSize: 12.5 }}>{saveError}</span>}
+            </div>
+
             <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#16233f', marginBottom: 14, textTransform: 'uppercase' }}>
                 {editing.id ? t('sc_editing_title_edit') : t('sc_editing_title_new')}
@@ -694,18 +650,6 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            {saveError && <p style={{ color: '#c0392b', fontSize: 12.5, margin: 0 }}>{saveError}</p>}
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              {!readOnly && (
-                <button type="button" className="btn-primary" onClick={save} disabled={saving}>
-                  {t('sc_save_button')}
-                </button>
-              )}
-              <button type="button" className="btn-secondary" onClick={exportCustomerPDF}>{t('sc_pdf_export_button')}</button>
-              <button type="button" className="btn-secondary" onClick={cancelEdit}>{t('sc_cancel_button')}</button>
             </div>
           </div>
         )}
