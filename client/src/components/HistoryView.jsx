@@ -40,7 +40,7 @@ function formatDate(ts) {
   return d.toLocaleString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function HistoryView() {
+export default function HistoryView({ canRestore = false }) {
   const { t } = useLanguage();
   const ACTION_LABELS = buildActionLabels(t);
   const TABLE_LABELS = buildTableLabels(t);
@@ -49,6 +49,9 @@ export default function HistoryView() {
   const [loading, setLoading] = useState(true);
   const [tableFilter, setTableFilter] = useState('all');
   const [error, setError] = useState('');
+  const [restoringId, setRestoringId] = useState(null);
+  const [restoredIds, setRestoredIds] = useState(() => new Set());
+  const [restoreError, setRestoreError] = useState('');
 
   useEffect(() => {
     History.list()
@@ -65,6 +68,20 @@ export default function HistoryView() {
       })
       .catch(() => setDriverEmails(new Set()));
   }, []);
+
+  async function handleRestore(entry) {
+    if (!window.confirm(t('h_restore_confirm'))) return;
+    setRestoreError('');
+    setRestoringId(entry.id);
+    try {
+      await History.restore(entry);
+      setRestoredIds((prev) => new Set(prev).add(entry.id));
+    } catch (err) {
+      setRestoreError(t('h_restore_error_prefix') + ' ' + (err.message || err));
+    } finally {
+      setRestoringId(null);
+    }
+  }
 
   const visibleEntries = driverEmails
     ? entries.filter((e) => !driverEmails.has((e.user_email || '').toLowerCase()))
@@ -87,6 +104,12 @@ export default function HistoryView() {
         </select>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
+        {canRestore && restoreError && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fdecea', color: '#c0392b', border: '1px solid #f3c1bb', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12.5 }}>
+            <span style={{ flex: 1 }}>{restoreError}</span>
+            <button type="button" onClick={() => setRestoreError('')} style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontSize: 14 }}>✕</button>
+          </div>
+        )}
         {loading ? (
           <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>
         ) : error ? (
@@ -103,12 +126,15 @@ export default function HistoryView() {
                 <th style={{ padding: '10px 12px' }}>{t('h_col_type')}</th>
                 <th style={{ padding: '10px 12px' }}>{t('h_col_item')}</th>
                 <th style={{ padding: '10px 12px' }}>{t('h_col_changes')}</th>
+                {canRestore && <th style={{ padding: '10px 12px' }}></th>}
               </tr>
             </thead>
             <tbody>
               {filtered.map((e) => {
                 const changed = e.action === 'UPDATE' ? changedFields(e.old_data, e.new_data) : [];
                 const label = itemLabel(e.table_name, e.new_data || e.old_data);
+                const isRestorableDelete = e.action === 'DELETE' && !!e.old_data;
+                const alreadyRestored = restoredIds.has(e.id);
                 return (
                   <tr key={e.id} style={{ borderTop: '1px solid #eef1f4' }}>
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: '#6b7684' }}>{formatDate(e.changed_at)}</td>
@@ -123,6 +149,25 @@ export default function HistoryView() {
                     <td style={{ padding: '10px 12px', color: '#6b7684' }}>
                       {e.action === 'INSERT' ? t('h_new_entry') : e.action === 'DELETE' ? t('h_removed') : changed.length ? changed.join(', ') : '—'}
                     </td>
+                    {canRestore && (
+                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                        {isRestorableDelete && (
+                          alreadyRestored ? (
+                            <span style={{ color: '#2f8f8a', fontSize: 11.5, fontWeight: 600 }}>{t('h_restored_label')}</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              disabled={restoringId === e.id}
+                              onClick={() => handleRestore(e)}
+                              style={{ padding: '4px 10px', fontSize: 11.5 }}
+                            >
+                              {restoringId === e.id ? t('h_restoring') : t('h_restore_button')}
+                            </button>
+                          )
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
