@@ -462,12 +462,14 @@ export default function DashboardView({ isDriver = false } = {}) {
   // την ενότητα "Πωλήσεις ανά Κατηγορία" παραπάνω, ώστε οι δύο ενότητες να συμφωνούν.
   const monthProfit = {}; // monthKey -> € κέρδος
   const monthProfitPeriodTexts = {};
+  const monthStoreProfit = {}; // monthKey -> { store -> € κέρδος } — extra info ανά κατάστημα
   currentProducts.forEach((p) => {
     const range = extractPeriodRange(p.periodLabel);
     if (!range) return;
     const { start, end } = range;
     const totalDays = daysBetweenInclusive(start, end);
     if (totalDays <= 0) return;
+    const store = p.store || t('d_category_uncategorized_label');
     let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
     const lastMonthStart = new Date(end.getFullYear(), end.getMonth(), 1);
     while (cursor <= lastMonthStart) {
@@ -483,6 +485,8 @@ export default function DashboardView({ isDriver = false } = {}) {
         monthProfit[mk] = (monthProfit[mk] || 0) + profit;
         if (!monthProfitPeriodTexts[mk]) monthProfitPeriodTexts[mk] = new Set();
         if (p.periodLabel) monthProfitPeriodTexts[mk].add(p.periodLabel);
+        if (!monthStoreProfit[mk]) monthStoreProfit[mk] = {};
+        monthStoreProfit[mk][store] = (monthStoreProfit[mk][store] || 0) + profit;
       }
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
@@ -492,6 +496,15 @@ export default function DashboardView({ isDriver = false } = {}) {
     .map((mk) => ({ monthKey: mk, profit: Math.round(monthProfit[mk]), periodTexts: Array.from(monthProfitPeriodTexts[mk] || []) }));
   const profitChartMax = profitByMonthList.length ? Math.max(...profitByMonthList.map((m) => Math.abs(m.profit)), 1) : 1;
   const profitTotalAllMonths = profitByMonthList.reduce((s, m) => s + m.profit, 0);
+  // Extra info: ίδια πρόραση, σπασμένη ανά κατάστημα μέσα σε κάθε μήνα.
+  const profitByMonthStoreList = Object.keys(monthStoreProfit)
+    .sort()
+    .map((mk) => ({
+      monthKey: mk,
+      stores: Object.entries(monthStoreProfit[mk])
+        .map(([store, profit]) => ({ store, profit: Math.round(profit) }))
+        .sort((a, b) => b.profit - a.profit)
+    }));
 
   // --- Ώρες Αιχμής (peak hours) --------------------------------------------
   // Ένα report "Sales By 30/15 Minutes" καλύπτει όλη την εφαρμογή μαζί (όχι ανά
@@ -595,6 +608,38 @@ export default function DashboardView({ isDriver = false } = {}) {
                               );
                             })}
                           </svg>
+
+                          {profitByMonthStoreList.length > 0 && (
+                            <div style={{ marginTop: 8 }}>
+                              <div style={{ fontSize: 11, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
+                                {t('d_profit_by_month_store_title')}
+                              </div>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '1px solid #eef1f4' }}>
+                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_profit_by_month_store_col_month')}</th>
+                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_profit_by_month_store_col_store')}</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_profit_by_month_store_col_profit')}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {profitByMonthStoreList.map((m) =>
+                                    m.stores.map((s, i) => (
+                                      <tr key={`${m.monthKey}-${s.store}`} style={{ borderBottom: '1px solid #f3f5f7' }}>
+                                        <td style={{ padding: '6px 8px', color: i === 0 ? '#16233f' : 'transparent', fontWeight: 600 }}>
+                                          {i === 0 ? monthLabel(m.monthKey, lang) : ''}
+                                        </td>
+                                        <td style={{ padding: '6px 8px', color: '#16233f' }}>{s.store}</td>
+                                        <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: s.profit >= 0 ? '#2f8f8a' : '#c0392b' }}>
+                                          {formatEuro(s.profit)}
+                                        </td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </>
                       )}
                     </>
