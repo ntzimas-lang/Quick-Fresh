@@ -100,6 +100,8 @@ export default function DashboardView({ isDriver = false } = {}) {
   // ώστε προϊόντα που μπήκαν πρόσφατα να συγκρίνονται δίκαια με παλιά. Κρυμμένο by
   // default, ίδιο pattern με το showCategoryBreakdown.
   const [showActiveDaysBreakdown, setShowActiveDaysBreakdown] = useState(false);
+  // Πωλήσεις (τεμάχια) ανά κατηγορία, ομαδοποιημένες ανά μήνα — κρυμμένο by default.
+  const [showCategoryMonthlyQty, setShowCategoryMonthlyQty] = useState(false);
 
   useEffect(() => {
     // Ο Οδηγός βλέπει μόνο την κάρτα Ληγμένα — δεν χρειάζεται να φορτώσουμε
@@ -365,6 +367,52 @@ export default function DashboardView({ isDriver = false } = {}) {
       return { cat, top20, worst20, categoryTotal };
     })
     .sort((a, b) => b.categoryTotal - a.categoryTotal);
+
+  // --- Πωλήσεις (τεμάχια) ανά Κατηγορία, ανά ΜΗΝΑ -----------------------------
+  // Το Sales Analysis Report δίνει ένα σύνολο ανά batch/period (όχι per-day), και
+  // κάθε ανέβασμα συχνά καλύπτει σωρευτικά όλη την περίοδο μέχρι τη στιγμή της
+  // εξαγωγής (βλ. σχόλιο παραπάνω). Για να δείξουμε κάτι ανά μήνα χωρίς να
+  // διπλομετρήσουμε, χρησιμοποιούμε ΓΙΑ ΚΑΘΕ (κατάστημα, μήνας) μόνο το ΠΙΟ
+  // ΠΡΟΣΦΑΤΟ batch του οποίου η περίοδος ΤΕΛΕΙΩΝΕΙ μέσα σε αυτόν τον μήνα — έτσι
+  // κάθε κατάστημα/μήνας εμφανίζεται μία μόνο φορά. Αν η περίοδος ενός batch
+  // καλύπτει πάνω από έναν μήνα, το ΣΥΝΟΛΟ του αποδίδεται στον μήνα λήξης της
+  // περιόδου (όχι πραγματική ανά ημέρα κατανομή) — δείχνουμε την ακριβή περίοδο
+  // δίπλα σε κάθε μήνα ώστε να είναι διαφανές τι ακριβώς αντιπροσωπεύει ο αριθμός.
+  const latestBatchByStoreMonth = {}; // "store|monthKey" -> { uploadedAt, periodText }
+  salesProducts.forEach((p) => {
+    const range = extractPeriodRange(p.periodLabel);
+    if (!range) return;
+    const mk = `${range.end.getFullYear()}-${String(range.end.getMonth() + 1).padStart(2, '0')}`;
+    const key = `${p.store}|${mk}`;
+    const cur = latestBatchByStoreMonth[key];
+    if (!cur || new Date(p.uploadedAt) > new Date(cur.uploadedAt)) {
+      latestBatchByStoreMonth[key] = { uploadedAt: p.uploadedAt, monthKey: mk, periodText: p.periodLabel };
+    }
+  });
+  const monthCategoryQty = {}; // monthKey -> { cat -> qty }
+  const monthPeriodTexts = {}; // monthKey -> Set(periodText) — για το hint
+  salesProducts.forEach((p) => {
+    const range = extractPeriodRange(p.periodLabel);
+    if (!range) return;
+    const mk = `${range.end.getFullYear()}-${String(range.end.getMonth() + 1).padStart(2, '0')}`;
+    const key = `${p.store}|${mk}`;
+    const latest = latestBatchByStoreMonth[key];
+    if (!latest || latest.uploadedAt !== p.uploadedAt) return; // μόνο το πιο πρόσφατο batch ανά (κατάστημα, μήνας)
+    const cat = p.cat1 || t('d_category_uncategorized_label');
+    if (!monthCategoryQty[mk]) monthCategoryQty[mk] = {};
+    monthCategoryQty[mk][cat] = (monthCategoryQty[mk][cat] || 0) + (p.sold || 0);
+    if (!monthPeriodTexts[mk]) monthPeriodTexts[mk] = new Set();
+    if (p.periodLabel) monthPeriodTexts[mk].add(p.periodLabel);
+  });
+  const categoryMonthlyQtyList = Object.keys(monthCategoryQty)
+    .sort()
+    .map((mk) => ({
+      monthKey: mk,
+      periodTexts: Array.from(monthPeriodTexts[mk] || []),
+      categories: Object.entries(monthCategoryQty[mk])
+        .map(([cat, qty]) => ({ cat, qty }))
+        .sort((a, b) => b.qty - a.qty)
+    }));
 
   // --- Ώρες Αιχμής (peak hours) --------------------------------------------
   // Ένα report "Sales By 30/15 Minutes" καλύπτει όλη την εφαρμογή μαζί (όχι ανά
@@ -838,6 +886,53 @@ export default function DashboardView({ isDriver = false } = {}) {
                                   </table>
                                 </div>
                               </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginTop: 22 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: showCategoryMonthlyQty ? 6 : 0 }}>
+                    <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
+                      {t('d_category_monthly_qty_title')}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 12px', fontSize: 11.5 }}
+                      onClick={() => setShowCategoryMonthlyQty((v) => !v)}
+                    >
+                      {showCategoryMonthlyQty ? t('d_category_breakdown_hide') : t('d_category_breakdown_show')}
+                    </button>
+                  </div>
+                  {showCategoryMonthlyQty && (
+                    <>
+                      <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('d_category_monthly_qty_hint')}</p>
+                      {categoryMonthlyQtyList.length === 0 ? (
+                        <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                          {categoryMonthlyQtyList.map(({ monthKey: mk, periodTexts, categories }) => (
+                            <div key={mk} style={{ border: '1px solid #eef1f4', borderRadius: 8, padding: 14 }}>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: '#16233f' }}>{monthLabel(mk, lang)}</span>
+                                {periodTexts.length > 0 && (
+                                  <span style={{ fontSize: 11, color: '#97a2b0' }}>({periodTexts.join(', ')})</span>
+                                )}
+                              </div>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, maxWidth: 480 }}>
+                                <tbody>
+                                  {categories.map((c) => (
+                                    <tr key={c.cat} style={{ borderTop: '1px solid #eef1f4' }}>
+                                      <td style={{ padding: '5px 0' }}>{c.cat}</td>
+                                      <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{c.qty} {t('d_pieces_abbr')}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
                           ))}
                         </div>
