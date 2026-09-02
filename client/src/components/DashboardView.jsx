@@ -406,13 +406,13 @@ export default function DashboardView({ isDriver = false } = {}) {
   });
   const categoryMonthlyQtyList = Object.keys(monthCategoryQty)
     .sort()
-    .map((mk) => ({
-      monthKey: mk,
-      periodTexts: Array.from(monthPeriodTexts[mk] || []),
-      categories: Object.entries(monthCategoryQty[mk])
+    .map((mk) => {
+      const categories = Object.entries(monthCategoryQty[mk])
         .map(([cat, qty]) => ({ cat, qty }))
-        .sort((a, b) => b.qty - a.qty)
-    }));
+        .sort((a, b) => b.qty - a.qty);
+      const totalQty = categories.reduce((s, c) => s + c.qty, 0);
+      return { monthKey: mk, periodTexts: Array.from(monthPeriodTexts[mk] || []), categories, totalQty };
+    });
 
   // --- Ώρες Αιχμής (peak hours) --------------------------------------------
   // Ένα report "Sales By 30/15 Minutes" καλύπτει όλη την εφαρμογή μαζί (όχι ανά
@@ -915,13 +915,16 @@ export default function DashboardView({ isDriver = false } = {}) {
                         <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_no_products')}</p>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                          {categoryMonthlyQtyList.map(({ monthKey: mk, periodTexts, categories }) => (
+                          {categoryMonthlyQtyList.map(({ monthKey: mk, periodTexts, categories, totalQty }) => (
                             <div key={mk} style={{ border: '1px solid #eef1f4', borderRadius: 8, padding: 14 }}>
-                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
                                 <span style={{ fontSize: 13, fontWeight: 700, color: '#16233f' }}>{monthLabel(mk, lang)}</span>
                                 {periodTexts.length > 0 && (
                                   <span style={{ fontSize: 11, color: '#97a2b0' }}>({periodTexts.join(', ')})</span>
                                 )}
+                              </div>
+                              <div style={{ fontSize: 12.5, color: '#2f8f8a', fontWeight: 700, marginBottom: 10 }}>
+                                {t('d_category_monthly_qty_total_label')}: {totalQty} {t('d_pieces_abbr')}
                               </div>
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, maxWidth: 480 }}>
                                 <tbody>
