@@ -102,6 +102,16 @@ export default function DashboardView({ isDriver = false } = {}) {
   const [showActiveDaysBreakdown, setShowActiveDaysBreakdown] = useState(false);
   // Πωλήσεις (τεμάχια) ανά κατηγορία, ομαδοποιημένες ανά μήνα — κρυμμένο by default.
   const [showCategoryMonthlyQty, setShowCategoryMonthlyQty] = useState(false);
+  // Ποιες κατηγορίες (ανά μήνα) είναι ανοιχτές για να δείχνουν τα προϊόντα τους
+  // από μέσα — key: "monthKey|category".
+  const [expandedMonthCategories, setExpandedMonthCategories] = useState(() => new Set());
+  function toggleMonthCategory(key) {
+    setExpandedMonthCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   useEffect(() => {
     // Ο Οδηγός βλέπει μόνο την κάρτα Ληγμένα — δεν χρειάζεται να φορτώσουμε
@@ -390,6 +400,7 @@ export default function DashboardView({ isDriver = false } = {}) {
     }
   });
   const monthCategoryQty = {}; // monthKey -> { cat -> qty }
+  const monthCategoryProductQty = {}; // monthKey -> { cat -> { productName -> qty } }
   const monthPeriodTexts = {}; // monthKey -> Set(periodText) — για το hint
   salesProducts.forEach((p) => {
     const range = extractPeriodRange(p.periodLabel);
@@ -399,8 +410,12 @@ export default function DashboardView({ isDriver = false } = {}) {
     const latest = latestBatchByStoreMonth[key];
     if (!latest || latest.uploadedAt !== p.uploadedAt) return; // μόνο το πιο πρόσφατο batch ανά (κατάστημα, μήνας)
     const cat = p.cat1 || t('d_category_uncategorized_label');
+    const productName = p.productName || '—';
     if (!monthCategoryQty[mk]) monthCategoryQty[mk] = {};
     monthCategoryQty[mk][cat] = (monthCategoryQty[mk][cat] || 0) + (p.sold || 0);
+    if (!monthCategoryProductQty[mk]) monthCategoryProductQty[mk] = {};
+    if (!monthCategoryProductQty[mk][cat]) monthCategoryProductQty[mk][cat] = {};
+    monthCategoryProductQty[mk][cat][productName] = (monthCategoryProductQty[mk][cat][productName] || 0) + (p.sold || 0);
     if (!monthPeriodTexts[mk]) monthPeriodTexts[mk] = new Set();
     if (p.periodLabel) monthPeriodTexts[mk].add(p.periodLabel);
   });
@@ -408,7 +423,13 @@ export default function DashboardView({ isDriver = false } = {}) {
     .sort()
     .map((mk) => {
       const categories = Object.entries(monthCategoryQty[mk])
-        .map(([cat, qty]) => ({ cat, qty }))
+        .map(([cat, qty]) => ({
+          cat,
+          qty,
+          products: Object.entries(monthCategoryProductQty[mk][cat] || {})
+            .map(([name, pqty]) => ({ name, qty: pqty }))
+            .sort((a, b) => b.qty - a.qty)
+        }))
         .sort((a, b) => b.qty - a.qty);
       const totalQty = categories.reduce((s, c) => s + c.qty, 0);
       return { monthKey: mk, periodTexts: Array.from(monthPeriodTexts[mk] || []), categories, totalQty };
@@ -926,16 +947,38 @@ export default function DashboardView({ isDriver = false } = {}) {
                               <div style={{ fontSize: 12.5, color: '#2f8f8a', fontWeight: 700, marginBottom: 10 }}>
                                 {t('d_category_monthly_qty_total_label')}: {totalQty} {t('d_pieces_abbr')}
                               </div>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, maxWidth: 480 }}>
-                                <tbody>
-                                  {categories.map((c) => (
-                                    <tr key={c.cat} style={{ borderTop: '1px solid #eef1f4' }}>
-                                      <td style={{ padding: '5px 0' }}>{c.cat}</td>
-                                      <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{c.qty} {t('d_pieces_abbr')}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                {categories.map((c) => {
+                                  const key = `${mk}|${c.cat}`;
+                                  const isOpen = expandedMonthCategories.has(key);
+                                  return (
+                                    <div key={c.cat} style={{ borderTop: '1px solid #eef1f4' }}>
+                                      <div
+                                        onClick={() => toggleMonthCategory(key)}
+                                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: 'pointer' }}
+                                      >
+                                        <span style={{ fontSize: 12.5 }}>
+                                          <span style={{ display: 'inline-block', width: 12, color: '#97a2b0', fontSize: 10 }}>{isOpen ? '▾' : '▸'}</span>
+                                          {c.cat}
+                                        </span>
+                                        <span style={{ fontSize: 12.5, textAlign: 'right', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{c.qty} {t('d_pieces_abbr')}</span>
+                                      </div>
+                                      {isOpen && (
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
+                                          <tbody>
+                                            {c.products.map((p) => (
+                                              <tr key={p.name}>
+                                                <td style={{ padding: '3px 0 3px 20px', color: '#6b7684' }}>{p.name}</td>
+                                                <td style={{ padding: '3px 0', textAlign: 'right', color: '#3a4353', whiteSpace: 'nowrap' }}>{p.qty} {t('d_pieces_abbr')}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           ))}
                         </div>
