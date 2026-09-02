@@ -42,7 +42,7 @@ const BASIC_GROSS_PROFIT_PCT = BASIC_TOTAL_VALUE ? BASIC_GROSS_PROFIT / BASIC_TO
 const BASIC_FC_PCT = 100 - BASIC_GROSS_PROFIT_PCT * 100;
 
 function emptyDraft() {
-  return { name: '', notes: '', subsidyAmount: 0, volumeGrowthPct: 0 };
+  return { name: '', notes: '', subsidyAmount: 0, volumeGrowthPct: 0, destructionPct: 0 };
 }
 
 // Στρογγυλοποίηση ΠΑΝΤΑ προς τα πάνω, στο κοντινότερο 0,10€ (π.χ. 1,73€ → 1,80€).
@@ -65,14 +65,28 @@ function roundUpToDime(x) {
 // όγκο — δεν χάνεις χρήματα όσο μεγαλώνουν οι πωλήσεις. Η στρογγυλοποίηση προς τα πάνω στο
 // 0,10€ δίνει μάλιστα ένα μικρό επιπλέον περιθώριο υπέρ σου (το "erosion" παρακάτω βγαίνει
 // μηδέν ή ελαφρώς αρνητικό, δηλαδή μικρό όφελος, ποτέ πραγματική απώλεια).
-function computeSubsidyScenario(subsidyAmount, volumeGrowthPct) {
+//
+// Καταστροφές % (destructionPct): εκτιμώμενο ποσοστό του κόστους πωλήσεων (BASIC_COGS) που
+// χάνεται κάθε μήνα σε ληγμένα/καταστραμμένα προϊόντα — πραγματικό κόστος χωρίς αντίστοιχο
+// τζίρο. Δεν υπάρχουν αξιόπιστα πραγματικά δεδομένα καταστροφών Ιουνίου (ούτε στη βάση, ούτε
+// στο Excel του σεναρίου), οπότε είναι ΧΕΙΡΟΚΙΝΗΤΗ εκτίμηση του χρήστη. Αντιμετωπίζεται ΑΚΡΙΒΩΣ
+// όπως η Αύξηση Πωλήσεων: η επιδότηση πρέπει πρώτα να καλύψει το εκτιμώμενο κόστος καταστροφών
+// και ό,τι απομείνει χρηματοδοτεί την έκπτωση τιμής — άρα ΜΙΚΡΟΤΕΡΗ έκπτωση, ΨΗΛΟΤΕΡΗ τιμή, όσο
+// μεγαλώνει το ποσοστό καταστροφών. Έτσι η σταθερή επιδότηση συνεχίζει να καλύπτει ΠΛΗΡΩΣ και
+// την έκπτωση και το εκτιμώμενο κόστος καταστροφών.
+function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct) {
   const amount = Number(subsidyAmount) || 0;
   const growthPct = Number(volumeGrowthPct) || 0;
   const growthFactor = 1 + growthPct / 100;
+  const destrPct = Number(destructionPct) || 0;
+  // Εκτιμώμενο μηνιαίο κόστος καταστροφών, ως ποσοστό επί του (σταθερού) κόστους πωλήσεων.
+  const destructionCost = BASIC_COGS * (destrPct / 100);
+  // Ό,τι απομένει από την επιδότηση ΑΦΟΥ αφαιρεθεί το κόστος καταστροφών, χρηματοδοτεί την έκπτωση.
+  const effectiveAmount = amount - destructionCost;
   // Βάση προσαρμοσμένη στην αναμενόμενη αύξηση όγκου — η ίδια επιδότηση "απλώνεται" σε
   // μεγαλύτερο τζίρο, άρα η % έκπτωση μικραίνει (η τιμή ανεβαίνει) όσο μεγαλώνει η αύξηση.
   const growthAdjustedBase = BASIC_TOTAL_VALUE * growthFactor;
-  const discountPct = growthAdjustedBase ? amount / growthAdjustedBase : 0;
+  const discountPct = growthAdjustedBase ? effectiveAmount / growthAdjustedBase : 0;
 
   let soldNetRevenue = 0;
   let grownNetRevenue = 0;
@@ -111,9 +125,11 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct) {
   const fcWithSubsidyPct = revenueWithSubsidy ? (BASIC_COGS / revenueWithSubsidy) * 100 : NaN;
 
   const grownGrossProfit = grownNetRevenue - grownCOGS; // μικτό κέρδος στον ΝΕΟ (αυξημένο) όγκο, με τη μειωμένη τιμή
-  const totalWithSubsidy = grownGrossProfit + amount; // + η σταθερή επιδότηση
+  // + η ΠΛΗΡΗΣ επιδότηση (πραγματικά χρήματα που μπαίνουν) − το εκτιμώμενο κόστος καταστροφών
+  // (πραγματικό κόστος που φεύγει, χωρίς αντίστοιχο τζίρο).
+  const totalWithSubsidy = grownGrossProfit + amount - destructionCost;
   const noDiscountGrownProfit = grownRevenueNoDiscount - grownCOGS; // υποθετικό: ίδιος αυξημένος όγκος, ΧΩΡΙΣ έκπτωση
-  const erosion = noDiscountGrownProfit - totalWithSubsidy; // πόσο "τρώει" η αύξηση όγκου από την επιδότηση
+  const erosion = noDiscountGrownProfit - totalWithSubsidy; // πόσο "τρώει" η αύξηση όγκου/καταστροφές από την επιδότηση
   const netBenefitVsToday = totalWithSubsidy - BASIC_GROSS_PROFIT; // vs το σημερινό μικτό κέρδος (χωρίς σενάριο)
 
   return {
@@ -127,6 +143,8 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct) {
     fcWithSubsidyPct,
     revenueDrop,
     volumeGrowthPct: growthPct,
+    destructionPct: destrPct,
+    destructionCost,
     grownGrossProfit,
     totalWithSubsidy,
     erosion,
@@ -154,7 +172,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   useEffect(() => { load(); }, []);
 
   const preview = useMemo(
-    () => (editing ? computeSubsidyScenario(editing.subsidyAmount, editing.volumeGrowthPct) : null),
+    () => (editing ? computeSubsidyScenario(editing.subsidyAmount, editing.volumeGrowthPct, editing.destructionPct) : null),
     [editing]
   );
 
@@ -187,7 +205,8 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
         name: editing.name,
         notes: editing.notes || '',
         subsidyAmount: Number(editing.subsidyAmount) || 0,
-        volumeGrowthPct: Number(editing.volumeGrowthPct) || 0
+        volumeGrowthPct: Number(editing.volumeGrowthPct) || 0,
+        destructionPct: Number(editing.destructionPct) || 0
       };
       if (editing.id) {
         await PricingScenarios.update(editing.id, body);
@@ -280,7 +299,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   }, [preview, search]);
 
   const savedComputed = useMemo(
-    () => scenarios.map((sc) => ({ sc, result: computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct) })),
+    () => scenarios.map((sc) => ({ sc, result: computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct) })),
     [scenarios]
   );
 
@@ -389,6 +408,18 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                     </tr>
                     <tr style={{ borderTop: '1px solid #eef1f4' }}>
                       <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
+                        {t('sc_destruction_pct_label')}
+                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_destruction_cost_hint')}</div>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
+                      {savedComputed.map(({ sc, result }) => (
+                        <td key={sc.id} style={{ padding: '8px 10px', color: '#c0392b' }}>
+                          {fmtNum(result.destructionPct, 0)}% ({fmtEuro(result.destructionCost)})
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
+                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
                         {t('sc_erosion_label')}
                         <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_erosion_hint')}</div>
                       </td>
@@ -471,9 +502,20 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                     style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
                   />
                 </div>
+                <div style={{ flex: '1 1 180px' }}>
+                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_destruction_pct_label')}</label>
+                  <input
+                    type="number" step="1" min="0"
+                    value={editing.destructionPct ?? 0}
+                    disabled={readOnly}
+                    onChange={(e) => setEditing((prev) => ({ ...prev, destructionPct: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                  />
+                </div>
               </div>
               <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_subsidy_hint')}</p>
-              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sc_volume_growth_hint')}</p>
+              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_volume_growth_hint')}</p>
+              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sc_destruction_pct_hint')}</p>
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_notes_label')}</label>
                 <textarea
@@ -531,6 +573,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                 <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('sc_sensitivity_title')}</div>
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 12px', maxWidth: 700 }}>{t('sc_sensitivity_hint')}</p>
                 <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>−{fmtEuro(preview.destructionCost)}</div>
+                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_destruction_cost_label')} ({fmtNum(preview.destructionPct, 0)}%)</div>
+                    <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 200 }}>{t('sc_destruction_cost_hint')}</div>
+                  </div>
                   <div>
                     <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{fmtEuro(preview.totalWithSubsidy)}</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_grown_profit_label')}</div>
