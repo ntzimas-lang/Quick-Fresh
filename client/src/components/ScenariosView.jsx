@@ -16,32 +16,15 @@ function fmtNum(n, digits = 2) {
 }
 
 // --- Στατικό σύνολο αναφοράς (τιμοκατάλογος BASIC), από το ανεβασμένο Excel -----
-// Μέση μηνιαία ποσότητα, υπολογισμένη ΜΟΝΟ από τα προϊόντα που όντως πουλήθηκαν τον
-// Ιούνιο (juneQty > 0). Χρησιμοποιείται ως ρεαλιστική εκτίμηση ποσότητας για τα υπόλοιπα
-// προϊόντα του τιμοκαταλόγου που δεν πουλήθηκαν καθόλου τον Ιούνιο, ώστε ΟΛΟΚΛΗΡΟΣ ο
-// τιμοκατάλογος (128 προϊόντα) να έχει μια ρεαλιστική εκτιμώμενη μηνιαία αξία — όχι μόνο
-// όσα έτυχε να πουληθούν.
-const SOLD_PRODUCTS = SCENARIO_BASELINE_PRODUCTS.filter((p) => p.juneQty > 0);
-const AVG_MONTHLY_QTY = SOLD_PRODUCTS.length
-  ? SOLD_PRODUCTS.reduce((s, p) => s + p.juneQty, 0) / SOLD_PRODUCTS.length
-  : 0;
-
-// Εκτιμώμενη ποσότητα αναφοράς ανά προϊόν: η πραγματική ποσότητα Ιουνίου αν πουλήθηκε,
-// αλλιώς η μέση μηνιαία ποσότητα (εκτίμηση) — και αντίστοιχη εκτιμώμενη αξία (ίδιος τύπος
-// με basicValue: τιμή χωρίς ΦΠΑ × ποσότητα).
-const REFERENCE_PRODUCTS = SCENARIO_BASELINE_PRODUCTS.map((p) => {
-  const isEstimatedQty = !(p.juneQty > 0);
-  const refQty = isEstimatedQty ? AVG_MONTHLY_QTY : p.juneQty;
-  const refValue = (p.basicPrice / 1.13) * refQty;
-  return { ...p, refQty, refValue, isEstimatedQty };
-});
-
-// Σύνολο ΟΛΟΚΛΗΡΟΥ του τιμοκαταλόγου BASIC (128 προϊόντα, με ρεαλιστική εκτιμώμενη μηνιαία
-// αξία και για τα προϊόντα που δεν πουλήθηκαν τον Ιούνιο) — αυτή είναι η βάση πάνω στην
-// οποία υπολογίζεται η %έκπτωση, ώστε η επιδότηση να καλύπτει ολόκληρο τον τιμοκατάλογο
-// κάθε μήνα και όχι μόνο ό,τι έτυχε να πουληθεί τον Ιούνιο.
-const BASIC_TOTAL_VALUE = REFERENCE_PRODUCTS.reduce((s, p) => s + p.refValue, 0);
-const BASIC_COGS = REFERENCE_PRODUCTS.reduce((s, p) => s + p.ptk * p.refQty, 0);
+// Η βάση πάνω στην οποία υπολογίζεται η %έκπτωση είναι ο ΠΡΑΓΜΑΤΙΚΟΣ μηνιαίος τζίρος
+// Ιουνίου (μόνο ό,τι όντως πουλήθηκε — juneQty ανά προϊόν, τιμολογημένο σε τιμή BASIC).
+// ΔΕΝ γίνεται καμία εκτίμηση/πρόσθεση ποσότητας για προϊόντα που δεν πουλήθηκαν, ώστε η
+// βάση να μείνει ρεαλιστική και να αφορά ΕΝΑΝ μήνα. Η έκπτωση % που προκύπτει εφαρμόζεται
+// όμως σε ΟΛΑ τα 128 προϊόντα του τιμοκαταλόγου (δηλαδή κάθε προϊόν παίρνει νέα προτεινόμενη
+// τιμή, ακόμα κι αν δεν πουλήθηκε τον Ιούνιο) — απλά η ΒΑΣΗ υπολογισμού του ποσοστού είναι ο
+// πραγματικός τζίρος, όχι μια φουσκωμένη εκτίμηση.
+const BASIC_TOTAL_VALUE = SCENARIO_BASELINE_PRODUCTS.reduce((s, p) => s + p.basicValue, 0);
+const BASIC_COGS = SCENARIO_BASELINE_PRODUCTS.reduce((s, p) => s + p.ptk * p.juneQty, 0);
 const BASIC_GROSS_PROFIT = BASIC_TOTAL_VALUE - BASIC_COGS;
 const BASIC_GROSS_PROFIT_PCT = BASIC_TOTAL_VALUE ? BASIC_GROSS_PROFIT / BASIC_TOTAL_VALUE : 0;
 
@@ -55,33 +38,34 @@ function roundUpToDime(x) {
 }
 
 // Μία ενιαία λογική, σε μηνιαία βάση: η επιδότηση (σε €) που παίρνεις ΚΑΘΕ ΜΗΝΑ μετατρέπεται
-// σε ΕΝΑ ποσοστό έκπτωσης πάνω στη ρεαλιστική εκτιμώμενη αξία ΟΛΟΚΛΗΡΟΥ του τιμοκαταλόγου
-// BASIC (128 προϊόντα — όχι μόνο όσα πουλήθηκαν τον Ιούνιο), και εφαρμόζεται εξίσου σε ΟΛΕΣ
-// τις τιμές. Κάθε νέα τιμή στρογγυλοποιείται προς τα πάνω στο κοντινότερο 0,10€. Επειδή η
-// στρογγυλοποίηση προς τα πάνω "τρώει" μέρος της έκπτωσης (περισσότερο σε φθηνά προϊόντα,
-// όπου τα 0,10€ είναι μεγάλο ποσοστό της τιμής), η ΠΡΑΓΜΑΤΙΚΗ μείωση τζίρου (revenueDrop)
-// μπορεί να είναι αισθητά μικρότερη από το ονομαστικό ποσό επιδότησης — γι' αυτό
-// εμφανίζεται ξεχωριστά στην οθόνη, ώστε να φαίνεται καθαρά το πραγματικό αποτέλεσμα.
+// σε ΕΝΑ ποσοστό έκπτωσης πάνω στον πραγματικό μηνιαίο τζίρο Ιουνίου (BASIC_TOTAL_VALUE), και
+// το ποσοστό αυτό εφαρμόζεται εξίσου σε ΟΛΕΣ τις τιμές BASIC — και των 128 προϊόντων, ακόμα κι
+// αυτών που δεν πουλήθηκαν τον Ιούνιο. Κάθε νέα τιμή στρογγυλοποιείται προς τα πάνω στο
+// κοντινότερο 0,10€. Επειδή η στρογγυλοποίηση προς τα πάνω "τρώει" μέρος της έκπτωσης
+// (περισσότερο σε φθηνά προϊόντα, όπου τα 0,10€ είναι μεγάλο ποσοστό της τιμής), η ΠΡΑΓΜΑΤΙΚΗ
+// μείωση τζίρου (revenueDrop, υπολογισμένη πάνω στα προϊόντα που όντως πουλήθηκαν) μπορεί να
+// είναι αισθητά μικρότερη από το ονομαστικό ποσό επιδότησης — γι' αυτό εμφανίζεται ξεχωριστά
+// στην οθόνη, ώστε να φαίνεται καθαρά το πραγματικό αποτέλεσμα.
 function computeSubsidyScenario(subsidyAmount) {
   const amount = Number(subsidyAmount) || 0;
   const discountPct = BASIC_TOTAL_VALUE ? amount / BASIC_TOTAL_VALUE : 0;
-  let netRevenue = 0;
-  const rows = REFERENCE_PRODUCTS.map((p) => {
+  let soldNetRevenue = 0;
+  const rows = SCENARIO_BASELINE_PRODUCTS.map((p) => {
     const newPrice = roundUpToDime(p.basicPrice * (1 - discountPct));
-    const newValue = (newPrice / 1.13) * p.refQty;
-    const diff = newValue - p.refValue;
-    netRevenue += newValue;
+    const newValue = (newPrice / 1.13) * p.juneQty;
+    const diff = newValue - p.basicValue;
+    soldNetRevenue += newValue;
     return { ...p, newPrice, newValue, diff };
   });
-  const grossProfit = netRevenue - BASIC_COGS;
-  const revenueDrop = BASIC_TOTAL_VALUE - netRevenue; // πραγματική μείωση τζίρου, μετά τη στρογγυλοποίηση
+  const grossProfit = soldNetRevenue - BASIC_COGS;
+  const revenueDrop = BASIC_TOTAL_VALUE - soldNetRevenue; // πραγματική μείωση τζίρου, μετά τη στρογγυλοποίηση
   return {
     rows,
     discountPct,
-    netRevenue,
+    netRevenue: soldNetRevenue,
     cogs: BASIC_COGS,
     grossProfit,
-    grossProfitPct: netRevenue ? grossProfit / netRevenue : 0,
+    grossProfitPct: soldNetRevenue ? grossProfit / soldNetRevenue : 0,
     revenueDrop
   };
 }
@@ -216,15 +200,9 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                   <tbody>
                     <tr style={{ borderTop: '1px solid #eef1f4' }}>
                       <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
-                        {t('sc_price_list_total_label')}
+                        {t('sc_net_revenue_label')}
                         <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_price_list_total_hint')}</div>
                       </td>
-                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }} colSpan={savedComputed.length + 1}>
-                        {fmtEuro(BASIC_TOTAL_VALUE)}
-                      </td>
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
-                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_net_revenue_label')}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{fmtEuro(BASIC_TOTAL_VALUE)}</td>
                       {savedComputed.map(({ sc, result }) => (
                         <td key={sc.id} style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{fmtEuro(result.netRevenue)}</td>
@@ -375,9 +353,8 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                       <th style={{ padding: '7px 8px', minWidth: 220 }}>{t('sc_col_desc')}</th>
                       <th style={{ padding: '7px 8px' }}>{t('sc_col_cat')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_june_qty')}</th>
-                      <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_ref_qty')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_basic_price')}</th>
-                      <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_ref_value')}</th>
+                      <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_basic_value')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_new_price')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_new_value')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_diff')}</th>
@@ -390,11 +367,8 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <td style={{ padding: '6px 8px' }}>{r.desc}</td>
                         <td style={{ padding: '6px 8px', color: '#6b7684', whiteSpace: 'nowrap' }}>{r.cat}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtNum(r.juneQty, 0)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: r.isEstimatedQty ? '#c98a1f' : 'inherit' }}>
-                          {fmtNum(r.refQty, 0)}{r.isEstimatedQty ? ` ${t('sc_estimated_marker')}` : ''}
-                        </td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.basicPrice)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.refValue)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.basicValue)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2f8f8a' }}>{fmtEuro(r.newPrice)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#16233f' }}>{fmtEuro(r.newValue)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c0392b' }}>{fmtEuro(r.diff)}</td>
