@@ -104,6 +104,12 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct) {
   const fcNewPct = 100 - grossProfitPct * 100;
   const revenueDrop = BASIC_TOTAL_VALUE - soldNetRevenue; // πραγματική μείωση τζίρου, μετά τη στρογγυλοποίηση
 
+  // F.C. Με Επιδότηση: το ίδιο κόστος (BASIC_COGS), αλλά η επιδότηση προστίθεται σαν να
+  // ήταν κι αυτή τζίρος — δείχνει την ΠΡΑΓΜΑΤΙΚΗ εικόνα κόστους/εσόδων, αφού η επιδότηση
+  // είναι πραγματικά χρήματα που μπαίνουν στην επιχείρηση κάθε μήνα μαζί με τις πωλήσεις.
+  const revenueWithSubsidy = soldNetRevenue + amount;
+  const fcWithSubsidyPct = revenueWithSubsidy ? (BASIC_COGS / revenueWithSubsidy) * 100 : NaN;
+
   const grownGrossProfit = grownNetRevenue - grownCOGS; // μικτό κέρδος στον ΝΕΟ (αυξημένο) όγκο, με τη μειωμένη τιμή
   const totalWithSubsidy = grownGrossProfit + amount; // + η σταθερή επιδότηση
   const noDiscountGrownProfit = grownRevenueNoDiscount - grownCOGS; // υποθετικό: ίδιος αυξημένος όγκος, ΧΩΡΙΣ έκπτωση
@@ -118,6 +124,7 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct) {
     grossProfit,
     grossProfitPct,
     fcNewPct,
+    fcWithSubsidyPct,
     revenueDrop,
     volumeGrowthPct: growthPct,
     grownGrossProfit,
@@ -364,6 +371,16 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                       ))}
                     </tr>
                     <tr style={{ borderTop: '1px solid #eef1f4' }}>
+                      <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>
+                        {t('sc_fc_with_subsidy_label')}
+                        <div style={{ fontSize: 10.5, color: '#97a2b0', fontWeight: 400 }}>{t('sc_fc_with_subsidy_hint')}</div>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
+                      {savedComputed.map(({ sc, result }) => (
+                        <td key={sc.id} style={{ padding: '8px 10px', color: '#2f8f8a', fontWeight: 600 }}>{isFinite(result.fcWithSubsidyPct) ? fmtNum(result.fcWithSubsidyPct, 1) + '%' : '—'}</td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderTop: '1px solid #eef1f4' }}>
                       <td style={{ padding: '8px 10px 8px 0', color: '#6b7684' }}>{t('sc_volume_growth_label')}</td>
                       <td style={{ padding: '8px 10px', color: '#97a2b0' }}>—</td>
                       {savedComputed.map(({ sc, result }) => (
@@ -499,6 +516,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                   <div>
                     <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>{fmtNum(preview.fcNewPct, 1)}%</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_new_label')} ({t('sc_fc_basic_label')}: {fmtNum(BASIC_FC_PCT, 1)}%)</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#2f8f8a' }}>{isFinite(preview.fcWithSubsidyPct) ? fmtNum(preview.fcWithSubsidyPct, 1) + '%' : '—'}</div>
+                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_with_subsidy_label')}</div>
+                    <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 200 }}>{t('sc_fc_with_subsidy_hint')}</div>
                   </div>
                 </div>
               </div>
