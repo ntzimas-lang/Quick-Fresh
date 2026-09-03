@@ -70,10 +70,12 @@ function emptyDraft() {
   return {
     name: '',
     notes: '',
+    mode: 'subsidy', // 'subsidy' | 'discount'
     subsidyAmount: 0,
     volumeGrowthPct: 0,
     destructionPct: 0,
     buildingPeople: REFERENCE_BUILDING_PEOPLE,
+    discountPct: 0,
     selectedCategories: [],
     customerCompanyName: '',
     customerMessage: DEFAULT_CUSTOMER_MESSAGE_EL
@@ -231,6 +233,70 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, 
   };
 }
 
+// Απλό μοντέλο "Ποσοστό Έκπτωσης" — χωρίς έννοια επιδότησης: ο χρήστης δίνει απευθείας το
+// ποσοστό έκπτωσης που θέλει να εφαρμόσει (π.χ. 15%) πάνω στις τιμές BASIC των επιλεγμένων
+// κατηγοριών (ή σε όλο τον τιμοκατάλογο αν δεν επιλέξει καμία κατηγορία) — και η εφαρμογή
+// υπολογίζει όλη την υπόλοιπη πληροφορία (νέα τιμή, νέα αξία, F.C., μικτό κέρδος) όπως ακριβώς
+// στο μοντέλο επιδότησης, απλά χωρίς αύξηση όγκου / καταστροφές / άτομα κτιρίου / κάλυψη
+// επιδότησης — μόνο το ίδιο το ποσοστό έκπτωσης.
+function computeDiscountScenario(discountPctInput, selectedCategories) {
+  const MAX_DISCOUNT_PCT = 90;
+  const rawPct = Number(discountPctInput) || 0;
+  const pct = Math.min(Math.max(rawPct, 0), MAX_DISCOUNT_PCT);
+  const discountCapped = rawPct > MAX_DISCOUNT_PCT || rawPct < 0;
+  const discountFrac = pct / 100;
+
+  const categoryList = Array.isArray(selectedCategories) ? selectedCategories.filter(Boolean) : [];
+  const hasCategoryFilter = categoryList.length > 0;
+  const categorySet = new Set(categoryList);
+
+  let soldNetRevenue = 0;
+
+  const rows = SCENARIO_BASELINE_PRODUCTS.map((p) => {
+    const inScope = !hasCategoryFilter || categorySet.has(p.cat);
+    const newPrice = inScope ? roundUpToDime(p.basicPrice * (1 - discountFrac)) : p.basicPrice;
+    const newValue = (newPrice / 1.13) * p.juneQty;
+    const diff = newValue - p.basicValue;
+    soldNetRevenue += newValue;
+
+    const fcBasic = p.basicPrice ? (p.ptk / (p.basicPrice / 1.13)) * 100 : NaN;
+    const fcNew = newPrice ? (p.ptk / (newPrice / 1.13)) * 100 : NaN;
+    const pctOff = inScope && p.basicPrice ? ((p.basicPrice - newPrice) / p.basicPrice) * 100 : 0;
+
+    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff, inScope };
+  });
+
+  const grossProfit = soldNetRevenue - BASIC_COGS;
+  const grossProfitPct = soldNetRevenue ? grossProfit / soldNetRevenue : 0;
+  const fcNewPct = 100 - grossProfitPct * 100;
+  const revenueDrop = BASIC_TOTAL_VALUE - soldNetRevenue;
+
+  return {
+    mode: 'discount',
+    rows,
+    discountPct: discountFrac,
+    netRevenue: soldNetRevenue,
+    cogs: BASIC_COGS,
+    grossProfit,
+    grossProfitPct,
+    fcNewPct,
+    fcWithSubsidyPct: NaN,
+    revenueDrop,
+    hasCategoryFilter,
+    selectedCategories: categoryList,
+    discountCapped
+  };
+}
+
+// Dispatcher: επιλέγει το σωστό μοντέλο υπολογισμού βάσει του πεδίου mode του σεναρίου
+// (παλιά αποθηκευμένα σενάρια δεν έχουν mode — θεωρούνται 'subsidy' για συμβατότητα).
+function computeScenario(sc) {
+  if (sc && sc.mode === 'discount') {
+    return computeDiscountScenario(sc.discountPct, sc.selectedCategories);
+  }
+  return computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories);
+}
+
 export default function ScenariosView({ readOnly = false, canDelete = false }) {
   const { t, lang } = useLanguage();
   const [scenarios, setScenarios] = useState([]);
@@ -252,7 +318,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   useEffect(() => { load(); }, []);
 
   const preview = useMemo(
-    () => (editing ? computeSubsidyScenario(editing.subsidyAmount, editing.volumeGrowthPct, editing.destructionPct, editing.buildingPeople, editing.selectedCategories) : null),
+    () => (editing ? computeScenario(editing) : null),
     [editing]
   );
 
@@ -284,10 +350,12 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       const body = {
         name: editing.name,
         notes: editing.notes || '',
+        mode: editing.mode === 'discount' ? 'discount' : 'subsidy',
         subsidyAmount: Number(editing.subsidyAmount) || 0,
         volumeGrowthPct: Number(editing.volumeGrowthPct) || 0,
         destructionPct: Number(editing.destructionPct) || 0,
         buildingPeople: Number(editing.buildingPeople) || REFERENCE_BUILDING_PEOPLE,
+        discountPct: Number(editing.discountPct) || 0,
         selectedCategories: Array.isArray(editing.selectedCategories) ? editing.selectedCategories : [],
         customerCompanyName: editing.customerCompanyName || '',
         customerMessage: editing.customerMessage || DEFAULT_CUSTOMER_MESSAGE_EL
@@ -364,25 +432,38 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     const avgPctOff = inScopeRowsForAvg.length
       ? inScopeRowsForAvg.reduce((s, r) => s + r.pctOff, 0) / inScopeRowsForAvg.length
       : 0;
-    const boxGap = 6;
-    const boxWidth = (pageWidth - 28 - boxGap) / 2;
     const boxHeight = 14;
-    doc.setFillColor(240, 248, 247);
-    doc.roundedRect(14, cursorY, boxWidth, boxHeight, 2, 2, 'F');
-    doc.roundedRect(14 + boxWidth + boxGap, cursorY, boxWidth, boxHeight, 2, 2, 'F');
-    doc.setFontSize(9.5);
-    doc.setTextColor(47, 143, 138);
-    doc.text(t('sc_pdf_subsidy_amount_label'), 18, cursorY + 6);
-    doc.text(t('sc_pdf_avg_discount_label'), 18 + boxWidth + boxGap, cursorY + 6);
-    doc.setFontSize(13);
-    doc.setTextColor(22, 35, 63);
-    doc.text(fmtEuro(Number(editing.subsidyAmount) || 0), 18, cursorY + 11.5);
-    doc.text('−' + fmtNum(avgPctOff, 1) + '%', 18 + boxWidth + boxGap, cursorY + 11.5);
+    const isDiscountMode = editing.mode === 'discount';
+    if (isDiscountMode) {
+      const boxWidth = pageWidth - 28;
+      doc.setFillColor(240, 248, 247);
+      doc.roundedRect(14, cursorY, boxWidth, boxHeight, 2, 2, 'F');
+      doc.setFontSize(9.5);
+      doc.setTextColor(47, 143, 138);
+      doc.text(t('sc_discount_pct_label'), 18, cursorY + 6);
+      doc.setFontSize(13);
+      doc.setTextColor(22, 35, 63);
+      doc.text('−' + fmtNum(avgPctOff, 1) + '%', 18, cursorY + 11.5);
+    } else {
+      const boxGap = 6;
+      const boxWidth = (pageWidth - 28 - boxGap) / 2;
+      doc.setFillColor(240, 248, 247);
+      doc.roundedRect(14, cursorY, boxWidth, boxHeight, 2, 2, 'F');
+      doc.roundedRect(14 + boxWidth + boxGap, cursorY, boxWidth, boxHeight, 2, 2, 'F');
+      doc.setFontSize(9.5);
+      doc.setTextColor(47, 143, 138);
+      doc.text(t('sc_pdf_subsidy_amount_label'), 18, cursorY + 6);
+      doc.text(t('sc_pdf_avg_discount_label'), 18 + boxWidth + boxGap, cursorY + 6);
+      doc.setFontSize(13);
+      doc.setTextColor(22, 35, 63);
+      doc.text(fmtEuro(Number(editing.subsidyAmount) || 0), 18, cursorY + 11.5);
+      doc.text('−' + fmtNum(avgPctOff, 1) + '%', 18 + boxWidth + boxGap, cursorY + 11.5);
+    }
     cursorY += boxHeight + 6;
 
     doc.setFontSize(9.5);
     doc.setTextColor(22, 35, 63);
-    const noteLines = doc.splitTextToSize(t('sc_pdf_note'), pageWidth - 28);
+    const noteLines = doc.splitTextToSize(t(isDiscountMode ? 'sc_pdf_note_discount' : 'sc_pdf_note'), pageWidth - 28);
     doc.text(noteLines, 14, cursorY);
     cursorY += noteLines.length * 4.4 + 4;
 
@@ -439,9 +520,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     const logoSize = 24;
     doc.addImage(QUICKFRESH_LOGO_BASE64, 'PNG', 14, 10, logoSize, logoSize);
 
+    const isDiscountModeMgr = editing.mode === 'discount';
+
     doc.setFontSize(13);
     doc.setTextColor(22, 35, 63);
-    doc.text(t('sc_pdf_manager_title'), 14, logoSize + 16);
+    doc.text(t(isDiscountModeMgr ? 'sc_pdf_manager_title_discount' : 'sc_pdf_manager_title'), 14, logoSize + 16);
 
     const dateText = new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'el-GR');
     const companyName = (editing.customerCompanyName || '').trim();
@@ -459,13 +542,18 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       ? editing.selectedCategories.join(', ')
       : t('sc_pdf_manager_all_categories');
 
-    const paramRows = [
-      [t('sc_subsidy_amount_label'), fmtEuro(Number(editing.subsidyAmount) || 0)],
-      [t('sc_volume_growth_label'), fmtNum(preview.volumeGrowthPct, 0) + '%'],
-      [t('sc_destruction_pct_label'), fmtNum(preview.destructionPct, 0) + '%'],
-      [t('sc_building_people_label'), fmtNum(preview.buildingPeople, 0)],
-      [t('sc_categories_label'), catsLabel]
-    ];
+    const paramRows = isDiscountModeMgr
+      ? [
+          [t('sc_discount_pct_label'), fmtNum(Number(editing.discountPct) || 0, 0) + '%'],
+          [t('sc_categories_label'), catsLabel]
+        ]
+      : [
+          [t('sc_subsidy_amount_label'), fmtEuro(Number(editing.subsidyAmount) || 0)],
+          [t('sc_volume_growth_label'), fmtNum(preview.volumeGrowthPct, 0) + '%'],
+          [t('sc_destruction_pct_label'), fmtNum(preview.destructionPct, 0) + '%'],
+          [t('sc_building_people_label'), fmtNum(preview.buildingPeople, 0)],
+          [t('sc_categories_label'), catsLabel]
+        ];
 
     doc.setFontSize(10.5);
     doc.setTextColor(22, 35, 63);
@@ -488,16 +576,25 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       ? inScopeRowsForAvg.reduce((s, r) => s + r.pctOff, 0) / inScopeRowsForAvg.length
       : 0;
 
-    const resultRows = [
-      [t('sc_net_revenue_label'), fmtEuro(preview.netRevenue)],
-      [t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')', fmtEuro(Number(editing.subsidyAmount) || 0)],
-      [t('sc_pdf_avg_discount_label'), '−' + fmtNum(avgPctOff, 1) + '%'],
-      [t('sc_actual_drop_label'), fmtEuro(preview.revenueDrop)],
-      [t('sc_cogs_label'), fmtEuro(preview.cogs)],
-      [t('sc_gross_profit_label') + ' (' + fmtPct1(preview.grossProfitPct) + ')', fmtEuro(preview.grossProfit)],
-      [t('sc_fc_new_label') + ' (' + t('sc_fc_basic_label') + ': ' + fmtNum(BASIC_FC_PCT, 1) + '%)', fmtNum(preview.fcNewPct, 1) + '%'],
-      [t('sc_fc_with_subsidy_label'), isFinite(preview.fcWithSubsidyPct) ? fmtNum(preview.fcWithSubsidyPct, 1) + '%' : '—']
-    ];
+    const resultRows = isDiscountModeMgr
+      ? [
+          [t('sc_net_revenue_label'), fmtEuro(preview.netRevenue)],
+          [t('sc_pdf_avg_discount_label'), '−' + fmtNum(avgPctOff, 1) + '%'],
+          [t('sc_actual_drop_label'), fmtEuro(preview.revenueDrop)],
+          [t('sc_cogs_label'), fmtEuro(preview.cogs)],
+          [t('sc_gross_profit_label') + ' (' + fmtPct1(preview.grossProfitPct) + ')', fmtEuro(preview.grossProfit)],
+          [t('sc_fc_new_label') + ' (' + t('sc_fc_basic_label') + ': ' + fmtNum(BASIC_FC_PCT, 1) + '%)', fmtNum(preview.fcNewPct, 1) + '%']
+        ]
+      : [
+          [t('sc_net_revenue_label'), fmtEuro(preview.netRevenue)],
+          [t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')', fmtEuro(Number(editing.subsidyAmount) || 0)],
+          [t('sc_pdf_avg_discount_label'), '−' + fmtNum(avgPctOff, 1) + '%'],
+          [t('sc_actual_drop_label'), fmtEuro(preview.revenueDrop)],
+          [t('sc_cogs_label'), fmtEuro(preview.cogs)],
+          [t('sc_gross_profit_label') + ' (' + fmtPct1(preview.grossProfitPct) + ')', fmtEuro(preview.grossProfit)],
+          [t('sc_fc_new_label') + ' (' + t('sc_fc_basic_label') + ': ' + fmtNum(BASIC_FC_PCT, 1) + '%)', fmtNum(preview.fcNewPct, 1) + '%'],
+          [t('sc_fc_with_subsidy_label'), isFinite(preview.fcWithSubsidyPct) ? fmtNum(preview.fcWithSubsidyPct, 1) + '%' : '—']
+        ];
 
     doc.setFontSize(10.5);
     doc.setTextColor(22, 35, 63);
@@ -513,32 +610,36 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     });
     cursorY = doc.lastAutoTable.finalY + 8;
 
-    const coverageRows = [
-      [t('sc_destruction_cost_label') + ' (' + fmtNum(preview.destructionPct, 0) + '%)', fmtEuro(preview.destructionCost)],
-      [t('sc_grown_profit_label'), fmtEuro(preview.totalWithSubsidy)],
-      [t('sc_erosion_label'), fmtSignedCost(preview.erosion)],
-      [t('sc_net_benefit_label'), fmtEuro(preview.netBenefitVsToday)]
-    ];
+    if (!isDiscountModeMgr) {
+      const coverageRows = [
+        [t('sc_destruction_cost_label') + ' (' + fmtNum(preview.destructionPct, 0) + '%)', fmtEuro(preview.destructionCost)],
+        [t('sc_grown_profit_label'), fmtEuro(preview.totalWithSubsidy)],
+        [t('sc_erosion_label'), fmtSignedCost(preview.erosion)],
+        [t('sc_net_benefit_label'), fmtEuro(preview.netBenefitVsToday)]
+      ];
 
-    doc.setFontSize(10.5);
-    doc.setTextColor(22, 35, 63);
-    doc.text(t('sc_sensitivity_title'), 14, cursorY);
-    cursorY += 4;
+      doc.setFontSize(10.5);
+      doc.setTextColor(22, 35, 63);
+      doc.text(t('sc_sensitivity_title'), 14, cursorY);
+      cursorY += 4;
 
-    autoTable(doc, {
-      startY: cursorY,
-      body: coverageRows,
-      theme: 'plain',
-      styles: { fontSize: 9.5, cellPadding: 1.5, font: 'DejaVuSans' },
-      columnStyles: { 0: { textColor: [107, 118, 132], cellWidth: 110 }, 1: { textColor: [22, 35, 63], fontStyle: 'bold', halign: 'right' } },
-      didDrawPage: () => {
-        doc.setFont('DejaVuSans', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(151, 162, 176);
-        doc.text('Quick & Fresh smart store by gefsinus — ' + t('sc_pdf_manager_internal_note'), 14, doc.internal.pageSize.getHeight() - 8);
-      }
-    });
-    cursorY = doc.lastAutoTable.finalY + 16;
+      autoTable(doc, {
+        startY: cursorY,
+        body: coverageRows,
+        theme: 'plain',
+        styles: { fontSize: 9.5, cellPadding: 1.5, font: 'DejaVuSans' },
+        columnStyles: { 0: { textColor: [107, 118, 132], cellWidth: 110 }, 1: { textColor: [22, 35, 63], fontStyle: 'bold', halign: 'right' } },
+        didDrawPage: () => {
+          doc.setFont('DejaVuSans', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(151, 162, 176);
+          doc.text('Quick & Fresh smart store by gefsinus — ' + t('sc_pdf_manager_internal_note'), 14, doc.internal.pageSize.getHeight() - 8);
+        }
+      });
+      cursorY = doc.lastAutoTable.finalY + 16;
+    } else {
+      cursorY += 16;
+    }
 
     // Γραμμές έγκρισης — υπογραφή/ημερομηνία.
     if (cursorY > doc.internal.pageSize.getHeight() - 30) {
@@ -626,7 +727,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   }, [preview, search]);
 
   const savedComputed = useMemo(
-    () => scenarios.map((sc) => ({ sc, result: computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories) })),
+    () => scenarios.map((sc) => ({ sc, result: computeScenario(sc) })),
     [scenarios]
   );
 
@@ -717,14 +818,14 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                       {filteredSavedComputed.map(({ sc, result }) => (
                         <tr key={sc.id} style={{ borderTop: '1px solid #eef1f4' }}>
                           <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{sc.name || '—'}</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c0392b', fontWeight: 600 }}>−{fmtEuro(Number(sc.subsidyAmount) || 0)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c0392b', fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : '−' + fmtEuro(Number(sc.subsidyAmount) || 0)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>−{fmtPct1(result.discountPct)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c0392b' }}>{fmtNum(result.fcNewPct, 1)}%</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>+{fmtNum(result.volumeGrowthPct, 0)}%</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{fmtNum(result.destructionPct, 0)}%</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{fmtNum(result.buildingPeople, 0)}</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: result.erosion >= 0 ? '#c0392b' : '#2f8f8a', fontWeight: 600 }}>{fmtSignedCost(result.erosion)}</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#2f8f8a', fontWeight: 600 }}>+{fmtEuro(result.netBenefitVsToday)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : '+' + fmtNum(result.volumeGrowthPct, 0) + '%'}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : fmtNum(result.destructionPct, 0) + '%'}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : fmtNum(result.buildingPeople, 0)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: sc.mode === 'discount' ? '#16233f' : (result.erosion >= 0 ? '#c0392b' : '#2f8f8a'), fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : fmtSignedCost(result.erosion)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#2f8f8a', fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : '+' + fmtEuro(result.netBenefitVsToday)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                             {!readOnly && (
                               <button type="button" onClick={() => startEdit(sc)} title={t('sc_edit_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#2f8f8a', fontSize: 13, marginRight: 6 }}>✎</button>
@@ -763,8 +864,41 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
 
             <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#16233f', marginBottom: 14, textTransform: 'uppercase' }}>
-                {editing.id ? t('sc_editing_title_edit') : t('sc_editing_title_new')}
+                {editing.id ? t('sc_editing_title_edit') : (editing.mode === 'discount' ? t('sc_editing_title_new_discount') : t('sc_editing_title_new'))}
               </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 6 }}>{t('sc_mode_label')}</label>
+                <div style={{ display: 'inline-flex', border: '1px solid #dde2e8', borderRadius: 8, overflow: 'hidden' }}>
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => setEditing((prev) => ({ ...prev, mode: 'subsidy' }))}
+                    style={{
+                      padding: '7px 14px', fontSize: 12.5, border: 'none', cursor: readOnly ? 'default' : 'pointer',
+                      background: editing.mode === 'discount' ? '#fff' : '#2f8f8a',
+                      color: editing.mode === 'discount' ? '#6b7684' : '#fff',
+                      fontWeight: editing.mode === 'discount' ? 400 : 700
+                    }}
+                  >
+                    {t('sc_mode_subsidy')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => setEditing((prev) => ({ ...prev, mode: 'discount' }))}
+                    style={{
+                      padding: '7px 14px', fontSize: 12.5, border: 'none', cursor: readOnly ? 'default' : 'pointer',
+                      background: editing.mode === 'discount' ? '#2f8f8a' : '#fff',
+                      color: editing.mode === 'discount' ? '#fff' : '#6b7684',
+                      fontWeight: editing.mode === 'discount' ? 700 : 400
+                    }}
+                  >
+                    {t('sc_mode_discount')}
+                  </button>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
                 <div style={{ flex: '2 1 300px' }}>
                   <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_name_label')}</label>
@@ -777,51 +911,72 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                     style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
                   />
                 </div>
-                <div style={{ flex: '1 1 180px' }}>
-                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_subsidy_amount_label')}</label>
-                  <input
-                    type="number" step="1" min="0"
-                    value={editing.subsidyAmount}
-                    disabled={readOnly}
-                    onChange={(e) => setEditing((prev) => ({ ...prev, subsidyAmount: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
-                  />
-                </div>
-                <div style={{ flex: '1 1 180px' }}>
-                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_volume_growth_label')}</label>
-                  <input
-                    type="number" step="1"
-                    value={editing.volumeGrowthPct ?? 0}
-                    disabled={readOnly}
-                    onChange={(e) => setEditing((prev) => ({ ...prev, volumeGrowthPct: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
-                  />
-                </div>
-                <div style={{ flex: '1 1 180px' }}>
-                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_destruction_pct_label')}</label>
-                  <input
-                    type="number" step="1" min="0"
-                    value={editing.destructionPct ?? 0}
-                    disabled={readOnly}
-                    onChange={(e) => setEditing((prev) => ({ ...prev, destructionPct: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
-                  />
-                </div>
-                <div style={{ flex: '1 1 180px' }}>
-                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_building_people_label')}</label>
-                  <input
-                    type="number" step="1" min="0"
-                    value={editing.buildingPeople ?? REFERENCE_BUILDING_PEOPLE}
-                    disabled={readOnly}
-                    onChange={(e) => setEditing((prev) => ({ ...prev, buildingPeople: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
-                  />
-                </div>
+                {editing.mode === 'discount' ? (
+                  <div style={{ flex: '1 1 180px' }}>
+                    <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_discount_pct_label')}</label>
+                    <input
+                      type="number" step="1" min="0" max="90"
+                      value={editing.discountPct ?? 0}
+                      disabled={readOnly}
+                      onChange={(e) => setEditing((prev) => ({ ...prev, discountPct: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ flex: '1 1 180px' }}>
+                      <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_subsidy_amount_label')}</label>
+                      <input
+                        type="number" step="1" min="0"
+                        value={editing.subsidyAmount}
+                        disabled={readOnly}
+                        onChange={(e) => setEditing((prev) => ({ ...prev, subsidyAmount: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                      />
+                    </div>
+                    <div style={{ flex: '1 1 180px' }}>
+                      <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_volume_growth_label')}</label>
+                      <input
+                        type="number" step="1"
+                        value={editing.volumeGrowthPct ?? 0}
+                        disabled={readOnly}
+                        onChange={(e) => setEditing((prev) => ({ ...prev, volumeGrowthPct: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                      />
+                    </div>
+                    <div style={{ flex: '1 1 180px' }}>
+                      <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_destruction_pct_label')}</label>
+                      <input
+                        type="number" step="1" min="0"
+                        value={editing.destructionPct ?? 0}
+                        disabled={readOnly}
+                        onChange={(e) => setEditing((prev) => ({ ...prev, destructionPct: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                      />
+                    </div>
+                    <div style={{ flex: '1 1 180px' }}>
+                      <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_building_people_label')}</label>
+                      <input
+                        type="number" step="1" min="0"
+                        value={editing.buildingPeople ?? REFERENCE_BUILDING_PEOPLE}
+                        disabled={readOnly}
+                        onChange={(e) => setEditing((prev) => ({ ...prev, buildingPeople: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
-              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_subsidy_hint')}</p>
-              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_volume_growth_hint')}</p>
-              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_destruction_pct_hint')}</p>
-              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sc_building_people_hint')}</p>
+              {editing.mode === 'discount' ? (
+                <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sc_discount_pct_hint')}</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_subsidy_hint')}</p>
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_volume_growth_hint')}</p>
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_destruction_pct_hint')}</p>
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sc_building_people_hint')}</p>
+                </>
+              )}
 
               <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 6 }}>{t('sc_categories_label')}</label>
@@ -850,7 +1005,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('sc_categories_hint')}</p>
                 {preview && preview.discountCapped && (
                   <div style={{ marginTop: 8, background: '#fff6e6', border: '1px solid #f0d59a', borderRadius: 6, padding: '8px 10px', fontSize: 11.5, color: '#8a5a00' }}>
-                    {t('sc_discount_capped_warning')}
+                    {t(editing.mode === 'discount' ? 'sc_discount_pct_capped_warning' : 'sc_discount_capped_warning')}
                   </div>
                 )}
               </div>
@@ -901,10 +1056,18 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_net_revenue_label')}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>
-                      −{fmtEuro(Number(editing.subsidyAmount) || 0)}
+                    {editing.mode === 'discount' ? (
+                      <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>
+                        −{fmtPct1(preview.discountPct)}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>
+                        −{fmtEuro(Number(editing.subsidyAmount) || 0)}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: '#6b7684' }}>
+                      {editing.mode === 'discount' ? t('sc_discount_pct_label') : (t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')')}
                     </div>
-                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_subsidy_label')} (−{fmtPct1(preview.discountPct)})</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>−{fmtEuro(preview.revenueDrop)}</div>
@@ -923,16 +1086,18 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                     <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>{fmtNum(preview.fcNewPct, 1)}%</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_new_label')} ({t('sc_fc_basic_label')}: {fmtNum(BASIC_FC_PCT, 1)}%)</div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#2f8f8a' }}>{isFinite(preview.fcWithSubsidyPct) ? fmtNum(preview.fcWithSubsidyPct, 1) + '%' : '—'}</div>
-                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_with_subsidy_label')}</div>
-                    <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 200 }}>{t('sc_fc_with_subsidy_hint')}</div>
-                  </div>
+                  {editing.mode !== 'discount' && (
+                    <div>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: '#2f8f8a' }}>{isFinite(preview.fcWithSubsidyPct) ? fmtNum(preview.fcWithSubsidyPct, 1) + '%' : '—'}</div>
+                      <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_with_subsidy_label')}</div>
+                      <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 200 }}>{t('sc_fc_with_subsidy_hint')}</div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
-            {preview && (
+            {preview && editing.mode !== 'discount' && (
               <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
                 <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('sc_sensitivity_title')}</div>
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 12px', maxWidth: 700 }}>{t('sc_sensitivity_hint')}</p>
