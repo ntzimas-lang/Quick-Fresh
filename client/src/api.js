@@ -51,16 +51,11 @@ function defaultProduct(overrides) {
     images365: [],
     imagesPromo: [],
     cost: { sellingPrice: 0, ptk: 0, quantity: 0, vatPercent: 13 },
-    stores: [
-      { name: 'DEMO', sellingPriceStore: null, sellingPriceQF: null },
-      { name: 'Plaisio', sellingPriceStore: null, sellingPriceQF: null },
-      { name: 'Novibet', sellingPriceStore: null, sellingPriceQF: null },
-      { name: 'Kryoneri', sellingPriceStore: null, sellingPriceQF: null },
-      { name: 'Nestle', sellingPriceStore: null, sellingPriceQF: null },
-      { name: 'AIA', sellingPriceStore: null, sellingPriceQF: null },
-      { name: 'Metlen', sellingPriceStore: null, sellingPriceQF: null },
-      { name: 'ACS Courier', sellingPriceStore: null, sellingPriceQF: null }
-    ],
+    // ΣΗΜΕΙΩΣΗ: ΔΕΝ βάζουμε πια σταθερή λίστα καταστημάτων εδώ (παλιό υπόλειμμα πριν την
+    // κεντρική λίστα καταστημάτων) — αλλιώς κάθε νέο προϊόν "ξανάφερνε" αυτά τα ονόματα στη
+    // λίστα Καταστήματα, ακόμα κι αν τα είχες σβήσει από εκεί. Το Cost tab ξεκινάει άδειο· τα
+    // καταστήματα προστίθενται ελεύθερα ανά προϊόν μέσω του datalist της κεντρικής λίστας.
+    stores: [],
     ...overrides,
     id
   };
