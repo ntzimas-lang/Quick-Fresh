@@ -131,7 +131,7 @@ function getFilterText(p, key) {
   return v === null || v === undefined ? '' : String(v);
 }
 
-function fmtEuro(n) { return isFinite(n) ? n.toFixed(2) + ' €' : '-'; }
+function fmtEuro(n) { return isFinite(n) ? n.toLocaleString('el-GR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '€' : '-'; }
 function fmtPct(n) { return isFinite(n) ? Math.round(n) + ' %' : '∞ %'; }
 
 // Τιμή στήλης έτοιμη για εξαγωγή (Excel/PDF) — αριθμοί μένουν αριθμοί, ώστε
@@ -193,6 +193,12 @@ export default function ProductsView({ readOnly = false }) {
   const [sortKey, setSortKey] = useState(() => loadViewState()?.sortKey ?? null);
   const [sortDir, setSortDir] = useState(() => loadViewState()?.sortDir || 'asc');
   const [barcodeInput, setBarcodeInput] = useState('');
+  // Κελί Τιμής Πώλησης/ΠΤΚ που επεξεργάζεται αυτή τη στιγμή στον Πίνακα — δείχνει raw
+  // αριθμό όσο γράφεις (χωρίς σπάσιμο δεκαδικών), και μορφοποιημένη τιμή (0,00€) όταν χάσει
+  // την εστίαση. Το draft κείμενο κρατιέται χωριστά από την αποθηκευμένη τιμή ώστε το
+  // πληκτρολόγιο να μη "χτυπάει πίσω" σε κάθε χαρακτήρα.
+  const [focusedPriceCell, setFocusedPriceCell] = useState(null);
+  const [priceCellDraft, setPriceCellDraft] = useState('');
 
   const cardSaveTimer = useRef(null);
   const inlineSaveTimers = useRef({});
@@ -630,18 +636,60 @@ export default function ProductsView({ readOnly = false }) {
         </select>
       );
     }
-    if (col.key === 'sellingPrice' || col.key === 'ptk' || col.key === 'vatPercent') {
-      const field = col.key === 'sellingPrice' ? 'sellingPrice' : col.key === 'ptk' ? 'ptk' : 'vatPercent';
+    if (col.key === 'sellingPrice' || col.key === 'ptk') {
+      // Μορφοποιημένο πεδίο "0,00€": όσο δεν έχει εστίαση δείχνει τη μορφοποιημένη τιμή,
+      // κατά την επεξεργασία δείχνει raw draft κείμενο (χωρίς να "σπάει" σε κάθε πάτημα).
+      const field = col.key === 'sellingPrice' ? 'sellingPrice' : 'ptk';
+      const cellId = `${p.id}:${field}`;
+      const rawValue = p.cost?.[field];
+      const isFocused = focusedPriceCell === cellId;
+      const displayValue = isFocused
+        ? priceCellDraft
+        : (rawValue !== null && rawValue !== undefined && isFinite(rawValue)
+            ? Number(rawValue).toLocaleString('el-GR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '€'
+            : '');
+      return (
+        <input
+          type="text"
+          inputMode="decimal"
+          value={displayValue}
+          onClick={stop}
+          onFocus={() => {
+            setFocusedPriceCell(cellId);
+            setPriceCellDraft(
+              rawValue !== null && rawValue !== undefined && isFinite(rawValue)
+                ? String(rawValue).replace('.', ',')
+                : ''
+            );
+          }}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^0-9,.]/g, '');
+            setPriceCellDraft(raw);
+          }}
+          onBlur={() => {
+            const parsed = parseFloat(priceCellDraft.replace(',', '.'));
+            const finalVal = isFinite(parsed) ? parsed : 0;
+            updateProductInline(p.id, (prod) => ({
+              ...prod,
+              cost: { ...prod.cost, [field]: finalVal }
+            }));
+            setFocusedPriceCell(null);
+          }}
+          style={inlineInputStyle}
+        />
+      );
+    }
+    if (col.key === 'vatPercent') {
       return (
         <input
           type="number"
           step="0.01"
-          value={p.cost?.[field] ?? ''}
+          value={p.cost?.vatPercent ?? ''}
           onClick={stop}
           onChange={(e) =>
             updateProductInline(p.id, (prod) => ({
               ...prod,
-              cost: { ...prod.cost, [field]: e.target.value === '' ? 0 : parseFloat(e.target.value) }
+              cost: { ...prod.cost, vatPercent: e.target.value === '' ? 0 : parseFloat(e.target.value) }
             }))
           }
           style={inlineInputStyle}
