@@ -734,22 +734,46 @@ export default function ProductsView({ readOnly = false }) {
     }
     const storeCol = parseStoreColKey(col.key);
     if (storeCol && (storeCol.field === 'price' || storeCol.field === 'priceQF')) {
+      // Ίδιο μορφοποιημένο "0,00€" πεδίο με τις στήλες Τιμή Πώλησης/ΠΤΚ, εδώ για τις
+      // ανά-κατάστημα στήλες τιμών (Τιμή Store / Τιμή Q&F) στον Πίνακα.
       const storeField = storeCol.field === 'price' ? 'sellingPriceStore' : 'sellingPriceQF';
       const storeEntry = (p.stores || []).find((s) => s.name === storeCol.storeName);
+      const rawValue = storeEntry?.[storeField];
+      const cellId = `${p.id}:store:${storeCol.storeName}:${storeField}`;
+      const isFocused = focusedPriceCell === cellId;
+      const displayValue = isFocused
+        ? priceCellDraft
+        : (rawValue !== null && rawValue !== undefined && isFinite(rawValue)
+            ? Number(rawValue).toLocaleString('el-GR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '€'
+            : '');
       return (
         <input
-          type="number"
-          step="0.01"
-          value={storeEntry?.[storeField] ?? ''}
+          type="text"
+          inputMode="decimal"
+          value={displayValue}
           onClick={stop}
+          onFocus={() => {
+            setFocusedPriceCell(cellId);
+            setPriceCellDraft(
+              rawValue !== null && rawValue !== undefined && isFinite(rawValue)
+                ? String(rawValue).replace('.', ',')
+                : ''
+            );
+          }}
           onChange={(e) => {
-            const val = e.target.value === '' ? null : parseFloat(e.target.value);
+            const raw = e.target.value.replace(/[^0-9,.]/g, '');
+            setPriceCellDraft(raw);
+          }}
+          onBlur={() => {
+            const parsed = parseFloat(priceCellDraft.replace(',', '.'));
+            const val = isFinite(parsed) ? parsed : null;
             updateProductInline(p.id, (prod) => {
               const stores = (prod.stores || []).some((s) => s.name === storeCol.storeName)
                 ? prod.stores.map((s) => (s.name === storeCol.storeName ? { ...s, [storeField]: val } : s))
                 : [...(prod.stores || []), { name: storeCol.storeName, sellingPriceStore: null, sellingPriceQF: null, [storeField]: val }];
               return { ...prod, stores };
             });
+            setFocusedPriceCell(null);
           }}
           style={inlineInputStyle}
         />
