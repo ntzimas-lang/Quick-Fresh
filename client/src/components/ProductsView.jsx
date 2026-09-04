@@ -511,6 +511,42 @@ export default function ProductsView({ readOnly = false }) {
   const net = cost.sellingPrice ? cost.sellingPrice / (1 + vat / 100) : 0;
   const fc = net > 0 ? ((cost.ptk || 0) / net) * 100 : NaN;
 
+  // Μορφοποιημένο πεδίο τιμής "0,00€" για φόρμες εκτός πίνακα (Κάρτα/Stores).
+  // cellId: μοναδικό αναγνωριστικό ώστε να θυμάται ποιο πεδίο έχει focus αυτή τη στιγμή.
+  function renderPriceField(cellId, rawValue, onCommit, disabled) {
+    const isFocused = focusedPriceCell === cellId;
+    const displayValue = isFocused
+      ? priceCellDraft
+      : (rawValue !== null && rawValue !== undefined && isFinite(rawValue)
+          ? Number(rawValue).toLocaleString('el-GR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '€'
+          : '');
+    return (
+      <input
+        disabled={disabled}
+        type="text"
+        inputMode="decimal"
+        value={displayValue}
+        onFocus={() => {
+          setFocusedPriceCell(cellId);
+          setPriceCellDraft(
+            rawValue !== null && rawValue !== undefined && isFinite(rawValue)
+              ? String(rawValue).replace('.', ',')
+              : ''
+          );
+        }}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/[^0-9,.]/g, '');
+          setPriceCellDraft(raw);
+        }}
+        onBlur={() => {
+          const parsed = parseFloat(priceCellDraft.replace(',', '.'));
+          onCommit(isFinite(parsed) ? parsed : 0);
+          setFocusedPriceCell(null);
+        }}
+      />
+    );
+  }
+
   // Επεξεργάσιμο κελί πίνακα — κλικ μέσα δεν ανοίγει την κάρτα.
   function renderCell(p, col) {
     const stop = (e) => e.stopPropagation();
@@ -1046,9 +1082,9 @@ export default function ProductsView({ readOnly = false }) {
             <div className="tab-panel active">
               <div className="section-bar teal">General Cost</div>
               <div className="cost-grid">
-                <div className="cost-field"><label>{t('p_col_sellingPrice')}</label><input disabled={readOnly} type="number" step="0.01" value={cost.sellingPrice ?? ''} onChange={(e) => updateCost('sellingPrice', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>{t('p_col_sellingPrice')}</label>{renderPriceField('card:sellingPrice', cost.sellingPrice, (v) => updateCost('sellingPrice', v), readOnly)}</div>
                 <div className="cost-field"><label>{t('p_col_vatPercent')}</label><input disabled={readOnly} type="number" step="1" value={cost.vatPercent ?? 13} onChange={(e) => updateCost('vatPercent', parseFloat(e.target.value) || 0)} /></div>
-                <div className="cost-field"><label>{t('p_cost_ptk_label')}</label><input disabled={readOnly} type="number" step="0.01" value={cost.ptk ?? ''} onChange={(e) => updateCost('ptk', parseFloat(e.target.value) || 0)} /></div>
+                <div className="cost-field"><label>{t('p_cost_ptk_label')}</label>{renderPriceField('card:ptk', cost.ptk, (v) => updateCost('ptk', v), readOnly)}</div>
                 <div className="readonly-value teal" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <label style={{ fontSize: 11, marginBottom: 4 }}>{t('p_col_fc')}</label>
                   {fmtPct(fc)}
@@ -1075,9 +1111,9 @@ export default function ProductsView({ readOnly = false }) {
                     return (
                       <tr key={i}>
                         <td><div className="store-name">{s.name}</div></td>
-                        <td><input disabled={readOnly} type="number" step="0.01" value={s.sellingPriceStore ?? ''} onChange={(e) => updateStore(i, 'sellingPriceStore', e.target.value)} /></td>
+                        <td>{renderPriceField(`store:${i}:price`, s.sellingPriceStore, (v) => updateStore(i, 'sellingPriceStore', String(v)), readOnly)}</td>
                         <td><div className="fc-cell">{fmtPct(fcStore)}</div></td>
-                        <td><input disabled={readOnly} type="number" step="0.01" value={s.sellingPriceQF ?? ''} onChange={(e) => updateStore(i, 'sellingPriceQF', e.target.value)} /></td>
+                        <td>{renderPriceField(`store:${i}:priceQF`, s.sellingPriceQF, (v) => updateStore(i, 'sellingPriceQF', String(v)), readOnly)}</td>
                         <td><div className="fc-cell">{fmtPct(fcQF)}</div></td>
                       </tr>
                     );
