@@ -35,10 +35,6 @@ function buildAllColumns(t) {
     { key: 'detailedDescriptionEn', label: t('p_col_detailedDescriptionEn') },
     { key: 'minStock', label: t('p_col_minStock') },
     { key: 'maxStock', label: t('p_col_maxStock') },
-    { key: 'status', label: t('p_col_status') },
-    { key: 'region', label: t('p_col_region') },
-    { key: 'activeOnMachine', label: t('p_col_activeOnMachine') },
-    { key: 'activeStores', label: t('p_col_activeStores') },
     { key: 'sellingPrice', label: t('p_col_sellingPrice') },
     { key: 'vatPercent', label: t('p_col_vatPercent') },
     { key: 'ptk', label: t('p_col_ptk') },
@@ -48,7 +44,7 @@ function buildAllColumns(t) {
   ];
 }
 
-const DEFAULT_VISIBLE_COLUMNS = ['categoryGr', 'itemCode', 'barcode', 'descriptionErp', 'status', 'region', 'images365'];
+const DEFAULT_VISIBLE_COLUMNS = ['categoryGr', 'itemCode', 'barcode', 'descriptionErp', 'images365'];
 
 // Η περιοχή είναι δεδομένο προϊόντος (τοποθεσία) — δεν μεταφράζεται.
 const REGION_OPTIONS = ['Αθήνα', 'Θεσσαλονίκη', 'Παντού'];
