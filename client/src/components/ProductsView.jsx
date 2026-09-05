@@ -992,6 +992,7 @@ export default function ProductsView({ readOnly = false }) {
                     </div>
                   )}
                 </div>
+                <div className="field"><label>{t('p_col_descriptionErp')}</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
                 <div className="field">
                   <div style={{ display: 'flex', gap: 10 }}>
                     <div style={{ flex: 1 }}>
@@ -1004,7 +1005,6 @@ export default function ProductsView({ readOnly = false }) {
                     </div>
                   </div>
                 </div>
-                <div className="field"><label>{t('p_col_descriptionErp')}</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
                 <div className="field"><label>{t('p_col_descriptionGr')}</label><input disabled={readOnly} value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
                 <div className="field"><label>{t('p_col_descriptionEn')}</label><input disabled={readOnly} value={current.descriptionEn || ''} onChange={(e) => updateField('descriptionEn', e.target.value)} /></div>
               </div>
