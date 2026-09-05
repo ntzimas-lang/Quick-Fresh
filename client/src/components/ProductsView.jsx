@@ -1004,65 +1004,6 @@ export default function ProductsView({ readOnly = false }) {
                 <div className="field"><label>{t('p_col_detailedDescriptionGr')}</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionGr || ''} onChange={(e) => updateField('detailedDescriptionGr', e.target.value)} /></div>
                 <div className="field"><label>{t('p_col_detailedDescriptionEn')}</label><textarea disabled={readOnly} rows="4" value={current.detailedDescriptionEn || ''} onChange={(e) => updateField('detailedDescriptionEn', e.target.value)} /></div>
               </div>
-              <div className="grid-3">
-                <div className="field">
-                  <label>{t('p_col_status')}</label>
-                  <select
-                    disabled={readOnly}
-                    value={current.status || 'ΕΝΤΟΣ'}
-                    onChange={(e) => updateField('status', e.target.value)}
-                    style={{ background: statusColor(current.status || 'ΕΝΤΟΣ'), color: '#fff', fontWeight: 600, border: 'none' }}
-                  >
-                    <option value="ΕΝΤΟΣ">{statusLabel('ΕΝΤΟΣ', t)}</option>
-                    <option value="ΕΚΤΟΣ">{statusLabel('ΕΚΤΟΣ', t)}</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>{t('p_col_activeOnMachine')}</label>
-                  <select disabled={readOnly} value={current.activeOnMachine || 'YES'} onChange={(e) => updateField('activeOnMachine', e.target.value)}>
-                    <option value="YES">YES</option>
-                    <option value="NO">NO</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>{t('p_col_region')}</label>
-                  <select disabled={readOnly} value={current.region || ''} onChange={(e) => updateField('region', e.target.value)}>
-                    <option value="">—</option>
-                    {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </div>
-                <div className="field" style={{ gridColumn: '1 / -1' }}>
-                  <label>{t('p_col_activeStores')}</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '10px 12px', background: '#f9fafb', border: '1px solid #e1e5ea', borderRadius: 10 }}>
-                    {Array.from(new Set([...storeOptions, ...(current.activeStores || [])])).sort().map((name) => {
-                      const on = (current.activeStores || []).includes(name);
-                      return (
-                        <div
-                          key={name}
-                          onClick={() => { if (!readOnly) toggleActiveStore(name); }}
-                          style={{
-                            padding: '7px 14px',
-                            borderRadius: 999,
-                            fontSize: 12.5,
-                            fontWeight: 600,
-                            cursor: readOnly ? 'default' : 'pointer',
-                            userSelect: 'none',
-                            transition: 'background 0.15s, color 0.15s, border-color 0.15s',
-                            background: on ? '#2f8f8a' : '#fff',
-                            color: on ? '#fff' : '#6b7684',
-                            border: on ? '1px solid #2f8f8a' : '1px solid #d7dce2'
-                          }}
-                        >
-                          {name}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {!readOnly && (
-                    <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('p_stores_managed_hint')}</p>
-                  )}
-                </div>
-              </div>
               <div className="grid-2">
                 <div className="field">
                   <label>{t('p_col_images365')}</label>
