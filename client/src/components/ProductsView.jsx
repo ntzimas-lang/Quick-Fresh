@@ -996,9 +996,9 @@ export default function ProductsView({ readOnly = false }) {
                     </div>
                   )}
                 </div>
-                <div className="field"><label>{t('p_col_descriptionErp')}</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
                 <div className="field"><label>{t('p_col_minStock')}</label><input disabled={readOnly} type="number" value={current.minStock ?? ''} onChange={(e) => updateField('minStock', e.target.value ? +e.target.value : null)} /></div>
                 <div className="field"><label>{t('p_col_maxStock')}</label><input disabled={readOnly} type="number" value={current.maxStock ?? ''} onChange={(e) => updateField('maxStock', e.target.value ? +e.target.value : null)} /></div>
+                <div className="field"><label>{t('p_col_descriptionErp')}</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
                 <div className="field"><label>{t('p_col_descriptionGr')}</label><input disabled={readOnly} value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
                 <div className="field"><label>{t('p_col_descriptionEn')}</label><input disabled={readOnly} value={current.descriptionEn || ''} onChange={(e) => updateField('descriptionEn', e.target.value)} /></div>
               </div>
