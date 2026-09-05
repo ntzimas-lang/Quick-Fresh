@@ -33,7 +33,8 @@ function buildAllColumns(t) {
     { key: 'descriptionEn', label: t('p_col_descriptionEn') },
     { key: 'detailedDescriptionGr', label: t('p_col_detailedDescriptionGr') },
     { key: 'detailedDescriptionEn', label: t('p_col_detailedDescriptionEn') },
-    { key: 'unitsPerMachine', label: t('p_col_unitsPerMachine') },
+    { key: 'minStock', label: t('p_col_minStock') },
+    { key: 'maxStock', label: t('p_col_maxStock') },
     { key: 'status', label: t('p_col_status') },
     { key: 'region', label: t('p_col_region') },
     { key: 'activeOnMachine', label: t('p_col_activeOnMachine') },
@@ -57,7 +58,7 @@ const INLINE_EDITABLE_TEXT_KEYS = new Set([
   'itemCode', 'descriptionErp', 'descriptionGr', 'descriptionEn',
   'detailedDescriptionGr', 'detailedDescriptionEn'
 ]);
-const INLINE_EDITABLE_NUMBER_KEYS = new Set(['unitsPerMachine']);
+const INLINE_EDITABLE_NUMBER_KEYS = new Set(['minStock', 'maxStock']);
 
 function statusColor(value) {
   return value === 'ΕΚΤΟΣ' ? '#c0392b' : '#27ae60';
@@ -996,7 +997,8 @@ export default function ProductsView({ readOnly = false }) {
                   )}
                 </div>
                 <div className="field"><label>{t('p_col_descriptionErp')}</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
-                <div className="field"><label>{t('p_col_unitsPerMachine')}</label><input disabled={readOnly} type="number" value={current.unitsPerMachine ?? ''} onChange={(e) => updateField('unitsPerMachine', e.target.value ? +e.target.value : null)} /></div>
+                <div className="field"><label>{t('p_col_minStock')}</label><input disabled={readOnly} type="number" value={current.minStock ?? ''} onChange={(e) => updateField('minStock', e.target.value ? +e.target.value : null)} /></div>
+                <div className="field"><label>{t('p_col_maxStock')}</label><input disabled={readOnly} type="number" value={current.maxStock ?? ''} onChange={(e) => updateField('maxStock', e.target.value ? +e.target.value : null)} /></div>
                 <div className="field"><label>{t('p_col_descriptionGr')}</label><input disabled={readOnly} value={current.descriptionGr || ''} onChange={(e) => updateField('descriptionGr', e.target.value)} /></div>
                 <div className="field"><label>{t('p_col_descriptionEn')}</label><input disabled={readOnly} value={current.descriptionEn || ''} onChange={(e) => updateField('descriptionEn', e.target.value)} /></div>
               </div>
