@@ -229,7 +229,10 @@ export default function ProductsView({ readOnly = false }) {
   }
 
   async function handleNew() {
-    const p = await Products.create({ descriptionGr: 'Νέο προϊόν' });
+    const p = await Products.create({
+      descriptionGr: 'Νέο προϊόν',
+      stores: storeOptions.map((name) => ({ name, sellingPriceStore: null, sellingPriceQF: null }))
+    });
     setProducts((prev) => [...prev, p]);
     setCurrent(p);
     setTab('info');
