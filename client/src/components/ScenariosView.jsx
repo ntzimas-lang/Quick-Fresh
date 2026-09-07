@@ -80,6 +80,7 @@ function emptyDraft() {
     buildingPeople: REFERENCE_BUILDING_PEOPLE,
     discountPct: 0,
     selectedCategories: [],
+    categoryDiscounts: {},
     customerCompanyName: '',
     customerMessage: DEFAULT_CUSTOMER_MESSAGE_EL
   };
@@ -238,50 +239,56 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, 
   };
 }
 
-// Απλό μοντέλο "Ποσοστό Έκπτωσης" — χωρίς έννοια επιδότησης: ο χρήστης δίνει απευθείας το
-// ποσοστό έκπτωσης που θέλει να εφαρμόσει (π.χ. 15%) πάνω στις τιμές BASIC των επιλεγμένων
-// κατηγοριών (ή σε όλο τον τιμοκατάλογο αν δεν επιλέξει καμία κατηγορία) — και η εφαρμογή
-// υπολογίζει όλη την υπόλοιπη πληροφορία (νέα τιμή, νέα αξία, F.C., μικτό κέρδος) όπως ακριβώς
-// στο μοντέλο επιδότησης, απλά χωρίς αύξηση όγκου / καταστροφές / άτομα κτιρίου / κάλυψη
-// επιδότησης — μόνο το ίδιο το ποσοστό έκπτωσης.
-function computeDiscountScenario(discountPctInput, selectedCategories, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basicTotals = BASIC_TOTALS) {
+// Απλό μοντέλο "Ποσοστό Έκπτωσης" — χωρίς έννοια επιδότησης: ο χρήστης δίνει ένα ΓΕΝΙΚΟ
+// ποσοστό έκπτωσης που εφαρμόζεται σε ΟΛΟ τον τιμοκατάλογο, με τη δυνατότητα να ορίσει
+// ΔΙΑΦΟΡΕΤΙΚΟ ποσοστό για συγκεκριμένες κατηγορίες (categoryDiscounts) — οι κατηγορίες χωρίς
+// δικό τους ποσοστό παίρνουν απλά το γενικό. Η εφαρμογή υπολογίζει όλη την υπόλοιπη
+// πληροφορία (νέα τιμή, νέα αξία, F.C., μικτό κέρδος) όπως ακριβώς στο μοντέλο επιδότησης,
+// απλά χωρίς αύξηση όγκου / καταστροφές / άτομα κτιρίου / κάλυψη επιδότησης.
+function computeDiscountScenario(discountPctInput, categoryDiscounts, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basicTotals = BASIC_TOTALS) {
   const BASIC_COGS_ACTIVE = basicTotals.cogs;
   const BASIC_TOTAL_VALUE_ACTIVE = basicTotals.totalValue;
   const MAX_DISCOUNT_PCT = 90;
-  const rawPct = Number(discountPctInput) || 0;
-  const pct = Math.min(Math.max(rawPct, 0), MAX_DISCOUNT_PCT);
-  const discountCapped = rawPct > MAX_DISCOUNT_PCT || rawPct < 0;
-  const discountFrac = pct / 100;
-
-  const categoryList = Array.isArray(selectedCategories) ? selectedCategories.filter(Boolean) : [];
-  const hasCategoryFilter = categoryList.length > 0;
-  const categorySet = new Set(categoryList);
+  const rawGeneralPct = Number(discountPctInput) || 0;
+  const generalPctClamped = Math.min(Math.max(rawGeneralPct, 0), MAX_DISCOUNT_PCT);
+  const overrides = categoryDiscounts && typeof categoryDiscounts === 'object' ? categoryDiscounts : {};
+  let discountCapped = rawGeneralPct > MAX_DISCOUNT_PCT || rawGeneralPct < 0;
 
   let soldNetRevenue = 0;
+  let pctOffSum = 0;
 
   const rows = baselineProducts.map((p) => {
-    const inScope = !hasCategoryFilter || categorySet.has(p.cat);
-    const newPrice = inScope ? roundUpToDime(p.basicPrice * (1 - discountFrac)) : p.basicPrice;
+    const overrideRaw = overrides[p.cat];
+    const hasOverride = overrideRaw !== undefined && overrideRaw !== null && overrideRaw !== '';
+    const rawPct = hasOverride ? Number(overrideRaw) : rawGeneralPct;
+    if (hasOverride && (rawPct > MAX_DISCOUNT_PCT || rawPct < 0 || !isFinite(rawPct))) discountCapped = true;
+    const catPct = Math.min(Math.max(isFinite(rawPct) ? rawPct : 0, 0), MAX_DISCOUNT_PCT);
+    const discountFrac = catPct / 100;
+
+    const newPrice = roundUpToDime(p.basicPrice * (1 - discountFrac));
     const newValue = (newPrice / 1.13) * p.juneQty;
     const diff = newValue - p.basicValue;
     soldNetRevenue += newValue;
 
     const fcBasic = p.basicPrice ? (p.ptk / (p.basicPrice / 1.13)) * 100 : NaN;
     const fcNew = newPrice ? (p.ptk / (newPrice / 1.13)) * 100 : NaN;
-    const pctOff = inScope && p.basicPrice ? ((p.basicPrice - newPrice) / p.basicPrice) * 100 : 0;
+    const pctOff = p.basicPrice ? ((p.basicPrice - newPrice) / p.basicPrice) * 100 : 0;
+    pctOffSum += pctOff;
 
-    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff, inScope };
+    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff, inScope: true, appliedPct: catPct, hasOverride };
   });
 
   const grossProfit = soldNetRevenue - BASIC_COGS_ACTIVE;
   const grossProfitPct = soldNetRevenue ? grossProfit / soldNetRevenue : 0;
   const fcNewPct = 100 - grossProfitPct * 100;
   const revenueDrop = BASIC_TOTAL_VALUE_ACTIVE - soldNetRevenue;
+  const avgPctOff = rows.length ? pctOffSum / rows.length : 0;
 
   return {
     mode: 'discount',
     rows,
-    discountPct: discountFrac,
+    discountPct: generalPctClamped / 100,
+    avgPctOff,
     netRevenue: soldNetRevenue,
     cogs: BASIC_COGS_ACTIVE,
     grossProfit,
@@ -289,8 +296,8 @@ function computeDiscountScenario(discountPctInput, selectedCategories, baselineP
     fcNewPct,
     fcWithSubsidyPct: NaN,
     revenueDrop,
-    hasCategoryFilter,
-    selectedCategories: categoryList,
+    hasCategoryFilter: Object.keys(overrides).some((k) => overrides[k] !== undefined && overrides[k] !== null && overrides[k] !== ''),
+    categoryDiscounts: overrides,
     discountCapped
   };
 }
@@ -299,7 +306,7 @@ function computeDiscountScenario(discountPctInput, selectedCategories, baselineP
 // (παλιά αποθηκευμένα σενάρια δεν έχουν mode — θεωρούνται 'subsidy' για συμβατότητα).
 function computeScenario(sc, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basicTotals = BASIC_TOTALS) {
   if (sc && sc.mode === 'discount') {
-    return computeDiscountScenario(sc.discountPct, sc.selectedCategories, baselineProducts, basicTotals);
+    return computeDiscountScenario(sc.discountPct, sc.categoryDiscounts, baselineProducts, basicTotals);
   }
   return computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories, baselineProducts, basicTotals);
 }
@@ -411,6 +418,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
         buildingPeople: Number(editing.buildingPeople) || REFERENCE_BUILDING_PEOPLE,
         discountPct: Number(editing.discountPct) || 0,
         selectedCategories: Array.isArray(editing.selectedCategories) ? editing.selectedCategories : [],
+        categoryDiscounts: (editing.categoryDiscounts && typeof editing.categoryDiscounts === 'object')
+          ? Object.fromEntries(
+              Object.entries(editing.categoryDiscounts).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+            )
+          : {},
         customerCompanyName: editing.customerCompanyName || '',
         customerMessage: editing.customerMessage || DEFAULT_CUSTOMER_MESSAGE_EL
       };
@@ -596,10 +608,16 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       ? editing.selectedCategories.join(', ')
       : t('sc_pdf_manager_all_categories');
 
+    // Σε discount mode: γενικό ποσοστό + μία γραμμή ανά κατηγορία που έχει δικό της
+    // ξεχωριστό ποσοστό (override) — οι υπόλοιπες κατηγορίες παίρνουν σιωπηρά το γενικό.
+    const categoryDiscountEntries = Object.entries(editing.categoryDiscounts || {}).filter(
+      ([, v]) => v !== '' && v !== null && v !== undefined && isFinite(Number(v))
+    );
+
     const paramRows = isDiscountModeMgr
       ? [
-          [t('sc_discount_pct_label'), fmtNum(Number(editing.discountPct) || 0, 0) + '%'],
-          [t('sc_categories_label'), catsLabel]
+          [t('sc_discount_general_pct_label'), fmtNum(Number(editing.discountPct) || 0, 0) + '%'],
+          ...categoryDiscountEntries.map(([cat, v]) => [cat, fmtNum(Number(v) || 0, 0) + '%'])
         ]
       : [
           [t('sc_subsidy_amount_label'), fmtEuro(Number(editing.subsidyAmount) || 0)],
@@ -873,7 +891,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <tr key={sc.id} style={{ borderTop: '1px solid #eef1f4' }}>
                           <td style={{ padding: '8px 10px', fontWeight: 700, color: '#16233f' }}>{sc.name || '—'}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c0392b', fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : '−' + fmtEuro(Number(sc.subsidyAmount) || 0)}</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>−{fmtPct1(result.discountPct)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>−{sc.mode === 'discount' ? fmtNum(result.avgPctOff, 1) + '%' : fmtPct1(result.discountPct)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c0392b' }}>{fmtNum(result.fcNewPct, 1)}%</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : '+' + fmtNum(result.volumeGrowthPct, 0) + '%'}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : fmtNum(result.destructionPct, 0) + '%'}</td>
@@ -967,7 +985,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                 </div>
                 {editing.mode === 'discount' ? (
                   <div style={{ flex: '1 1 180px' }}>
-                    <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_discount_pct_label')}</label>
+                    <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_discount_general_pct_label')}</label>
                     <input
                       type="number" step="1" min="0" max="90"
                       value={editing.discountPct ?? 0}
@@ -1032,37 +1050,75 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                 </>
               )}
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 6 }}>{t('sc_categories_label')}</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
-                  {mergedCategories.map((cat) => {
-                    const checked = Array.isArray(editing.selectedCategories) && editing.selectedCategories.includes(cat);
-                    return (
-                      <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#2b3644', cursor: readOnly ? 'default' : 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={readOnly}
-                          onChange={(e) => {
-                            setEditing((prev) => {
-                              const cur = Array.isArray(prev.selectedCategories) ? prev.selectedCategories : [];
-                              const next = e.target.checked ? [...cur, cat] : cur.filter((c) => c !== cat);
-                              return { ...prev, selectedCategories: next };
-                            });
-                          }}
-                        />
-                        {cat}
-                      </label>
-                    );
-                  })}
-                </div>
-                <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('sc_categories_hint')}</p>
-                {preview && preview.discountCapped && (
-                  <div style={{ marginTop: 8, background: '#fff6e6', border: '1px solid #f0d59a', borderRadius: 6, padding: '8px 10px', fontSize: 11.5, color: '#8a5a00' }}>
-                    {t(editing.mode === 'discount' ? 'sc_discount_pct_capped_warning' : 'sc_discount_capped_warning')}
+              {editing.mode === 'discount' ? (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 6 }}>{t('sc_category_discounts_label')}</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) 90px', gap: '6px 14px', maxWidth: 420 }}>
+                    {mergedCategories.map((cat) => {
+                      const raw = editing.categoryDiscounts && editing.categoryDiscounts[cat];
+                      const value = raw === undefined || raw === null ? '' : raw;
+                      return (
+                        <React.Fragment key={cat}>
+                          <div style={{ fontSize: 12.5, color: '#2b3644', alignSelf: 'center' }}>{cat}</div>
+                          <input
+                            type="number" step="1" min="0" max="90"
+                            placeholder={String(editing.discountPct ?? 0)}
+                            value={value}
+                            disabled={readOnly}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setEditing((prev) => {
+                                const next = { ...(prev.categoryDiscounts || {}) };
+                                if (v === '') delete next[cat]; else next[cat] = v;
+                                return { ...prev, categoryDiscounts: next };
+                              });
+                            }}
+                            style={{ width: '100%', padding: '6px 8px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 12.5 }}
+                          />
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('sc_category_discounts_hint')}</p>
+                  {preview && preview.discountCapped && (
+                    <div style={{ marginTop: 8, background: '#fff6e6', border: '1px solid #f0d59a', borderRadius: 6, padding: '8px 10px', fontSize: 11.5, color: '#8a5a00' }}>
+                      {t('sc_discount_pct_capped_warning')}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 6 }}>{t('sc_categories_label')}</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+                    {mergedCategories.map((cat) => {
+                      const checked = Array.isArray(editing.selectedCategories) && editing.selectedCategories.includes(cat);
+                      return (
+                        <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#2b3644', cursor: readOnly ? 'default' : 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={readOnly}
+                            onChange={(e) => {
+                              setEditing((prev) => {
+                                const cur = Array.isArray(prev.selectedCategories) ? prev.selectedCategories : [];
+                                const next = e.target.checked ? [...cur, cat] : cur.filter((c) => c !== cat);
+                                return { ...prev, selectedCategories: next };
+                              });
+                            }}
+                          />
+                          {cat}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '6px 0 0' }}>{t('sc_categories_hint')}</p>
+                  {preview && preview.discountCapped && (
+                    <div style={{ marginTop: 8, background: '#fff6e6', border: '1px solid #f0d59a', borderRadius: 6, padding: '8px 10px', fontSize: 11.5, color: '#8a5a00' }}>
+                      {t('sc_discount_capped_warning')}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
                 <div style={{ flex: '1 1 260px' }}>
@@ -1112,7 +1168,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                   <div>
                     {editing.mode === 'discount' ? (
                       <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>
-                        −{fmtPct1(preview.discountPct)}
+                        −{fmtNum(preview.avgPctOff, 1)}%
                       </div>
                     ) : (
                       <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>
@@ -1120,7 +1176,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                       </div>
                     )}
                     <div style={{ fontSize: 12, color: '#6b7684' }}>
-                      {editing.mode === 'discount' ? t('sc_discount_pct_label') : (t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')')}
+                      {editing.mode === 'discount' ? t('sc_pdf_avg_discount_label') : (t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')')}
                     </div>
                   </div>
                   <div>
