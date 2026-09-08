@@ -178,6 +178,10 @@ export default function ContactsView({ readOnly = false }) {
 
   const cardSaveTimer = useRef(null);
   const inlineSaveTimers = useRef({});
+  // Ίδια λογική "γενιάς" αποθήκευσης με το ProductsView.jsx — αποτρέπει μια μπαγιάτικη
+  // απάντηση του server να ξαναγράψει πάνω σε πιο πρόσφατη τοπική επεξεργασία.
+  const cardSaveSeqRef = useRef(0);
+  const inlineSaveSeqRef = useRef({});
 
   useEffect(() => {
     try {
@@ -215,8 +219,10 @@ export default function ContactsView({ readOnly = false }) {
   // ---------- Card view: auto-save (debounced) ----------
   function scheduleCardSave(record) {
     if (cardSaveTimer.current) clearTimeout(cardSaveTimer.current);
+    const mySeq = ++cardSaveSeqRef.current;
     cardSaveTimer.current = setTimeout(async () => {
       const saved = await Contacts.update(record.id, record);
+      if (mySeq !== cardSaveSeqRef.current) return;
       setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
       setContacts((list) => list.map((c) => (c.id === saved.id ? saved : c)));
       setSavedFlash(true);
@@ -293,11 +299,14 @@ export default function ContactsView({ readOnly = false }) {
   // ---------- Table view: inline editing (debounced per-row) ----------
   function scheduleInlineSave(contactId) {
     if (inlineSaveTimers.current[contactId]) clearTimeout(inlineSaveTimers.current[contactId]);
+    const mySeq = (inlineSaveSeqRef.current[contactId] || 0) + 1;
+    inlineSaveSeqRef.current[contactId] = mySeq;
     inlineSaveTimers.current[contactId] = setTimeout(async () => {
       setContacts((list) => {
         const record = list.find((c) => c.id === contactId);
         if (record) {
           Contacts.update(contactId, record).then((saved) => {
+            if (inlineSaveSeqRef.current[contactId] !== mySeq) return;
             setContacts((list2) => list2.map((c) => (c.id === saved.id ? saved : c)));
             setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
           });

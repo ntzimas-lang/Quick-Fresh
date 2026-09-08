@@ -199,6 +199,12 @@ export default function ProductsView({ readOnly = false }) {
 
   const cardSaveTimer = useRef(null);
   const inlineSaveTimers = useRef({});
+  // Μετρητές "γενιάς" αποθήκευσης — αποτρέπουν μια παλιά (καθυστερημένη) απάντηση του server
+  // να ξαναγράψει πάνω σε πιο πρόσφατες τοπικές αλλαγές (π.χ. αν γράφεις γρήγορα ενώ μια
+  // προηγούμενη αποθήκευση είναι ακόμα "στον αέρα"). Χωρίς αυτό, το πεδίο μπορεί να "χάνει"
+  // ό,τι μόλις γράφτηκε ή να πετάγεται πίσω σε παλιότερη τιμή.
+  const cardSaveSeqRef = useRef(0);
+  const inlineSaveSeqRef = useRef({});
 
   useEffect(() => {
     try {
@@ -242,8 +248,12 @@ export default function ProductsView({ readOnly = false }) {
   // ---------- Card view: auto-save (debounced) ----------
   function scheduleCardSave(record) {
     if (cardSaveTimer.current) clearTimeout(cardSaveTimer.current);
+    const mySeq = ++cardSaveSeqRef.current;
     cardSaveTimer.current = setTimeout(async () => {
       const saved = await Products.update(record.id, record);
+      // Αν στο μεταξύ ξεκίνησε νεότερη αποθήκευση (ο χρήστης συνέχισε να γράφει), αγνόησε
+      // αυτή την απάντηση — είναι μπαγιάτικη σε σχέση με την πιο πρόσφατη τοπική κατάσταση.
+      if (mySeq !== cardSaveSeqRef.current) return;
       setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
       setProducts((list) => list.map((p) => (p.id === saved.id ? saved : p)));
       setSavedFlash(true);
@@ -356,11 +366,16 @@ export default function ProductsView({ readOnly = false }) {
   // ---------- Table view: inline editing (debounced per-row) ----------
   function scheduleInlineSave(productId) {
     if (inlineSaveTimers.current[productId]) clearTimeout(inlineSaveTimers.current[productId]);
+    const mySeq = (inlineSaveSeqRef.current[productId] || 0) + 1;
+    inlineSaveSeqRef.current[productId] = mySeq;
     inlineSaveTimers.current[productId] = setTimeout(async () => {
       setProducts((list) => {
         const record = list.find((p) => p.id === productId);
         if (record) {
           Products.update(productId, record).then((saved) => {
+            // Ίδια λογική με το scheduleCardSave: αγνόησε μπαγιάτικη απάντηση αν έγινε
+            // νεότερη επεξεργασία στο ίδιο προϊόν στο μεταξύ.
+            if (inlineSaveSeqRef.current[productId] !== mySeq) return;
             setProducts((list2) => list2.map((p) => (p.id === saved.id ? saved : p)));
             setCurrent((prev) => (prev && prev.id === saved.id ? saved : prev));
           });
