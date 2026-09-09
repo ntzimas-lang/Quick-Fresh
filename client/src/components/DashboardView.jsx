@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Contacts, Entries, SalesDaily, SalesProducts, SalesTimeBuckets, SalesShiftBreakdown, Products } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
@@ -109,17 +109,24 @@ export default function DashboardView({ isDriver = false } = {}) {
   const [expandedMonthCategories, setExpandedMonthCategories] = useState(() => new Set());
   // Το γράφημα "Τάσεις ανά μήνα" σχεδιάζεται σε πραγματικά pixel (όχι με
   // preserveAspectRatio="none"), ώστε τα γράμματα των ετικετών να μην παραμορφώνονται
-  // (μη-ομοιόμορφο scale x/y). Μετράμε το πλάτος του container με ResizeObserver.
-  const trendChartWrapRef = useRef(null);
+  // (μη-ομοιόμορφο scale x/y). Μετράμε το πλάτος του container με ResizeObserver, μέσω
+  // callback ref (όχι useEffect+useRef) ώστε να πιάνει σωστά το στοιχείο ακόμα κι αν
+  // εμφανίζεται αργότερα (π.χ. μετά το φόρτωμα των δεδομένων πωλήσεων), όχι μόνο στο
+  // αρχικό mount.
+  const trendResizeObserverRef = useRef(null);
   const [trendChartWidth, setTrendChartWidth] = useState(600);
-  useEffect(() => {
-    const el = trendChartWrapRef.current;
-    if (!el) return undefined;
-    const update = () => setTrendChartWidth(el.clientWidth || 600);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
+  const trendChartWrapRef = useCallback((el) => {
+    if (trendResizeObserverRef.current) {
+      trendResizeObserverRef.current.disconnect();
+      trendResizeObserverRef.current = null;
+    }
+    if (el) {
+      const update = () => setTrendChartWidth(el.clientWidth || 600);
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      trendResizeObserverRef.current = ro;
+    }
   }, []);
   function toggleMonthCategory(key) {
     setExpandedMonthCategories((prev) => {
