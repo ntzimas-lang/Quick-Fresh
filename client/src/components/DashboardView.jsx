@@ -672,21 +672,21 @@ export default function DashboardView({ isDriver = false } = {}) {
                 </div>
 
                 {monthKeys.length > 1 && (
-                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 14, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
                       <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_sales_trend_title')}</span>
                       <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684' }}>
                         <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
                         <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
                       </div>
                     </div>
-                    <svg viewBox="0 0 360 110" preserveAspectRatio="none" style={{ width: '100%', height: 100 }}>
-                      <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2" />
-                      <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="1.5" strokeDasharray="4,3" />
+                    <svg viewBox="0 0 360 110" preserveAspectRatio="none" style={{ width: '100%', height: 160, display: 'block' }}>
+                      <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
+                      <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
                       {netCoords.map((c, i) => (
                         <g key={'net' + i}>
                           <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
-                          <text x={c.x} y={c.y - 7} textAnchor={i === 0 ? 'start' : i === netCoords.length - 1 ? 'end' : 'middle'} fontSize="7.5" fontWeight="700" fill={SALES_LINE_COLORS.net}>
+                          <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === netCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
                             {formatEuro(c.value)}
                           </text>
                         </g>
@@ -694,13 +694,13 @@ export default function DashboardView({ isDriver = false } = {}) {
                       {txCoords.map((c, i) => (
                         <g key={'tx' + i}>
                           <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
-                          <text x={c.x} y={c.y + 14} textAnchor={i === 0 ? 'start' : i === txCoords.length - 1 ? 'end' : 'middle'} fontSize="7.5" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
+                          <text x={c.x} y={c.y + 15} textAnchor={i === 0 ? 'start' : i === txCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
                             {Math.round(c.value)}
                           </text>
                         </g>
                       ))}
                     </svg>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#97a2b0', marginTop: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: '#97a2b0', marginTop: 4 }}>
                       {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
                     </div>
                   </div>
