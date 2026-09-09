@@ -81,6 +81,7 @@ function emptyDraft() {
     discountPct: 0,
     selectedCategories: [],
     categoryDiscounts: {},
+    productPriceOverrides: {},
     customerCompanyName: '',
     customerMessage: DEFAULT_CUSTOMER_MESSAGE_EL
   };
@@ -245,27 +246,34 @@ function computeSubsidyScenario(subsidyAmount, volumeGrowthPct, destructionPct, 
 // δικό τους ποσοστό παίρνουν απλά το γενικό. Η εφαρμογή υπολογίζει όλη την υπόλοιπη
 // πληροφορία (νέα τιμή, νέα αξία, F.C., μικτό κέρδος) όπως ακριβώς στο μοντέλο επιδότησης,
 // απλά χωρίς αύξηση όγκου / καταστροφές / άτομα κτιρίου / κάλυψη επιδότησης.
-function computeDiscountScenario(discountPctInput, categoryDiscounts, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basicTotals = BASIC_TOTALS) {
+function computeDiscountScenario(discountPctInput, categoryDiscounts, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basicTotals = BASIC_TOTALS, productPriceOverrides = {}) {
   const BASIC_COGS_ACTIVE = basicTotals.cogs;
   const BASIC_TOTAL_VALUE_ACTIVE = basicTotals.totalValue;
   const MAX_DISCOUNT_PCT = 90;
   const rawGeneralPct = Number(discountPctInput) || 0;
   const generalPctClamped = Math.min(Math.max(rawGeneralPct, 0), MAX_DISCOUNT_PCT);
   const overrides = categoryDiscounts && typeof categoryDiscounts === 'object' ? categoryDiscounts : {};
+  const priceOverrides = productPriceOverrides && typeof productPriceOverrides === 'object' ? productPriceOverrides : {};
   let discountCapped = rawGeneralPct > MAX_DISCOUNT_PCT || rawGeneralPct < 0;
 
   let soldNetRevenue = 0;
   let pctOffSum = 0;
 
   const rows = baselineProducts.map((p) => {
+    // Καρφωτή τιμή ανά προϊόν (extra επιλογή) — αν υπάρχει, παρακάμπτει ΕΝΤΕΛΩΣ το γενικό/
+    // ανά κατηγορία ποσοστό για αυτό το συγκεκριμένο προϊόν: η νέα τιμή είναι ΑΚΡΙΒΩΣ αυτή
+    // που όρισε ο χρήστης, χωρίς στρογγυλοποίηση προς τα πάνω (είναι ήδη ρητή απόφαση).
+    const priceOverrideRaw = priceOverrides[p.code];
+    const hasPriceOverride = priceOverrideRaw !== undefined && priceOverrideRaw !== null && priceOverrideRaw !== '' && isFinite(Number(priceOverrideRaw)) && Number(priceOverrideRaw) > 0;
+
     const overrideRaw = overrides[p.cat];
     const hasOverride = overrideRaw !== undefined && overrideRaw !== null && overrideRaw !== '';
     const rawPct = hasOverride ? Number(overrideRaw) : rawGeneralPct;
-    if (hasOverride && (rawPct > MAX_DISCOUNT_PCT || rawPct < 0 || !isFinite(rawPct))) discountCapped = true;
+    if (!hasPriceOverride && hasOverride && (rawPct > MAX_DISCOUNT_PCT || rawPct < 0 || !isFinite(rawPct))) discountCapped = true;
     const catPct = Math.min(Math.max(isFinite(rawPct) ? rawPct : 0, 0), MAX_DISCOUNT_PCT);
     const discountFrac = catPct / 100;
 
-    const newPrice = roundUpToDime(p.basicPrice * (1 - discountFrac));
+    const newPrice = hasPriceOverride ? Number(priceOverrideRaw) : roundUpToDime(p.basicPrice * (1 - discountFrac));
     const newValue = (newPrice / 1.13) * p.juneQty;
     const diff = newValue - p.basicValue;
     soldNetRevenue += newValue;
@@ -275,7 +283,7 @@ function computeDiscountScenario(discountPctInput, categoryDiscounts, baselinePr
     const pctOff = p.basicPrice ? ((p.basicPrice - newPrice) / p.basicPrice) * 100 : 0;
     pctOffSum += pctOff;
 
-    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff, inScope: true, appliedPct: catPct, hasOverride };
+    return { ...p, newPrice, newValue, diff, fcBasic, fcNew, pctOff, inScope: true, appliedPct: catPct, hasOverride, hasPriceOverride };
   });
 
   const grossProfit = soldNetRevenue - BASIC_COGS_ACTIVE;
@@ -298,6 +306,7 @@ function computeDiscountScenario(discountPctInput, categoryDiscounts, baselinePr
     revenueDrop,
     hasCategoryFilter: Object.keys(overrides).some((k) => overrides[k] !== undefined && overrides[k] !== null && overrides[k] !== ''),
     categoryDiscounts: overrides,
+    productPriceOverrides: priceOverrides,
     discountCapped
   };
 }
@@ -306,7 +315,7 @@ function computeDiscountScenario(discountPctInput, categoryDiscounts, baselinePr
 // (παλιά αποθηκευμένα σενάρια δεν έχουν mode — θεωρούνται 'subsidy' για συμβατότητα).
 function computeScenario(sc, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basicTotals = BASIC_TOTALS) {
   if (sc && sc.mode === 'discount') {
-    return computeDiscountScenario(sc.discountPct, sc.categoryDiscounts, baselineProducts, basicTotals);
+    return computeDiscountScenario(sc.discountPct, sc.categoryDiscounts, baselineProducts, basicTotals, sc.productPriceOverrides);
   }
   return computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories, baselineProducts, basicTotals);
 }
@@ -421,6 +430,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
         categoryDiscounts: (editing.categoryDiscounts && typeof editing.categoryDiscounts === 'object')
           ? Object.fromEntries(
               Object.entries(editing.categoryDiscounts).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+            )
+          : {},
+        productPriceOverrides: (editing.productPriceOverrides && typeof editing.productPriceOverrides === 'object')
+          ? Object.fromEntries(
+              Object.entries(editing.productPriceOverrides).filter(([, v]) => v !== '' && v !== null && v !== undefined)
             )
           : {},
         customerCompanyName: editing.customerCompanyName || '',
@@ -1236,6 +1250,9 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
             )}
 
             <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
+              {editing.mode === 'discount' && !readOnly && (
+                <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 10px' }}>{t('sc_price_override_hint')}</p>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                 <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('sc_products_count')}</span>
                 <input
@@ -1274,7 +1291,27 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.basicPrice)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.basicValue)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7684' }}>{isFinite(r.fcBasic) ? fmtNum(r.fcBasic, 1) + '%' : '—'}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2f8f8a' }}>{fmtEuro(r.newPrice)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: r.hasPriceOverride ? '#c98a1f' : '#2f8f8a' }}>
+                          {editing.mode === 'discount' && !readOnly ? (
+                            <input
+                              type="number" step="0.01" min="0"
+                              placeholder={fmtEuro(r.newPrice).replace('€', '')}
+                              value={(editing.productPriceOverrides && editing.productPriceOverrides[r.code]) ?? ''}
+                              title={t('sc_price_override_hint')}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setEditing((prev) => {
+                                  const next = { ...(prev.productPriceOverrides || {}) };
+                                  if (v === '') delete next[r.code]; else next[r.code] = v;
+                                  return { ...prev, productPriceOverrides: next };
+                                });
+                              }}
+                              style={{ width: 80, padding: '4px 6px', textAlign: 'right', border: r.hasPriceOverride ? '1px solid #c98a1f' : '1px solid #dde2e8', borderRadius: 5, fontSize: 12, fontWeight: 700, color: r.hasPriceOverride ? '#c98a1f' : '#2f8f8a' }}
+                            />
+                          ) : (
+                            fmtEuro(r.newPrice)
+                          )}
+                        </td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#2f8f8a' }}>−{fmtNum(r.pctOff, 1)}%</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#16233f' }}>{fmtEuro(r.newValue)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c0392b' }}>{isFinite(r.fcNew) ? fmtNum(r.fcNew, 1) + '%' : '—'}</td>
