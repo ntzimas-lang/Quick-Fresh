@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Contacts, Entries, SalesDaily, SalesProducts, SalesTimeBuckets, SalesShiftBreakdown, Products } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
@@ -107,6 +107,20 @@ export default function DashboardView({ isDriver = false } = {}) {
   // Ποιες κατηγορίες (ανά μήνα) είναι ανοιχτές για να δείχνουν τα προϊόντα τους
   // από μέσα — key: "monthKey|category".
   const [expandedMonthCategories, setExpandedMonthCategories] = useState(() => new Set());
+  // Το γράφημα "Τάσεις ανά μήνα" σχεδιάζεται σε πραγματικά pixel (όχι με
+  // preserveAspectRatio="none"), ώστε τα γράμματα των ετικετών να μην παραμορφώνονται
+  // (μη-ομοιόμορφο scale x/y). Μετράμε το πλάτος του container με ResizeObserver.
+  const trendChartWrapRef = useRef(null);
+  const [trendChartWidth, setTrendChartWidth] = useState(600);
+  useEffect(() => {
+    const el = trendChartWrapRef.current;
+    if (!el) return undefined;
+    const update = () => setTrendChartWidth(el.clientWidth || 600);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   function toggleMonthCategory(key) {
     setExpandedMonthCategories((prev) => {
       const next = new Set(prev);
@@ -219,8 +233,8 @@ export default function DashboardView({ isDriver = false } = {}) {
   const monthTx = monthKeys.map((k) => monthMap[k].tx);
   const monthAvgBasket = monthKeys.map((k) => (monthMap[k].tx ? monthMap[k].items / monthMap[k].tx : 0));
   const monthAvgTicket = monthKeys.map((k) => (monthMap[k].tx ? monthMap[k].net / monthMap[k].tx : 0));
-  const netCoords = trendCoords(monthNet);
-  const txCoords = trendCoords(monthTx);
+  const netCoords = trendCoords(monthNet, trendChartWidth);
+  const txCoords = trendCoords(monthTx, trendChartWidth);
 
   // Τάση ανά ημέρα (καθαρές πωλήσεις / συναλλαγές) — ίδια λογική με το μηνιαίο γράφημα,
   // αλλά με ένα σημείο ανά ημερομηνία. Το πλάτος του γραφήματος μεγαλώνει ανάλογα με τον
@@ -680,28 +694,30 @@ export default function DashboardView({ isDriver = false } = {}) {
                         <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
                       </div>
                     </div>
-                    <svg viewBox="0 0 360 110" preserveAspectRatio="none" style={{ width: '100%', height: 160, display: 'block' }}>
-                      <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
-                      <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
-                      {netCoords.map((c, i) => (
-                        <g key={'net' + i}>
-                          <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
-                          <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === netCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
-                            {formatEuro(c.value)}
-                          </text>
-                        </g>
-                      ))}
-                      {txCoords.map((c, i) => (
-                        <g key={'tx' + i}>
-                          <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
-                          <text x={c.x} y={c.y + 15} textAnchor={i === 0 ? 'start' : i === txCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
-                            {Math.round(c.value)}
-                          </text>
-                        </g>
-                      ))}
-                    </svg>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: '#97a2b0', marginTop: 4 }}>
-                      {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
+                    <div ref={trendChartWrapRef} style={{ width: '100%' }}>
+                      <svg viewBox={`0 0 ${trendChartWidth} 110`} style={{ width: trendChartWidth, height: 160, display: 'block' }}>
+                        <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
+                        <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
+                        {netCoords.map((c, i) => (
+                          <g key={'net' + i}>
+                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
+                            <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === netCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
+                              {formatEuro(c.value)}
+                            </text>
+                          </g>
+                        ))}
+                        {txCoords.map((c, i) => (
+                          <g key={'tx' + i}>
+                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
+                            <text x={c.x} y={c.y + 15} textAnchor={i === 0 ? 'start' : i === txCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
+                              {Math.round(c.value)}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: '#97a2b0', marginTop: 4 }}>
+                        {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
+                      </div>
                     </div>
                   </div>
                 )}
