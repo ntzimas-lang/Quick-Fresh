@@ -680,13 +680,13 @@ export default function DashboardView({ isDriver = false } = {}) {
                         <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
                       </div>
                     </div>
-                    <svg viewBox="0 0 360 110" preserveAspectRatio="none" style={{ width: '100%', height: 160, overflow: 'visible' }}>
+                    <svg viewBox="0 0 360 110" preserveAspectRatio="none" style={{ width: '100%', height: 160 }}>
                       <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
                       <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
                       {netCoords.map((c, i) => (
                         <g key={'net' + i}>
                           <circle cx={c.x} cy={c.y} r="3" fill={SALES_LINE_COLORS.net} />
-                          <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.net}>
+                          <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === netCoords.length - 1 ? 'end' : 'middle'} fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.net}>
                             {formatEuro(c.value)}
                           </text>
                         </g>
@@ -694,7 +694,7 @@ export default function DashboardView({ isDriver = false } = {}) {
                       {txCoords.map((c, i) => (
                         <g key={'tx' + i}>
                           <circle cx={c.x} cy={c.y} r="3" fill={SALES_LINE_COLORS.tx} />
-                          <text x={c.x} y={c.y + 16} textAnchor="middle" fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
+                          <text x={c.x} y={c.y + 16} textAnchor={i === 0 ? 'start' : i === txCoords.length - 1 ? 'end' : 'middle'} fontSize="9" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
                             {Math.round(c.value)}
                           </text>
                         </g>
