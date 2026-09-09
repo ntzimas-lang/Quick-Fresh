@@ -680,7 +680,7 @@ export default function DashboardView({ isDriver = false } = {}) {
                         <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
                       </div>
                     </div>
-                    <svg viewBox="0 0 360 110" style={{ width: '100%', height: 160 }}>
+                    <svg viewBox="0 0 360 110" preserveAspectRatio="none" style={{ width: '100%', height: 160 }}>
                       <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
                       <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
                       {netCoords.map((c, i) => (
