@@ -130,6 +130,34 @@ function computeMonthlyQtyByScancode(salesProducts) {
     }));
 }
 
+// Χτίζει την "κλιμακωμένη" εκδοχή της βάσης τιμοκαταλόγου για έναν συγκεκριμένο μήνα:
+// κάθε προϊόν παίρνει την ΠΡΑΓΜΑΤΙΚΗ ποσότητα εκείνου του μήνα αν ταιριάζει (πρώτα μέσω
+// itemCode/Userkey, μετά μέσω scancode->barcode), αλλιώς εκτίμηση με τον γενικό λόγο
+// όγκου. Κοινή λογική, χρησιμοποιείται τόσο για το Μηνιαίο Breakdown ενός σεναρίου όσο
+// και για την κάρτα "BASIC (Χωρίς Επιδότηση)" της αρχικής οθόνης.
+function buildScaledBaselineForMonth(mergedBaseline, ratio, byItemCode, byScancode, barcodeToItemCode) {
+  // (1) Πρωτεύον: itemCode απευθείας (Userkey == κωδικός τιμοκαταλόγου).
+  const realQtyByCode = {};
+  Object.entries(byItemCode || {}).forEach(([code, qty]) => {
+    realQtyByCode[code] = (realQtyByCode[code] || 0) + qty;
+  });
+  // (2) Δευτερεύον: scancode -> barcode -> itemCode, ΜΟΝΟ για κωδικούς που δεν
+  // καλύφθηκαν ήδη από το (1) — αποφεύγει διπλομέτρημα όταν ένα προϊόν έχει και
+  // Userkey και ταιριαστό barcode.
+  Object.entries(byScancode || {}).forEach(([scancode, qty]) => {
+    const code = barcodeToItemCode[scancode];
+    if (code && realQtyByCode[code] === undefined) realQtyByCode[code] = qty;
+  });
+  const scaledBaseline = mergedBaseline.map((p) => {
+    const real = realQtyByCode[p.code];
+    const isRealQty = real !== undefined;
+    const juneQty = isRealQty ? real : (Number(p.juneQty) || 0) * ratio;
+    return { ...p, juneQty, basicValue: (p.basicPrice / 1.13) * juneQty, isRealQty };
+  });
+  const matchedCount = scaledBaseline.filter((p) => p.isRealQty).length;
+  return { scaledBaseline, matchedCount, totalCount: scaledBaseline.length };
+}
+
 // --- Στατικό σύνολο αναφοράς (τιμοκατάλογος BASIC), από το ανεβασμένο Excel -----
 // ΣΗΜΕΙΩΣΗ: αυτό είναι πλέον μόνο η ΣΤΑΤΙΚΗ βάση/fallback (κωδικός + ποσότητα Ιουνίου).
 // Μέσα στο component, η τιμή (basicPrice), το κόστος (ptk) και η κατηγορία (cat) αντικαθίστανται
@@ -540,26 +568,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     if (!editing || editing.mode === 'discount' || !baselineJuneQtyTotal || !monthlyQtyList.length) return [];
     return monthlyQtyList.map(({ monthKey, totalQty, periodTexts, byItemCode, byScancode }) => {
       const ratio = totalQty / baselineJuneQtyTotal;
-      // (1) Πρωτεύον: itemCode απευθείας (Userkey == κωδικός τιμοκαταλόγου).
-      const realQtyByCode = {};
-      Object.entries(byItemCode || {}).forEach(([code, qty]) => {
-        realQtyByCode[code] = (realQtyByCode[code] || 0) + qty;
-      });
-      // (2) Δευτερεύον: scancode -> barcode -> itemCode, ΜΟΝΟ για κωδικούς που δεν
-      // καλύφθηκαν ήδη από το (1) — αποφεύγει διπλομέτρημα όταν ένα προϊόν έχει και
-      // Userkey και ταιριαστό barcode.
-      Object.entries(byScancode || {}).forEach(([scancode, qty]) => {
-        const code = barcodeToItemCode[scancode];
-        // Αν ήδη έχουμε πραγματική ποσότητα από το Userkey για αυτόν τον κωδικό, δεν
-        // την ξαναγράφουμε με το scancode (θα ήταν διπλομέτρημα).
-        if (code && realQtyByCode[code] === undefined) realQtyByCode[code] = qty;
-      });
-      const scaledBaseline = mergedBaseline.map((p) => {
-        const real = realQtyByCode[p.code];
-        const isRealQty = real !== undefined;
-        const juneQty = isRealQty ? real : (Number(p.juneQty) || 0) * ratio;
-        return { ...p, juneQty, basicValue: (p.basicPrice / 1.13) * juneQty, isRealQty };
-      });
+      const { scaledBaseline, matchedCount, totalCount } = buildScaledBaselineForMonth(mergedBaseline, ratio, byItemCode, byScancode, barcodeToItemCode);
       const scaledTotals = computeBaselineTotals(scaledBaseline);
       const result = computeSubsidyScenario(
         editing.subsidyAmount,
@@ -570,8 +579,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
         scaledBaseline,
         scaledTotals
       );
-      const matchedCount = scaledBaseline.filter((p) => p.isRealQty).length;
-      return { monthKey, totalQty: Math.round(totalQty), ratio, periodTexts, result, matchedCount, totalCount: scaledBaseline.length };
+      return { monthKey, totalQty: Math.round(totalQty), ratio, periodTexts, result, matchedCount, totalCount };
     });
   }, [editing, mergedBaseline, baselineJuneQtyTotal, monthlyQtyList, barcodeToItemCode]);
 
@@ -583,6 +591,26 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     [viewMonthKey, monthlyBreakdown]
   );
   const activePreview = activeMonthEntry ? activeMonthEntry.result : preview;
+
+  // --- Ίδιο Μηνιαίο Breakdown, αλλά για την κάρτα "BASIC (Χωρίς Επιδότηση)" της αρχικής
+  // οθόνης (πριν ανοίξει κανένα σενάριο) — δεν χρειάζεται computeSubsidyScenario, μόνο τα
+  // σύνολα (τζίρος/κόστος/μικτό κέρδος/F.C.) πάνω στην κλιμακωμένη βάση κάθε μήνα.
+  const baselineMonthlyBreakdown = useMemo(() => {
+    if (!baselineJuneQtyTotal || !monthlyQtyList.length) return [];
+    return monthlyQtyList.map(({ monthKey, totalQty, periodTexts, byItemCode, byScancode }) => {
+      const ratio = totalQty / baselineJuneQtyTotal;
+      const { scaledBaseline, matchedCount, totalCount } = buildScaledBaselineForMonth(mergedBaseline, ratio, byItemCode, byScancode, barcodeToItemCode);
+      const totals = computeBaselineTotals(scaledBaseline);
+      return { monthKey, totalQty: Math.round(totalQty), ratio, periodTexts, totals, matchedCount, totalCount };
+    });
+  }, [mergedBaseline, baselineJuneQtyTotal, monthlyQtyList, barcodeToItemCode]);
+
+  const [baselineViewMonthKey, setBaselineViewMonthKey] = useState(null);
+  const activeBaselineMonthEntry = useMemo(
+    () => (baselineViewMonthKey ? baselineMonthlyBreakdown.find((m) => m.monthKey === baselineViewMonthKey) : null),
+    [baselineViewMonthKey, baselineMonthlyBreakdown]
+  );
+  const activeBaselineTotals = activeBaselineMonthEntry ? activeBaselineMonthEntry.totals : mergedTotals;
 
   function startNew() {
     setSaveError('');
@@ -1052,23 +1080,34 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               </div>
             )}
 
+            {activeBaselineMonthEntry && (
+              <div style={{ background: '#eef7f6', border: '1px solid #bfe1de', borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 13, color: '#16233f' }}>
+                  {t('sc_viewing_month_prefix')} <strong>{monthLabel(activeBaselineMonthEntry.monthKey, lang)}</strong> — {activeBaselineMonthEntry.matchedCount}/{activeBaselineMonthEntry.totalCount} {t('sc_viewing_month_matched_suffix')}
+                </span>
+                <button type="button" onClick={() => setBaselineViewMonthKey(null)} style={{ border: '1px solid #2f8f8a', background: '#fff', color: '#2f8f8a', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
+                  {t('sc_back_to_current_button')}
+                </button>
+              </div>
+            )}
+
             <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
               <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>{t('sc_baseline_label')}</div>
               <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(mergedTotals.totalValue)}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activeBaselineTotals.totalValue)}</div>
                   <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_net_revenue_label')}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(mergedTotals.cogs)}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activeBaselineTotals.cogs)}</div>
                   <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_cogs_label')}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(mergedTotals.grossProfit)}</div>
-                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_gross_profit_label')} ({fmtPct1(mergedTotals.grossProfitPct)})</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activeBaselineTotals.grossProfit)}</div>
+                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_gross_profit_label')} ({fmtPct1(activeBaselineTotals.grossProfitPct)})</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#c0392b' }}>{fmtNum(mergedTotals.fcPct, 1)}%</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#c0392b' }}>{fmtNum(activeBaselineTotals.fcPct, 1)}%</div>
                   <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_label')}</div>
                 </div>
                 <div>
@@ -1077,6 +1116,50 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                 </div>
               </div>
             </div>
+
+            {baselineMonthlyBreakdown.length > 0 && (
+              <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
+                <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('sc_monthly_breakdown_title')}</div>
+                <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 12px', maxWidth: 760 }}>{t('sc_baseline_monthly_breakdown_hint')}</p>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 560 }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 10.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
+                        <th style={{ padding: '7px 8px' }}>{t('sc_col_month')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_month_qty_ratio')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_match_rate')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_net_revenue_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_cogs_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_gross_profit_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_fc_label')}</th>
+                        <th style={{ padding: '7px 8px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {baselineMonthlyBreakdown.map(({ monthKey, totalQty, ratio, totals, matchedCount, totalCount }) => {
+                        const isActive = baselineViewMonthKey === monthKey;
+                        return (
+                          <tr
+                            key={monthKey}
+                            onClick={() => setBaselineViewMonthKey(isActive ? null : monthKey)}
+                            style={{ borderTop: '1px solid #eef1f4', cursor: 'pointer', background: isActive ? '#eef7f6' : 'transparent' }}
+                          >
+                            <td style={{ padding: '6px 8px', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{monthLabel(monthKey, lang)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7684' }}>{fmtNum(totalQty, 0)} ({fmtNum(ratio * 100, 0)}%)</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7684' }}>{matchedCount}/{totalCount}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(totals.totalValue)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(totals.cogs)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#16233f' }}>{fmtEuro(totals.grossProfit)} ({fmtPct1(totals.grossProfitPct)})</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c0392b' }}>{fmtNum(totals.fcPct, 1)}%</td>
+                            <td style={{ padding: '6px 8px', color: '#2f8f8a', fontSize: 11, whiteSpace: 'nowrap' }}>{isActive ? t('sc_month_row_active_label') : t('sc_month_row_view_label')}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {loading ? (
               <p style={{ color: '#97a2b0' }}>{t('sc_loading')}</p>
