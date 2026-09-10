@@ -13,6 +13,31 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Το Supabase/PostgREST επιστρέφει ΤΟ ΠΟΛΥ 1000 γραμμές ανά request από προεπιλογή —
+// ένα απλό `.select('*')` χωρίς pagination "κόβει" σιωπηλά ό,τι είναι πάνω από 1000
+// (χωρίς error, απλά λείπουν γραμμές, συχνά οι πιο πρόσφατες, αφού δεν υπάρχει
+// εγγυημένη σειρά χωρίς explicit .order()). Πίνακες σαν sales_products/
+// sales_time_buckets μεγαλώνουν συνεχώς με κάθε νέο upload και τελικά ξεπερνούν το
+// όριο — το σύμπτωμα είναι ότι νέα δεδομένα "δεν φαίνονται" στην εφαρμογή ό,τι
+// refresh/cache-clear κι αν κάνει ο χρήστης, γιατί το API call τα αγνοεί εξ αρχής.
+// Αυτό το helper διαβάζει ΟΛΕΣ τις γραμμές ενός πίνακα σε διαδοχικές σελίδες των
+// 1000, ώστε να μη χαθεί ποτέ τίποτα όσο κι αν μεγαλώσει ο πίνακας.
+async function fetchAllRows(table, { orderBy, ascending = true } = {}) {
+  const pageSize = 1000;
+  let from = 0;
+  let all = [];
+  for (;;) {
+    let q = supabase.from(table).select('*').range(from, from + pageSize - 1);
+    if (orderBy) q = q.order(orderBy, { ascending });
+    const { data, error } = await q;
+    if (error) throw error;
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 function newId() {
   return (crypto.randomUUID && crypto.randomUUID()) || 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
 }
@@ -90,8 +115,7 @@ function defaultContact(overrides) {
 
 export const Products = {
   async list() {
-    const { data, error } = await supabase.from('products').select('*').order('updated_at', { ascending: true });
-    if (error) throw error;
+    const data = await fetchAllRows('products', { orderBy: 'updated_at', ascending: true });
     return data.map(rowToRecord).map(normalizeProduct);
   },
   async get(id) {
@@ -128,8 +152,7 @@ export const Products = {
 
 export const Contacts = {
   async list() {
-    const { data, error } = await supabase.from('contacts').select('*').order('updated_at', { ascending: true });
-    if (error) throw error;
+    const data = await fetchAllRows('contacts', { orderBy: 'updated_at', ascending: true });
     return data.map(rowToRecord);
   },
   async get(id) {
@@ -166,8 +189,7 @@ export const Contacts = {
 
 export const Entries = {
   async list() {
-    const { data, error } = await supabase.from('product_entries').select('*').order('updated_at', { ascending: false });
-    if (error) throw error;
+    const data = await fetchAllRows('product_entries', { orderBy: 'updated_at', ascending: false });
     return data.map(rowToRecord);
   },
   async create({ productId, productItemCode, productDescription, store, expiryDate, quantity }) {
@@ -213,8 +235,7 @@ export const Entries = {
 
 export const SalesDaily = {
   async list() {
-    const { data, error } = await supabase.from('sales_daily').select('*');
-    if (error) throw error;
+    const data = await fetchAllRows('sales_daily');
     return data.map(rowToRecord);
   },
   // rows: [{ id, ...fields }] — id = `${date}|${store}` ώστε το ξαναανέβασμα μιας
@@ -230,8 +251,7 @@ export const SalesDaily = {
 
 export const SalesProducts = {
   async list() {
-    const { data, error } = await supabase.from('sales_products').select('*');
-    if (error) throw error;
+    const data = await fetchAllRows('sales_products');
     return data.map(rowToRecord);
   },
   // Κάθε upload είναι μία "παρτίδα" (batchId) — κρατάμε το ιστορικό, το Dashboard
@@ -265,8 +285,7 @@ export const SalesProducts = {
 // "Sales By 30 Minutes" (ή "Sales By 15 Minutes") — τροφοδοτεί το γράφημα "Ώρες Αιχμής".
 export const SalesTimeBuckets = {
   async list() {
-    const { data, error } = await supabase.from('sales_time_buckets').select('*');
-    if (error) throw error;
+    const data = await fetchAllRows('sales_time_buckets');
     return data.map(rowToRecord);
   },
   async insertBatch(rows) {
@@ -286,8 +305,7 @@ export const SalesTimeBuckets = {
 // "Sales Time Details".
 export const SalesShiftBreakdown = {
   async list() {
-    const { data, error } = await supabase.from('sales_shift_breakdown').select('*');
-    if (error) throw error;
+    const data = await fetchAllRows('sales_shift_breakdown');
     return data.map(rowToRecord);
   },
   async insertBatch(rows) {
@@ -305,8 +323,7 @@ export const SalesShiftBreakdown = {
 
 export const Destructions = {
   async list() {
-    const { data, error } = await supabase.from('destructions').select('*').order('updated_at', { ascending: false });
-    if (error) throw error;
+    const data = await fetchAllRows('destructions', { orderBy: 'updated_at', ascending: false });
     return data.map(rowToRecord);
   },
   // Καταγράφει την καταστροφή ΚΑΙ αφαιρεί αυτόματα τυχόν καταχωρήσεις "Ληγμένα"
@@ -378,8 +395,7 @@ export const Destructions = {
 // να διαγραφούν αργότερα (Super User ή ρόλος "Χρήστης").
 export const DeliveryShortages = {
   async list() {
-    const { data, error } = await supabase.from('delivery_shortages').select('*').order('updated_at', { ascending: false });
-    if (error) throw error;
+    const data = await fetchAllRows('delivery_shortages', { orderBy: 'updated_at', ascending: false });
     return data.map(rowToRecord);
   },
   async insertMany(rows) {
@@ -420,8 +436,7 @@ export const DeliveryShortages = {
 
 export const NewCustomers = {
   async list() {
-    const { data, error } = await supabase.from('new_customers').select('*').order('updated_at', { ascending: false });
-    if (error) throw error;
+    const data = await fetchAllRows('new_customers', { orderBy: 'updated_at', ascending: false });
     return data.map(rowToRecord);
   },
   async create(body) {
@@ -472,8 +487,7 @@ export const NewCustomers = {
 
 export const PricingScenarios = {
   async list() {
-    const { data, error } = await supabase.from('pricing_scenarios').select('*').order('updated_at', { ascending: false });
-    if (error) throw error;
+    const data = await fetchAllRows('pricing_scenarios', { orderBy: 'updated_at', ascending: false });
     return data.map(rowToRecord);
   },
   async create(body) {
@@ -524,8 +538,7 @@ export const PricingScenarios = {
 
 export const PendingDeliveries = {
   async list() {
-    const { data, error } = await supabase.from('pending_deliveries').select('*').order('updated_at', { ascending: true });
-    if (error) throw error;
+    const data = await fetchAllRows('pending_deliveries', { orderBy: 'updated_at', ascending: true });
     return data.map(rowToRecord);
   },
   async create(body) {
@@ -573,8 +586,7 @@ export const PendingDeliveries = {
 
 export const StoreEquipment = {
   async list() {
-    const { data, error } = await supabase.from('store_equipment').select('*').order('updated_at', { ascending: true });
-    if (error) throw error;
+    const data = await fetchAllRows('store_equipment', { orderBy: 'updated_at', ascending: true });
     return data.map(rowToRecord);
   },
   async create(body) {
@@ -632,8 +644,7 @@ export const History = {
 
 export const Profiles = {
   async list() {
-    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: true });
-    if (error) throw error;
+    const data = await fetchAllRows('profiles', { orderBy: 'created_at', ascending: true });
     return data;
   },
   async updateRole(id, role) {
