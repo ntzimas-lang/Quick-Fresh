@@ -24,6 +24,14 @@ function fmtSignedCost(n) {
   const v = isFinite(n) ? n : 0;
   return v >= 0 ? '−' + fmtEuro(v) : '+' + fmtEuro(-v);
 }
+// Ημερομηνία δημιουργίας ενός αποθηκευμένου σεναρίου (createdAt) — χρησιμοποιείται στη
+// λίστα ώστε ένα αντίγραφο (clone) και το πρωτότυπό του να ξεχωρίζουν εύκολα.
+function fmtDate(iso, lang) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(lang === 'en' ? 'en-GB' : 'el-GR');
+}
 
 // --- Στατικό σύνολο αναφοράς (τιμοκατάλογος BASIC), από το ανεβασμένο Excel -----
 // ΣΗΜΕΙΩΣΗ: αυτό είναι πλέον μόνο η ΣΤΑΤΙΚΗ βάση/fallback (κωδικός + ποσότητα Ιουνίου).
@@ -402,6 +410,22 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     setSaveError('');
     setSearch('');
     setEditing({ ...emptyDraft(), ...sc });
+  }
+
+  // Αντιγραφή ενός ήδη αποθηκευμένου σεναρίου (π.χ. μιας προσφοράς που έχει ήδη
+  // σταλεί) σε ένα ΝΕΟ σενάριο — ίδιες τιμές αρχικά, αλλά χωρίς id/createdAt, ώστε το
+  // save() να δημιουργήσει ξεχωριστή εγγραφή αντί να ενημερώσει το πρωτότυπο. Έτσι
+  // μένουν και τα δύο στη λίστα, το καθένα με τη δική του ημερομηνία δημιουργίας, και
+  // το αντίγραφο μπορεί να αλλάξει ελεύθερα τιμές χωρίς να πειράξει το αρχικό.
+  function startClone(sc) {
+    setSaveError('');
+    setSearch('');
+    const { id, createdAt, createdBy, createdByEmail, ...rest } = sc;
+    setEditing({
+      ...emptyDraft(),
+      ...rest,
+      name: `${sc.name || ''} ${t('sc_clone_suffix')}`.trim()
+    });
   }
 
   function cancelEdit() {
@@ -897,7 +921,8 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_people')}</th>
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_erosion')}</th>
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_benefit')}</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'center', minWidth: 64 }}></th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>{t('sc_col_list_date')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center', minWidth: 84 }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -912,9 +937,13 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : fmtNum(result.buildingPeople, 0)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: sc.mode === 'discount' ? '#16233f' : (result.erosion >= 0 ? '#c0392b' : '#2f8f8a'), fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : fmtSignedCost(result.erosion)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#2f8f8a', fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : '+' + fmtEuro(result.netBenefitVsToday)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#97a2b0', whiteSpace: 'nowrap' }}>{fmtDate(sc.createdAt, lang)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                             {!readOnly && (
                               <button type="button" onClick={() => startEdit(sc)} title={t('sc_edit_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#2f8f8a', fontSize: 13, marginRight: 6 }}>✎</button>
+                            )}
+                            {!readOnly && (
+                              <button type="button" onClick={() => startClone(sc)} title={t('sc_clone_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#6b7684', fontSize: 13, marginRight: 6 }}>⧉</button>
                             )}
                             {canDelete && (
                               <button type="button" onClick={() => remove(sc.id)} title={t('sc_delete_button')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#c0392b', fontSize: 13 }}>✕</button>
