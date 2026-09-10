@@ -273,6 +273,23 @@ export default function DashboardView({ isDriver = false } = {}) {
   });
   const currentProducts = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
 
+  // Μερικές φορές το Sales Analysis Report περιέχει το ΙΔΙΟ προϊόν δύο φορές με το ίδιο
+  // όνομα — μία με τη σωστή κατηγορία (Cat1) και μία "φάντασμα" γραμμή χωρίς κατηγορία
+  // (π.χ. λόγω ασυμφωνίας ονόματος ανάμεσα στα φύλλα "Summary"/"Details" του αρχείου).
+  // Χωρίς διόρθωση, το ίδιο προϊόν θα εμφανιζόταν σε ΔΥΟ διαφορετικές κατηγορίες στο
+  // "Top 20 ανά Κατηγορία" (η μία "Χωρίς κατηγορία"), κόβοντας τεχνητά την ποσότητά του
+  // σε δύο κομμάτια. Φτιάχνουμε ένα "όνομα -> πραγματική κατηγορία" ευρετήριο (η πρώτη
+  // μη-κενή κατηγορία που βρίσκουμε για κάθε όνομα) και το χρησιμοποιούμε παντού
+  // αντί να διαβάζουμε το p.cat1 απευθείας.
+  const canonicalCat1ByName = {};
+  currentProducts.forEach((p) => {
+    const name = p.productName || '—';
+    if (p.cat1 && !canonicalCat1ByName[name]) canonicalCat1ByName[name] = p.cat1;
+  });
+  function resolvedCat1(p) {
+    return canonicalCat1ByName[p.productName || '—'] || p.cat1 || '';
+  }
+
   // F.C. % (Food Cost) = Κόστος / Καθ. Τζίρος × 100, από το ίδιο Sales Analysis Report
   // (στήλες Cost / netRevenue, ήδη σε αθροίσματα — ο λόγος τους ισούται με τον λόγο
   // κόστους/τιμής ανά μονάδα, ίδιος τύπος με το computeFC() του ProductsView.jsx).
@@ -290,7 +307,7 @@ export default function DashboardView({ isDriver = false } = {}) {
     productTotals[name].sold += p.sold || 0;
     productTotals[name].netRevenue += p.netRevenue || 0;
 
-    const cat = p.cat1 || t('d_category_uncategorized_label');
+    const cat = resolvedCat1(p) || t('d_category_uncategorized_label');
     categoryTotals[cat] = (categoryTotals[cat] || 0) + (p.netRevenue || 0);
 
     const label = p.periodLabel || '';
@@ -321,7 +338,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   // παραπάνω flat Top20/Worst20 block, ομαδοποιημένα κατά Cat1.
   const categoryProductTotals = {};
   currentProducts.forEach((p) => {
-    const cat = p.cat1 || t('d_category_uncategorized_label');
+    const cat = resolvedCat1(p) || t('d_category_uncategorized_label');
     const name = p.productName || '—';
     if (!categoryProductTotals[cat]) categoryProductTotals[cat] = {};
     categoryProductTotals[cat][name] = (categoryProductTotals[cat][name] || 0) + (p.sold || 0);
@@ -367,7 +384,7 @@ export default function DashboardView({ isDriver = false } = {}) {
     const range = extractPeriodRange(p.periodLabel);
     if (!range) return;
     const name = p.productName || '—';
-    const cat = p.cat1 || t('d_category_uncategorized_label');
+    const cat = resolvedCat1(p) || t('d_category_uncategorized_label');
 
     if (!activeDaysByProduct[name]) activeDaysByProduct[name] = new Set();
     soldByProductAllTime[name] = (soldByProductAllTime[name] || 0) + (p.sold || 0);
@@ -433,7 +450,7 @@ export default function DashboardView({ isDriver = false } = {}) {
     const { start, end } = range;
     const totalDays = daysBetweenInclusive(start, end);
     if (totalDays <= 0) return;
-    const cat = p.cat1 || t('d_category_uncategorized_label');
+    const cat = resolvedCat1(p) || t('d_category_uncategorized_label');
     const productName = p.productName || '—';
 
     // Σπάσιμο της περιόδου σε ημερολογιακούς μήνες.
