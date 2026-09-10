@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { PricingScenarios, Products } from '../api.js';
+import { PricingScenarios, Products, SalesProducts } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 import { SCENARIO_BASELINE_PRODUCTS } from '../data/scenarioBaseline.js';
 import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
@@ -31,6 +31,103 @@ function fmtDate(iso, lang) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString(lang === 'en' ? 'en-GB' : 'el-GR');
+}
+
+// --- Μηνιαίο breakdown σεναρίου Επιδότησης, με βάση πραγματικές μηνιαίες ποσότητες ---
+// Ίδια λογική proration (καταμερισμός περιόδου σε ημερολογιακούς μήνες) με το
+// DashboardView.jsx ("Πωλήσεις Τεμάχια ανά Κατηγορία — ανά Μήνα"). Το φύλλο "Summary" του
+// Sales Analysis Report έχει στήλη "Userkey" — είναι ο ΙΔΙΟΣ κωδικός προϊόντος (Item Code,
+// π.χ. "15.0915") με το SCENARIO_BASELINE_PRODUCTS.code / products.itemCode. Ο parser
+// (SalesView.jsx) τον αποθηκεύει στο πεδίο p.itemCode — ΑΥΤΟ είναι η πρωτεύουσα, πιο
+// αξιόπιστη βάση αντιστοίχισης (άμεσο ταίριασμα κωδικού, όχι μέσω ονόματος/barcode).
+// Ως δεύτερη γραμμή άμυνας (για γραμμές χωρίς Userkey, π.χ. παλαιότερα uploads πριν
+// προστεθεί αυτό το πεδίο) χρησιμοποιούμε scancode (barcode) -> products.barcodes[] ->
+// itemCode. Ό,τι δεν ταιριάξει με ΚΑΝΕΝΑΝ από τους δύο τρόπους παίρνει ως τελευταία
+// εναλλακτική τον γενικό λόγο (συνολικός όγκος μήνα / συνολικό juneQty βάσης), εφαρμοσμένο
+// ομοιόμορφα. Κάθε γραμμή του Μηνιαίου Breakdown δείχνει καθαρά αν η ποσότητά της είναι
+// ΠΡΑΓΜΑΤΙΚΗ (matched, μέσω itemCode ή barcode) ή ΕΚΤΙΜΗΣΗ (fallback).
+function daysBetweenInclusive(a, b) {
+  return Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+}
+function extractPeriodRange(label) {
+  const matches = [...String(label || '').matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
+  if (!matches.length) return null;
+  const first = matches[0];
+  const last = matches[matches.length - 1];
+  const start = new Date(`${first[3]}-${first[2]}-${first[1]}T00:00:00`);
+  const end = new Date(`${last[3]}-${last[2]}-${last[1]}T00:00:00`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return null;
+  return { start, end };
+}
+const MONTH_LABELS_EL = ['Ιαν', 'Φεβ', 'Μαρ', 'Απρ', 'Μαϊ', 'Ιουν', 'Ιουλ', 'Αυγ', 'Σεπ', 'Οκτ', 'Νοε', 'Δεκ'];
+const MONTH_LABELS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function monthLabel(key, lang) {
+  const [y, m] = key.split('-');
+  const labels = lang === 'en' ? MONTH_LABELS_EN : MONTH_LABELS_EL;
+  return `${labels[Number(m) - 1]} ${y}`;
+}
+// Επιστρέφει [{ monthKey, periodTexts, totalQty, byItemCode, byScancode }], ταξινομημένα
+// χρονολογικά, από το ΠΙΟ ΠΡΟΣΦΑΤΟ batch ανά κατάστημα (ίδιο dedup με το Dashboard —
+// αποφεύγει διπλομέτρημα σωρευτικών reports). byItemCode: { itemCode -> qty εκείνου του
+// μήνα } (από τη στήλη Userkey — πρωτεύον κλειδί). byScancode: { scancode -> qty } (barcode
+// — δευτερεύον κλειδί, για γραμμές/uploads χωρίς Userkey).
+function computeMonthlyQtyByScancode(salesProducts) {
+  const latestBatchByStore = {};
+  salesProducts.forEach((p) => {
+    const cur = latestBatchByStore[p.store];
+    if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStore[p.store] = p.uploadedAt;
+  });
+  const currentProducts = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
+
+  const monthQty = {};
+  const monthPeriodTexts = {};
+  const monthScancodeQty = {}; // monthKey -> { scancode -> qty }
+  const monthItemCodeQty = {}; // monthKey -> { itemCode -> qty }
+  currentProducts.forEach((p) => {
+    if (!(p.sold > 0)) return;
+    const range = extractPeriodRange(p.periodLabel);
+    if (!range) return;
+    const { start, end } = range;
+    const totalDays = daysBetweenInclusive(start, end);
+    if (totalDays <= 0) return;
+    const scancode = (p.scancode || '').trim();
+    const itemCode = (p.itemCode || '').trim();
+    let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const lastMonthStart = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= lastMonthStart) {
+      const monthStart = cursor;
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      const overlapStart = start > monthStart ? start : monthStart;
+      const overlapEnd = end < monthEnd ? end : monthEnd;
+      if (overlapStart <= overlapEnd) {
+        const overlapDays = daysBetweenInclusive(overlapStart, overlapEnd);
+        const weight = overlapDays / totalDays;
+        const qty = p.sold * weight;
+        const mk = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
+        monthQty[mk] = (monthQty[mk] || 0) + qty;
+        if (!monthPeriodTexts[mk]) monthPeriodTexts[mk] = new Set();
+        if (p.periodLabel) monthPeriodTexts[mk].add(p.periodLabel);
+        if (scancode) {
+          if (!monthScancodeQty[mk]) monthScancodeQty[mk] = {};
+          monthScancodeQty[mk][scancode] = (monthScancodeQty[mk][scancode] || 0) + qty;
+        }
+        if (itemCode) {
+          if (!monthItemCodeQty[mk]) monthItemCodeQty[mk] = {};
+          monthItemCodeQty[mk][itemCode] = (monthItemCodeQty[mk][itemCode] || 0) + qty;
+        }
+      }
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+  });
+  return Object.keys(monthQty)
+    .sort()
+    .map((mk) => ({
+      monthKey: mk,
+      totalQty: monthQty[mk],
+      periodTexts: Array.from(monthPeriodTexts[mk] || []),
+      byItemCode: monthItemCodeQty[mk] || {},
+      byScancode: monthScancodeQty[mk] || {}
+    }));
 }
 
 // --- Στατικό σύνολο αναφοράς (τιμοκατάλογος BASIC), από το ανεβασμένο Excel -----
@@ -352,13 +449,24 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   // Τιμή (cost.sellingPrice), κόστος (cost.ptk) και κατηγορία (categoryGr) τραβιούνται ΖΩΝΤΑΝΑ
   // από το Προϊόντα (πίνακας products), όχι πια από το στατικό snapshot Excel — έτσι το
   // τιμοκατάλογο των Σεναρίων ακολουθεί αυτόματα κάθε αλλαγή τιμής/κόστους/κατηγορίας που κάνεις
-  // στο Προϊόντα. Η ποσότητα αναφοράς (juneQty) παραμένει στατική — δεν υπάρχει ζωντανή πηγή
-  // πραγματικού όγκου πωλήσεων ανά προϊόν (το Sales Analysis Report δεν συνδέεται με κωδικό
-  // προϊόντος). Αν λείπει τιμή/κόστος από ένα live προϊόν, γίνεται fallback στη στατική τιμή.
+  // στο Προϊόντα. Η ποσότητα αναφοράς (juneQty) παραμένει στατική για το "τρέχον" σενάριο (ο
+  // πραγματικός τζίρος Ιουνίου) — το "Μηνιαίο Breakdown" παρακάτω χρησιμοποιεί ΠΡΑΓΜΑΤΙΚΕΣ
+  // μηνιαίες ποσότητες ανά προϊόν (μέσω scancode/barcode, δες computeMonthlyQtyByScancode) για
+  // ΟΣΑ προϊόντα ταιριάζουν, με εκτίμηση (γενικός λόγος όγκου) μόνο για όσα δεν ταιριάζουν. Αν
+  // λείπει τιμή/κόστος από ένα live προϊόν, γίνεται fallback στη στατική τιμή.
   useEffect(() => {
     Products.list()
       .then(setLiveProducts)
       .catch(() => setLiveProducts([])); // σιωπηλό fallback στο στατικό αρχείο αν αποτύχει
+  }, []);
+
+  // Για το "Μηνιαίο Breakdown" του σεναρίου Επιδότησης — πραγματικές μηνιαίες ποσότητες
+  // από το ίδιο Sales Analysis Report που τροφοδοτεί τον Πίνακα Ελέγχου.
+  const [salesProductsData, setSalesProductsData] = useState([]);
+  useEffect(() => {
+    SalesProducts.list()
+      .then(setSalesProductsData)
+      .catch(() => setSalesProductsData([]));
   }, []);
 
   const mergedBaseline = useMemo(() => {
@@ -400,15 +508,93 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
     [editing, mergedBaseline, mergedTotals]
   );
 
+  // --- Μηνιαίο Breakdown (μόνο mode 'subsidy') ---------------------------------
+  // Χαρτογράφηση Scancode (Sales Analysis Report) -> itemCode (τιμοκατάλογος), μέσω
+  // των barcodes[] του κάθε live προϊόντος — ίδιο πεδίο που ήδη χρησιμοποιεί η
+  // Καταχώρηση/Καταστροφή για αναγνώριση προϊόντος από σκαναρισμένο barcode.
+  const barcodeToItemCode = useMemo(() => {
+    const map = {};
+    liveProducts.forEach((p) => {
+      const code = (p.itemCode || '').trim();
+      if (!code) return;
+      (p.barcodes || []).forEach((b) => {
+        const bc = (b || '').trim();
+        if (bc && !map[bc]) map[bc] = code;
+      });
+    });
+    return map;
+  }, [liveProducts]);
+
+  // Για κάθε μήνα που έχει πραγματικά δεδομένα ποσότητας στο Sales Analysis Report,
+  // ξαναϋπολογίζουμε ΟΛΟΚΛΗΡΟ το σενάριο σαν να είχε γίνει εκείνον τον μήνα. Σειρά
+  // προτεραιότητας ανά προϊόν: (1) itemCode (Userkey, άμεσο ταίριασμα κωδικού — πιο
+  // αξιόπιστο), (2) scancode -> barcode -> itemCode (για γραμμές χωρίς Userkey), (3)
+  // εκτίμηση με τον γενικό λόγο όγκου (συνολικός πραγματικός όγκος μήνα / συνολικό
+  // juneQty βάσης), όταν δεν ταιριάζει τίποτα. isRealQty: true μόνο για (1)/(2).
+  const monthlyQtyList = useMemo(() => computeMonthlyQtyByScancode(salesProductsData), [salesProductsData]);
+  const baselineJuneQtyTotal = useMemo(
+    () => mergedBaseline.reduce((s, p) => s + (Number(p.juneQty) || 0), 0),
+    [mergedBaseline]
+  );
+  const monthlyBreakdown = useMemo(() => {
+    if (!editing || editing.mode === 'discount' || !baselineJuneQtyTotal || !monthlyQtyList.length) return [];
+    return monthlyQtyList.map(({ monthKey, totalQty, periodTexts, byItemCode, byScancode }) => {
+      const ratio = totalQty / baselineJuneQtyTotal;
+      // (1) Πρωτεύον: itemCode απευθείας (Userkey == κωδικός τιμοκαταλόγου).
+      const realQtyByCode = {};
+      Object.entries(byItemCode || {}).forEach(([code, qty]) => {
+        realQtyByCode[code] = (realQtyByCode[code] || 0) + qty;
+      });
+      // (2) Δευτερεύον: scancode -> barcode -> itemCode, ΜΟΝΟ για κωδικούς που δεν
+      // καλύφθηκαν ήδη από το (1) — αποφεύγει διπλομέτρημα όταν ένα προϊόν έχει και
+      // Userkey και ταιριαστό barcode.
+      Object.entries(byScancode || {}).forEach(([scancode, qty]) => {
+        const code = barcodeToItemCode[scancode];
+        // Αν ήδη έχουμε πραγματική ποσότητα από το Userkey για αυτόν τον κωδικό, δεν
+        // την ξαναγράφουμε με το scancode (θα ήταν διπλομέτρημα).
+        if (code && realQtyByCode[code] === undefined) realQtyByCode[code] = qty;
+      });
+      const scaledBaseline = mergedBaseline.map((p) => {
+        const real = realQtyByCode[p.code];
+        const isRealQty = real !== undefined;
+        const juneQty = isRealQty ? real : (Number(p.juneQty) || 0) * ratio;
+        return { ...p, juneQty, basicValue: (p.basicPrice / 1.13) * juneQty, isRealQty };
+      });
+      const scaledTotals = computeBaselineTotals(scaledBaseline);
+      const result = computeSubsidyScenario(
+        editing.subsidyAmount,
+        editing.volumeGrowthPct,
+        editing.destructionPct,
+        editing.buildingPeople,
+        editing.selectedCategories,
+        scaledBaseline,
+        scaledTotals
+      );
+      const matchedCount = scaledBaseline.filter((p) => p.isRealQty).length;
+      return { monthKey, totalQty: Math.round(totalQty), ratio, periodTexts, result, matchedCount, totalCount: scaledBaseline.length };
+    });
+  }, [editing, mergedBaseline, baselineJuneQtyTotal, monthlyQtyList, barcodeToItemCode]);
+
+  // Ποιος μήνας προβάλλεται αυτή τη στιγμή στον πίνακα τιμοκαταλόγου παρακάτω —
+  // null σημαίνει "τρέχον" (η στατική βάση Ιουνίου, όπως πριν).
+  const [viewMonthKey, setViewMonthKey] = useState(null);
+  const activeMonthEntry = useMemo(
+    () => (viewMonthKey ? monthlyBreakdown.find((m) => m.monthKey === viewMonthKey) : null),
+    [viewMonthKey, monthlyBreakdown]
+  );
+  const activePreview = activeMonthEntry ? activeMonthEntry.result : preview;
+
   function startNew() {
     setSaveError('');
     setSearch('');
+    setViewMonthKey(null);
     setEditing(emptyDraft());
   }
 
   function startEdit(sc) {
     setSaveError('');
     setSearch('');
+    setViewMonthKey(null);
     setEditing({ ...emptyDraft(), ...sc });
   }
 
@@ -420,6 +606,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   function startClone(sc) {
     setSaveError('');
     setSearch('');
+    setViewMonthKey(null);
     const { id, createdAt, createdBy, createdByEmail, ...rest } = sc;
     setEditing({
       ...emptyDraft(),
@@ -431,6 +618,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   function cancelEdit() {
     setEditing(null);
     setSaveError('');
+    setViewMonthKey(null);
   }
 
   async function save() {
@@ -830,11 +1018,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   }
 
   const filteredRows = useMemo(() => {
-    if (!preview) return [];
+    if (!activePreview) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return preview.rows;
-    return preview.rows.filter((r) => r.desc.toLowerCase().includes(q) || r.code.toLowerCase().includes(q));
-  }, [preview, search]);
+    if (!q) return activePreview.rows;
+    return activePreview.rows.filter((r) => r.desc.toLowerCase().includes(q) || r.code.toLowerCase().includes(q));
+  }, [activePreview, search]);
 
   const savedComputed = useMemo(
     () => scenarios.map((sc) => ({ sc, result: computeScenario(sc, mergedBaseline, mergedTotals) })),
@@ -1200,18 +1388,29 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               </div>
             </div>
 
-            {preview && (
+            {activeMonthEntry && (
+              <div style={{ background: '#eef7f6', border: '1px solid #bfe1de', borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 13, color: '#16233f' }}>
+                  {t('sc_viewing_month_prefix')} <strong>{monthLabel(activeMonthEntry.monthKey, lang)}</strong> — {activeMonthEntry.matchedCount}/{activeMonthEntry.totalCount} {t('sc_viewing_month_matched_suffix')}
+                </span>
+                <button type="button" onClick={() => setViewMonthKey(null)} style={{ border: '1px solid #2f8f8a', background: '#fff', color: '#2f8f8a', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
+                  {t('sc_back_to_current_button')}
+                </button>
+              </div>
+            )}
+
+            {activePreview && (
               <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
                 <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12 }}>{t('sc_live_summary_title')}</div>
                 <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{fmtEuro(preview.netRevenue)}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activePreview.netRevenue)}</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_net_revenue_label')}</div>
                   </div>
                   <div>
                     {editing.mode === 'discount' ? (
                       <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>
-                        −{fmtNum(preview.avgPctOff, 1)}%
+                        −{fmtNum(activePreview.avgPctOff, 1)}%
                       </div>
                     ) : (
                       <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>
@@ -1219,29 +1418,29 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                       </div>
                     )}
                     <div style={{ fontSize: 12, color: '#6b7684' }}>
-                      {editing.mode === 'discount' ? t('sc_pdf_avg_discount_label') : (t('sc_subsidy_label') + ' (−' + fmtPct1(preview.discountPct) + ')')}
+                      {editing.mode === 'discount' ? t('sc_pdf_avg_discount_label') : (t('sc_subsidy_label') + ' (−' + fmtPct1(activePreview.discountPct) + ')')}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>−{fmtEuro(preview.revenueDrop)}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>−{fmtEuro(activePreview.revenueDrop)}</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_actual_drop_label')}</div>
                     <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 180 }}>{t('sc_actual_drop_hint')}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>{fmtEuro(preview.cogs)}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>{fmtEuro(activePreview.cogs)}</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_cogs_label')}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#7a4fc9' }}>{fmtEuro(preview.grossProfit)}</div>
-                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_gross_profit_label')} ({fmtPct1(preview.grossProfitPct)})</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#7a4fc9' }}>{fmtEuro(activePreview.grossProfit)}</div>
+                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_gross_profit_label')} ({fmtPct1(activePreview.grossProfitPct)})</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>{fmtNum(preview.fcNewPct, 1)}%</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c0392b' }}>{fmtNum(activePreview.fcNewPct, 1)}%</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_new_label')} ({t('sc_fc_basic_label')}: {fmtNum(mergedTotals.fcPct, 1)}%)</div>
                   </div>
                   {editing.mode !== 'discount' && (
                     <div>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: '#2f8f8a' }}>{isFinite(preview.fcWithSubsidyPct) ? fmtNum(preview.fcWithSubsidyPct, 1) + '%' : '—'}</div>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: '#2f8f8a' }}>{isFinite(activePreview.fcWithSubsidyPct) ? fmtNum(activePreview.fcWithSubsidyPct, 1) + '%' : '—'}</div>
                       <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_fc_with_subsidy_label')}</div>
                       <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 200 }}>{t('sc_fc_with_subsidy_hint')}</div>
                     </div>
@@ -1250,27 +1449,27 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               </div>
             )}
 
-            {preview && editing.mode !== 'discount' && (
+            {activePreview && editing.mode !== 'discount' && (
               <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
                 <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('sc_sensitivity_title')}</div>
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 12px', maxWidth: 700 }}>{t('sc_sensitivity_hint')}</p>
                 <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>−{fmtEuro(preview.destructionCost)}</div>
-                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_destruction_cost_label')} ({fmtNum(preview.destructionPct, 0)}%)</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#c98a1f' }}>−{fmtEuro(activePreview.destructionCost)}</div>
+                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_destruction_cost_label')} ({fmtNum(activePreview.destructionPct, 0)}%)</div>
                     <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 200 }}>{t('sc_destruction_cost_hint')}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{fmtEuro(preview.totalWithSubsidy)}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activePreview.totalWithSubsidy)}</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_grown_profit_label')}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: preview.erosion >= 0 ? '#c0392b' : '#2f8f8a' }}>{fmtSignedCost(preview.erosion)}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: activePreview.erosion >= 0 ? '#c0392b' : '#2f8f8a' }}>{fmtSignedCost(activePreview.erosion)}</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_erosion_label')}</div>
                     <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 220 }}>{t('sc_erosion_hint')}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: '#2f8f8a' }}>+{fmtEuro(preview.netBenefitVsToday)}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#2f8f8a' }}>+{fmtEuro(activePreview.netBenefitVsToday)}</div>
                     <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_net_benefit_label')}</div>
                     <div style={{ fontSize: 10.5, color: '#97a2b0', maxWidth: 220 }}>{t('sc_net_benefit_hint')}</div>
                   </div>
@@ -1278,9 +1477,63 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               </div>
             )}
 
+            {monthlyBreakdown.length > 0 && (
+              <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
+                <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('sc_monthly_breakdown_title')}</div>
+                <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 12px', maxWidth: 760 }}>{t('sc_monthly_breakdown_hint')}</p>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 10.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
+                        <th style={{ padding: '7px 8px' }}>{t('sc_col_month')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_month_qty_ratio')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_match_rate')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_discount_pct')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_net_revenue_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_gross_profit_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_grown_profit_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_net_benefit_label')}</th>
+                        <th style={{ padding: '7px 8px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyBreakdown.map(({ monthKey, totalQty, ratio, result, matchedCount, totalCount }) => {
+                        const isActive = viewMonthKey === monthKey;
+                        return (
+                          <tr
+                            key={monthKey}
+                            onClick={() => setViewMonthKey(isActive ? null : monthKey)}
+                            style={{ borderTop: '1px solid #eef1f4', cursor: 'pointer', background: isActive ? '#eef7f6' : 'transparent' }}
+                          >
+                            <td style={{ padding: '6px 8px', fontWeight: 700, color: '#16233f', whiteSpace: 'nowrap' }}>{monthLabel(monthKey, lang)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7684' }}>{fmtNum(totalQty, 0)} ({fmtNum(ratio * 100, 0)}%)</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7684' }}>{matchedCount}/{totalCount}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c0392b' }}>−{fmtPct1(result.discountPct)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(result.netRevenue)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(result.grossProfit)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#16233f' }}>{fmtEuro(result.totalWithSubsidy)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: result.netBenefitVsToday >= 0 ? '#2f8f8a' : '#c0392b' }}>
+                              {result.netBenefitVsToday >= 0 ? '+' : ''}{fmtEuro(result.netBenefitVsToday)}
+                            </td>
+                            <td style={{ padding: '6px 8px', color: '#2f8f8a', fontSize: 11, whiteSpace: 'nowrap' }}>{isActive ? t('sc_month_row_active_label') : t('sc_month_row_view_label')}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
               {editing.mode === 'discount' && !readOnly && (
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 10px' }}>{t('sc_price_override_hint')}</p>
+              )}
+              {activeMonthEntry && (
+                <p style={{ fontSize: 11, color: '#97a2b0', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <span><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#2f8f8a', marginRight: 5 }} />{t('sc_qty_real_hint')}</span>
+                  <span><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#c98a1f', marginRight: 5 }} />{t('sc_qty_estimated_hint')}</span>
+                </p>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                 <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('sc_products_count')}</span>
@@ -1299,7 +1552,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                       <th style={{ padding: '7px 8px' }}>{t('sc_col_code')}</th>
                       <th style={{ padding: '7px 8px', minWidth: 220 }}>{t('sc_col_desc')}</th>
                       <th style={{ padding: '7px 8px' }}>{t('sc_col_cat')}</th>
-                      <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_june_qty')}</th>
+                      <th style={{ padding: '7px 8px', textAlign: 'right' }}>{activeMonthEntry ? monthLabel(activeMonthEntry.monthKey, lang) : t('sc_col_june_qty')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_basic_price')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_basic_value')}</th>
                       <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_fc_basic')}</th>
@@ -1316,7 +1569,18 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <td style={{ padding: '6px 8px', color: '#97a2b0', whiteSpace: 'nowrap' }}>{r.code}</td>
                         <td style={{ padding: '6px 8px' }}>{r.desc}</td>
                         <td style={{ padding: '6px 8px', color: '#6b7684', whiteSpace: 'nowrap' }}>{r.cat}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtNum(r.juneQty, 0)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                          {fmtNum(r.juneQty, 0)}
+                          {activeMonthEntry && (
+                            <span
+                              title={r.isRealQty ? t('sc_qty_real_hint') : t('sc_qty_estimated_hint')}
+                              style={{
+                                display: 'inline-block', marginLeft: 6, width: 7, height: 7, borderRadius: '50%',
+                                background: r.isRealQty ? '#2f8f8a' : '#c98a1f'
+                              }}
+                            />
+                          )}
+                        </td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.basicPrice)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtEuro(r.basicValue)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7684' }}>{isFinite(r.fcBasic) ? fmtNum(r.fcBasic, 1) + '%' : '—'}</td>

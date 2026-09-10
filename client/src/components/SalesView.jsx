@@ -151,6 +151,12 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
   const col = (name) => header.indexOf(name);
   const iName = col('Product Name');
   const iScancode = col('Scancode');
+  // "Userkey" = ο κωδικός προϊόντος (Item Code) του τιμοκαταλόγου — π.χ. "15.0915" —
+  // ίδιος κωδικός με το "code" στο στατικό SCENARIO_BASELINE_PRODUCTS και το "itemCode"
+  // στο Προϊόντα. Σε αντίθεση με το Scancode (barcode, πρέπει να ταιριάξει μέσω
+  // products.barcodes[]), το Userkey ταιριάζει ΑΠΕΥΘΕΙΑΣ με τον κωδικό τιμοκαταλόγου —
+  // πολύ πιο αξιόπιστη βάση αντιστοίχισης (δες ScenariosView.jsx, Μηνιαίο Breakdown).
+  const iUserkey = col('Userkey');
   const iCat1 = col('Cat1');
   const iCat2 = col('Cat2');
   const iCat3 = col('Cat3');
@@ -177,6 +183,7 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
     if (!r || !r[iName]) return;
     const info = {
       scancode: r[iScancode] ? String(r[iScancode]).trim() : '',
+      itemCode: iUserkey !== -1 && r[iUserkey] ? String(r[iUserkey]).trim() : '',
       cat1: r[iCat1] ? String(r[iCat1]).trim() : '',
       cat2: r[iCat2] ? String(r[iCat2]).trim() : '',
       cat3: r[iCat3] ? String(r[iCat3]).trim() : ''
@@ -231,10 +238,12 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
   if (distinctLocs.size > 1) {
     // ΠΟΛΛΑ καταστήματα μέσα στο ίδιο αρχείο — σπάμε ανά πραγματική γραμμή του "Details"
     // (που ήδη κουβαλάει Location + Sold/Price/Tax/... ανά κατάστημα), εμπλουτισμένη με
-    // Scancode/κατηγορία από το "Summary" μέσω αντιστοίχισης ονόματος. Αν κάποιο προϊόν
-    // δεν αντιστοιχιστεί (σπάνιο, διαφορές μορφοποίησης ονόματος), κρατάμε τη γραμμή
-    // χωρίς scancode — απλά δεν θα μπορεί να «δει» barcode-based αναφορές (π.χ. Εκτιμώμενο
-    // Απόθεμα), όπως ακριβώς συμβαίνει σήμερα με προϊόντα χωρίς καταχωρημένο barcode.
+    // Scancode/Userkey(=Item Code)/κατηγορία από το "Summary" μέσω αντιστοίχισης ονόματος
+    // (το "Details" δεν έχει δικές του στήλες Scancode/Userkey/Cat). Αν κάποιο προϊόν δεν
+    // αντιστοιχιστεί (σπάνιο, διαφορές μορφοποίησης ονόματος), κρατάμε τη γραμμή χωρίς
+    // scancode/itemCode — απλά δεν θα μπορεί να «δει» barcode/itemCode-based αναφορές
+    // (π.χ. Εκτιμώμενο Απόθεμα, Μηνιαίο Breakdown Σεναρίων), όπως ακριβώς συμβαίνει σήμερα
+    // με προϊόντα χωρίς καταχωρημένο barcode.
     detailsRows.forEach((r) => {
       if (!r[iDName]) return;
       const store = normalizeStoreName(r[iLoc], knownStores);
@@ -248,6 +257,7 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
         store,
         productName: String(r[iDName]).trim(),
         scancode: match.scancode || '',
+        itemCode: match.itemCode || '',
         cat1: match.cat1 || '',
         cat2: match.cat2 || '',
         cat3: match.cat3 || '',
@@ -285,6 +295,7 @@ function parseSalesAnalysisReport(workbook, storeOverride, knownStores, fileName
       store: resolvedStore || '—',
       productName: String(r[iName]).trim(),
       scancode: r[iScancode] ? String(r[iScancode]).trim() : '',
+      itemCode: iUserkey !== -1 && r[iUserkey] ? String(r[iUserkey]).trim() : '',
       cat1: r[iCat1] ? String(r[iCat1]).trim() : '',
       cat2: r[iCat2] ? String(r[iCat2]).trim() : '',
       cat3: r[iCat3] ? String(r[iCat3]).trim() : '',
