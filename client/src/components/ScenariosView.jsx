@@ -158,6 +158,23 @@ function buildScaledBaselineForMonth(mergedBaseline, ratio, byItemCode, byScanco
   return { scaledBaseline, matchedCount, totalCount: scaledBaseline.length };
 }
 
+// Ανιχνεύει αν ΟΛΟΙ οι μήνες του Μηνιαίου Breakdown προέρχονται στην πραγματικότητα από
+// ΕΝΑ ΚΑΙ ΜΟΝΟ ενιαίο upload (μία periodLabel, π.χ. "01/05/2026 έως 09/09/2026") που καλύπτει
+// πάνω από έναν μήνα. Σε αυτή την περίπτωση ο επιμερισμός ανά μήνα είναι ΚΑΘΑΡΑ αναλογία
+// ημερών πάνω σε ΕΝΑ σύνολο (όχι ξεχωριστό πραγματικό στοιχείο ανά μήνα) — μήνες με το ίδιο
+// πλήθος ημερολογιακών ημερών (π.χ. Μάιος/Ιούλιος/Αύγουστος, όλοι 31 μέρες) θα βγουν
+// πανομοιότυποι. Επιστρέφει το κοινό periodLabel αν ισχύει, αλλιώς null.
+function detectSingleConsolidatedPeriod(monthlyQtyList) {
+  if (!monthlyQtyList.length) return null;
+  const allTexts = new Set();
+  for (const m of monthlyQtyList) {
+    const texts = m.periodTexts || [];
+    if (texts.length !== 1) return null; // κάποιος μήνας έχει 0 ή >1 πηγές — όχι το απλό σενάριο
+    allTexts.add(texts[0]);
+  }
+  return allTexts.size === 1 ? [...allTexts][0] : null;
+}
+
 // --- Στατικό σύνολο αναφοράς (τιμοκατάλογος BASIC), από το ανεβασμένο Excel -----
 // ΣΗΜΕΙΩΣΗ: αυτό είναι πλέον μόνο η ΣΤΑΤΙΚΗ βάση/fallback (κωδικός + ποσότητα Ιουνίου).
 // Μέσα στο component, η τιμή (basicPrice), το κόστος (ptk) και η κατηγορία (cat) αντικαθίστανται
@@ -560,6 +577,10 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   // εκτίμηση με τον γενικό λόγο όγκου (συνολικός πραγματικός όγκος μήνα / συνολικό
   // juneQty βάσης), όταν δεν ταιριάζει τίποτα. isRealQty: true μόνο για (1)/(2).
   const monthlyQtyList = useMemo(() => computeMonthlyQtyByScancode(salesProductsData), [salesProductsData]);
+  // Αν όλοι οι μήνες προέρχονται στην πραγματικότητα από ΕΝΑ upload/period (π.χ. το πιο
+  // πρόσφατο Sales Analysis Report καλύπτει μόνο του "01/05 έως 09/09"), δείχνουμε σαφή
+  // προειδοποίηση στο Μηνιαίο Breakdown — δες detectSingleConsolidatedPeriod παραπάνω.
+  const singleConsolidatedPeriod = useMemo(() => detectSingleConsolidatedPeriod(monthlyQtyList), [monthlyQtyList]);
   const baselineJuneQtyTotal = useMemo(
     () => mergedBaseline.reduce((s, p) => s + (Number(p.juneQty) || 0), 0),
     [mergedBaseline]
@@ -1121,6 +1142,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
                 <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('sc_monthly_breakdown_title')}</div>
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 12px', maxWidth: 760 }}>{t('sc_baseline_monthly_breakdown_hint')}</p>
+                {singleConsolidatedPeriod && (
+                  <p style={{ fontSize: 11.5, color: '#c98a1f', background: '#fdf6e8', border: '1px solid #f0dfb0', borderRadius: 8, padding: '8px 12px', margin: '0 0 12px', maxWidth: 760 }}>
+                    ⚠ {t('sc_single_period_warning_prefix')} «{singleConsolidatedPeriod}» {t('sc_single_period_warning_suffix')}
+                  </p>
+                )}
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 560 }}>
                     <thead>
@@ -1564,6 +1590,11 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 12, padding: 20 }}>
                 <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{t('sc_monthly_breakdown_title')}</div>
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 12px', maxWidth: 760 }}>{t('sc_monthly_breakdown_hint')}</p>
+                {singleConsolidatedPeriod && (
+                  <p style={{ fontSize: 11.5, color: '#c98a1f', background: '#fdf6e8', border: '1px solid #f0dfb0', borderRadius: 8, padding: '8px 12px', margin: '0 0 12px', maxWidth: 760 }}>
+                    ⚠ {t('sc_single_period_warning_prefix')} «{singleConsolidatedPeriod}» {t('sc_single_period_warning_suffix')}
+                  </p>
+                )}
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
                     <thead>
