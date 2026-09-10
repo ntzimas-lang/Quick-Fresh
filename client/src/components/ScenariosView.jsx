@@ -1096,7 +1096,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
               <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activeBaselineTotals.totalValue)}</div>
-                  <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_net_revenue_label')}</div>
+                  <div style={{ fontSize: 12, color: '#6b7684' }}>{activeBaselineMonthEntry ? t('sc_col_net_revenue') : t('sc_net_revenue_label')}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activeBaselineTotals.cogs)}</div>
@@ -1128,7 +1128,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <th style={{ padding: '7px 8px' }}>{t('sc_col_month')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_month_qty_ratio')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_match_rate')}</th>
-                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_net_revenue_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_net_revenue')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_cogs_label')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_gross_profit_label')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_fc_label')}</th>
@@ -1488,7 +1488,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                 <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                   <div>
                     <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{fmtEuro(activePreview.netRevenue)}</div>
-                    <div style={{ fontSize: 12, color: '#6b7684' }}>{t('sc_net_revenue_label')}</div>
+                    <div style={{ fontSize: 12, color: '#6b7684' }}>{activeMonthEntry ? t('sc_col_net_revenue') : t('sc_net_revenue_label')}</div>
                   </div>
                   <div>
                     {editing.mode === 'discount' ? (
@@ -1572,7 +1572,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_month_qty_ratio')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_match_rate')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_discount_pct')}</th>
-                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_net_revenue_label')}</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_col_net_revenue')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_gross_profit_label')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_grown_profit_label')}</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right' }}>{t('sc_net_benefit_label')}</th>
