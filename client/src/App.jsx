@@ -329,7 +329,7 @@ export default function App() {
         )}
         {role !== 'driver' && (
           <section className={'view' + (view === 'scenarios' ? ' active' : '')}>
-            <ScenariosView readOnly={readOnly} canDelete={role === 'super_user'} />
+            <ScenariosView readOnly={readOnly} canDelete={role === 'super_user'} active={view === 'scenarios'} />
           </section>
         )}
         {role === 'super_user' && (
