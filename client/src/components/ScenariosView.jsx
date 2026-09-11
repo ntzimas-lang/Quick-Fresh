@@ -470,7 +470,7 @@ function computeScenario(sc, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basi
   return computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories, baselineProducts, basicTotals);
 }
 
-export default function ScenariosView({ readOnly = false, canDelete = false }) {
+export default function ScenariosView({ readOnly = false, canDelete = false, active = true }) {
   const { t, lang } = useLanguage();
   const [scenarios, setScenarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -482,6 +482,16 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   const [saveError, setSaveError] = useState('');
   const [liveProducts, setLiveProducts] = useState([]);
 
+  // Το App.jsx κρατάει ΟΛΑ τα views "mounted" πάντα (εναλλαγή με CSS, όχι unmount) — χωρίς αυτό
+  // το flag, τα 3 fetches παρακάτω (Σενάρια/Προϊόντα/Sales Analysis, το τελευταίο ~1450+ γραμμές)
+  // θα έτρεχαν σε ΚΑΘΕ login/refresh, ακόμα κι αν ο χρήστης δεν άνοιξε ποτέ το tab "Σενάρια" —
+  // αυτό επιβάρυνε αισθητά τη γενική ταχύτητα φόρτωσης της εφαρμογής. Το `active` (view ===
+  // 'scenarios' από το App.jsx) ενεργοποιεί τα fetches ΜΟΝΟ την πρώτη φορά που πραγματικά
+  // ανοίγει κανείς αυτό το tab· μετά μένει ενεργό (hasActivated), ώστε η εναλλαγή tabs να μην
+  // ξαναφορτώνει τα δεδομένα από την αρχή.
+  const [hasActivated, setHasActivated] = useState(active);
+  useEffect(() => { if (active) setHasActivated(true); }, [active]);
+
   function load() {
     setLoading(true);
     PricingScenarios.list()
@@ -489,7 +499,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (hasActivated) load(); }, [hasActivated]);
 
   // Κόστος (cost.ptk) και κατηγορία (categoryGr) τραβιούνται ΖΩΝΤΑΝΑ από το Προϊόντα (πίνακας
   // products), όχι πια από το στατικό snapshot Excel. Η ΤΙΜΗ όμως (basicPrice) ΔΕΝ τραβιέται
@@ -500,19 +510,21 @@ export default function ScenariosView({ readOnly = false, canDelete = false }) {
   // ΟΣΑ προϊόντα ταιριάζουν, με εκτίμηση (γενικός λόγος όγκου) μόνο για όσα δεν ταιριάζουν. Αν
   // λείπει κόστος από ένα live προϊόν, γίνεται fallback στο στατικό.
   useEffect(() => {
+    if (!hasActivated) return;
     Products.list()
       .then(setLiveProducts)
       .catch(() => setLiveProducts([])); // σιωπηλό fallback στο στατικό αρχείο αν αποτύχει
-  }, []);
+  }, [hasActivated]);
 
   // Για το "Μηνιαίο Breakdown" του σεναρίου Επιδότησης — πραγματικές μηνιαίες ποσότητες
   // από το ίδιο Sales Analysis Report που τροφοδοτεί τον Πίνακα Ελέγχου.
   const [salesProductsData, setSalesProductsData] = useState([]);
   useEffect(() => {
+    if (!hasActivated) return;
     SalesProducts.list()
       .then(setSalesProductsData)
       .catch(() => setSalesProductsData([]));
-  }, []);
+  }, [hasActivated]);
 
   const mergedBaseline = useMemo(() => {
     if (!liveProducts.length) return SCENARIO_BASELINE_PRODUCTS;
