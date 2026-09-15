@@ -864,6 +864,67 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
     doc.save(`quick-fresh-timokatalogos-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
+  // Εξαγωγή "καθαρού" τιμοκαταλόγου σε PDF — ΜΟΝΟ ο πίνακας με τις νέες τιμές (Κωδικός,
+  // Περιγραφή, Κατηγορία, Παλιά/Νέα Τιμή, % Μείωσης). Ίδιος πίνακας με το "Export PDF για
+  // Πελάτη", αλλά ΧΩΡΙΣ καμία προσωποποίηση: όχι επωνυμία εταιρίας πελάτη, όχι όνομα/ημερομηνία
+  // σεναρίου, όχι μήνυμα προς υπαλλήλους, όχι κουτί Ποσού Επιδότησης/Μ.Ο. Έκπτωσης, όχι σημείωση
+  // περί ισχύος επιδότησης. Χρήσιμο όταν χρειάζεται μόνο ο "γυμνός" τιμοκατάλογος.
+  function exportPriceListPDF() {
+    if (!preview) return;
+    const doc = new jsPDF({ orientation: 'portrait' });
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const logoSize = 30;
+    doc.addImage(QUICKFRESH_LOGO_BASE64, 'PNG', 14, 10, logoSize, logoSize);
+
+    doc.setFontSize(16);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('sc_pdf_title'), 14, logoSize + 24);
+
+    const cursorY = logoSize + 34;
+
+    const sortedRows = [...preview.rows].sort((a, b) => {
+      if (a.cat !== b.cat) return a.cat.localeCompare(b.cat, 'el');
+      return a.desc.localeCompare(b.desc, 'el');
+    });
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [[t('sc_col_code'), t('sc_col_desc'), t('sc_col_cat'), t('sc_pdf_col_old_price'), t('sc_pdf_col_new_price'), t('sc_col_pct_off')]],
+      body: sortedRows.map((r) => [
+        r.code,
+        r.desc,
+        r.cat,
+        fmtEuro(r.basicPrice),
+        fmtEuro(r.newPrice),
+        r.inScope ? '−' + fmtNum(r.pctOff, 1) + '%' : '—'
+      ]),
+      styles: { fontSize: 8, cellPadding: 2, font: 'DejaVuSans' },
+      headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' },
+      columnStyles: {
+        3: { halign: 'right' },
+        4: { halign: 'right', textColor: [47, 143, 138], fontStyle: 'bold' },
+        5: { halign: 'right', textColor: [47, 143, 138] }
+      },
+      didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(151, 162, 176);
+        doc.text('Quick & Fresh smart store by gefsinus', 14, doc.internal.pageSize.getHeight() - 8);
+      }
+    });
+
+    const slug = (editing.name || 'senario')
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'senario';
+    doc.save(`quick-fresh-neos-timokatalogos-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   // Εξαγωγή PDF ΜΟΝΟ για εσωτερική χρήση — προς έγκριση από διευθυντή πριν σταλεί οτιδήποτε
   // στον πελάτη. Δείχνει ΟΛΑ τα εσωτερικά οικονομικά στοιχεία (κόστος, περιθώριο, F.C.,
   // κάλυψη επιδότησης) — ΔΕΝ προορίζεται για τον πελάτη.
@@ -1286,6 +1347,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
                 </button>
               )}
               <button type="button" className="btn-secondary" onClick={exportCustomerPDF}>{t('sc_pdf_export_button')}</button>
+              <button type="button" className="btn-secondary" onClick={exportPriceListPDF}>{t('sc_pdf_priceonly_export_button')}</button>
               <button type="button" className="btn-secondary" onClick={exportManagerPDF}>{t('sc_pdf_manager_export_button')}</button>
               <button type="button" className="btn-secondary" onClick={cancelEdit}>{t('sc_cancel_button')}</button>
               {saveError && <span style={{ color: '#c0392b', fontSize: 12.5 }}>{saveError}</span>}
