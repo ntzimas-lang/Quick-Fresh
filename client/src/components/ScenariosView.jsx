@@ -864,9 +864,9 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
     doc.save(`quick-fresh-timokatalogos-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
-  // Εξαγωγή "καθαρού" τιμοκαταλόγου σε PDF — ΜΟΝΟ ο πίνακας με τις νέες τιμές (Κωδικός,
-  // Περιγραφή, Κατηγορία, Παλιά/Νέα Τιμή, % Μείωσης). Ίδιος πίνακας με το "Export PDF για
-  // Πελάτη", αλλά ΧΩΡΙΣ καμία προσωποποίηση: όχι επωνυμία εταιρίας πελάτη, όχι όνομα/ημερομηνία
+  // Εξαγωγή "καθαρού" τιμοκαταλόγου σε PDF — ΜΟΝΟ Κωδικός/Περιγραφή/Κατηγορία/Νέα Τιμή, ΧΩΡΙΣ
+  // Παλιά Τιμή και ΧΩΡΙΣ % Μείωσης (ώστε να μη φαίνεται καμία σύγκριση/έκπτωση, μόνο η τελική
+  // τιμή). ΧΩΡΙΣ καμία προσωποποίηση: όχι επωνυμία εταιρίας πελάτη, όχι όνομα/ημερομηνία
   // σεναρίου, όχι μήνυμα προς υπαλλήλους, όχι κουτί Ποσού Επιδότησης/Μ.Ο. Έκπτωσης, όχι σημείωση
   // περί ισχύος επιδότησης. Χρήσιμο όταν χρειάζεται μόνο ο "γυμνός" τιμοκατάλογος.
   function exportPriceListPDF() {
@@ -893,21 +893,17 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
 
     autoTable(doc, {
       startY: cursorY,
-      head: [[t('sc_col_code'), t('sc_col_desc'), t('sc_col_cat'), t('sc_pdf_col_old_price'), t('sc_pdf_col_new_price'), t('sc_col_pct_off')]],
+      head: [[t('sc_col_code'), t('sc_col_desc'), t('sc_col_cat'), t('sc_pdf_col_new_price')]],
       body: sortedRows.map((r) => [
         r.code,
         r.desc,
         r.cat,
-        fmtEuro(r.basicPrice),
-        fmtEuro(r.newPrice),
-        r.inScope ? '−' + fmtNum(r.pctOff, 1) + '%' : '—'
+        fmtEuro(r.newPrice)
       ]),
       styles: { fontSize: 8, cellPadding: 2, font: 'DejaVuSans' },
       headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' },
       columnStyles: {
-        3: { halign: 'right' },
-        4: { halign: 'right', textColor: [47, 143, 138], fontStyle: 'bold' },
-        5: { halign: 'right', textColor: [47, 143, 138] }
+        3: { halign: 'right', textColor: [47, 143, 138], fontStyle: 'bold' }
       },
       didDrawPage: () => {
         doc.setFont('DejaVuSans', 'normal');
