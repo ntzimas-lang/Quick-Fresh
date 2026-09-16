@@ -501,14 +501,16 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
 
   useEffect(() => { if (hasActivated) load(); }, [hasActivated]);
 
-  // Κόστος (cost.ptk) και κατηγορία (categoryGr) τραβιούνται ΖΩΝΤΑΝΑ από το Προϊόντα (πίνακας
-  // products), όχι πια από το στατικό snapshot Excel. Η ΤΙΜΗ όμως (basicPrice) ΔΕΝ τραβιέται
-  // ζωντανά — μένει ΠΑΝΤΑ η στατική τιμή του τιμοκαταλόγου BASIC (δες mergedBaseline παρακάτω
-  // για το γιατί). Η ποσότητα αναφοράς (juneQty) παραμένει στατική για το "τρέχον" σενάριο (ο
-  // πραγματικός τζίρος Ιουνίου) — το "Μηνιαίο Breakdown" παρακάτω χρησιμοποιεί ΠΡΑΓΜΑΤΙΚΕΣ
-  // μηνιαίες ποσότητες ανά προϊόν (μέσω scancode/barcode, δες computeMonthlyQtyByScancode) για
-  // ΟΣΑ προϊόντα ταιριάζουν, με εκτίμηση (γενικός λόγος όγκου) μόνο για όσα δεν ταιριάζουν. Αν
-  // λείπει κόστος από ένα live προϊόν, γίνεται fallback στο στατικό.
+  // Τιμή (cost.sellingPrice — το ΓΕΝΙΚΟ πεδίο "Τιμή Πώλησης" στο tab Cost, ΟΧΙ οι τιμές ανά
+  // κατάστημα Store/Q&F του πίνακα Stores), κόστος (cost.ptk) και κατηγορία (categoryGr)
+  // τραβιούνται ΖΩΝΤΑΝΑ από το Προϊόντα (πίνακας products), όχι πια από το στατικό snapshot
+  // Excel — έτσι το τιμοκατάλογο των Σεναρίων ακολουθεί αυτόματα κάθε αλλαγή τιμής/κόστους/
+  // κατηγορίας που κάνεις στο Προϊόντα. Η ποσότητα αναφοράς (juneQty) παραμένει στατική για το
+  // "τρέχον" σενάριο (ο πραγματικός τζίρος Ιουνίου) — το "Μηνιαίο Breakdown" παρακάτω
+  // χρησιμοποιεί ΠΡΑΓΜΑΤΙΚΕΣ μηνιαίες ποσότητες ανά προϊόν (μέσω scancode/barcode, δες
+  // computeMonthlyQtyByScancode) για ΟΣΑ προϊόντα ταιριάζουν, με εκτίμηση (γενικός λόγος όγκου)
+  // μόνο για όσα δεν ταιριάζουν. Αν λείπει τιμή/κόστος από ένα live προϊόν, γίνεται fallback
+  // στη στατική τιμή.
   useEffect(() => {
     if (!hasActivated) return;
     Products.list()
@@ -529,14 +531,14 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
   const mergedBaseline = useMemo(() => {
     if (!liveProducts.length) return SCENARIO_BASELINE_PRODUCTS;
     // Χαρτογράφηση με κωδικό (trim, γιατί μερικοί κωδικοί στο Προϊόντα έχουν κενά) — αν υπάρχουν
-    // διπλότυπες καταχωρήσεις για τον ίδιο κωδικό, προτιμάται αυτή που έχει πραγματικό κόστος (ptk).
+    // διπλότυπες καταχωρήσεις για τον ίδιο κωδικό, προτιμάται αυτή που έχει πραγματική τιμή.
     const byCode = new Map();
     liveProducts.forEach((p) => {
       const key = (p.itemCode || '').trim();
       if (!key) return;
       const existing = byCode.get(key);
-      const hasPtk = Number(p.cost?.ptk) > 0;
-      if (!existing || (hasPtk && !(Number(existing.cost?.ptk) > 0))) {
+      const hasPrice = Number(p.cost?.sellingPrice) > 0;
+      if (!existing || (hasPrice && !(Number(existing.cost?.sellingPrice) > 0))) {
         byCode.set(key, p);
       }
     });
@@ -544,17 +546,15 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
       const live = byCode.get(p.code);
       if (!live) return p;
       const liveCost = live.cost || {};
-      // Η ΤΙΜΗ (basicPrice) ΔΕΝ αντικαθίσταται από το ζωντανό Προϊόντα -> Cost -> Τιμή: σε
-      // αρκετά προϊόντα εκείνο το πεδίο έχει ενημερωθεί ώστε να δείχνει την πραγματική τιμή σε
-      // ΕΝΑ συγκεκριμένο κατάστημα (π.χ. Τιμή Store/Q&F ενός καταστήματος), όχι τον ουδέτερο
-      // τιμοκατάλογο BASIC — αν το τραβούσαμε ζωντανά, ο "Καθ. Τζίρος" των Σεναρίων θα άλλαζε
-      // ανάλογα με το ποιο κατάστημα ενημερώθηκε τελευταίο. Το κόστος (ptk) και η κατηγορία
-      // παραμένουν ζωντανά, γιατί δεν εμφανίζουν το ίδιο πρόβλημα.
+      // Η ΤΙΜΗ (basicPrice) έρχεται ΖΩΝΤΑΝΑ από το Προϊόντα -> Cost -> "Τιμή Πώλησης"
+      // (cost.sellingPrice) — το ΓΕΝΙΚΟ πεδίο τιμής, ΟΧΙ τις ανά-κατάστημα τιμές (Τιμή Store /
+      // Τιμή Q&F) του πίνακα Stores μέσα στο ίδιο προϊόν.
+      const basicPrice = Number(liveCost.sellingPrice) > 0 ? Number(liveCost.sellingPrice) : p.basicPrice;
       const ptk = Number(liveCost.ptk) > 0 ? Number(liveCost.ptk) : p.ptk;
       const cat = live.categoryGr || p.cat;
       const desc = live.descriptionGr || p.desc;
-      const basicValue = (p.basicPrice / 1.13) * p.juneQty;
-      return { ...p, ptk, cat, desc, basicValue };
+      const basicValue = (basicPrice / 1.13) * p.juneQty;
+      return { ...p, basicPrice, ptk, cat, desc, basicValue };
     });
   }, [liveProducts]);
 
