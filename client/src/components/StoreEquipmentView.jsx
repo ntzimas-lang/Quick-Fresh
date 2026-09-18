@@ -410,6 +410,10 @@ export default function StoreEquipmentView({ readOnly = false }) {
   // Ενιαία λίστα πλέον: ΚΑΘΕ γνωστό όνομα καταστήματος είναι μία γραμμή, ό,τι κι αν έχει
   // (ή δεν έχει ακόμα) record εξοπλισμού. Αν λείπει record, το δημιουργούμε αυτόματα στο
   // παρασκήνιο ώστε κάθε κατάστημα να έχει πάντα ένα μέρος να αποθηκεύσει equipment/στοιχεία.
+  // Η βάση έχει unique index στο (trimmed) όνομα καταστήματος — αν δύο tabs/χρήστες
+  // προσπαθήσουν να δημιουργήσουν ΤΑΥΤΟΧΡΟΝΑ εγγραφή για το ίδιο κατάστημα, ο δεύτερος θα πάρει
+  // σφάλμα διπλότυπου κλειδιού (23505). Το αγνοούμε σιωπηλά (η εγγραφή υπάρχει ήδη από τον
+  // άλλον) αντί να δείχνουμε ένα τρομακτικό μήνυμα σφάλματος — απλά ξαναφορτώνουμε τη λίστα.
   useEffect(() => {
     const missing = allKnownStoreNames.filter((name) => !records.some((r) => (r.store || '').trim() === name));
     if (missing.length === 0) return;
@@ -419,7 +423,17 @@ export default function StoreEquipmentView({ readOnly = false }) {
         const created = await Promise.all(missing.map((name) => StoreEquipment.create({ store: name, equipment: [] })));
         if (!cancelled) setRecords((prev) => [...prev, ...created]);
       } catch (err) {
-        if (!cancelled) setError(err.message || String(err));
+        if (cancelled) return;
+        if (err && err.code === '23505') {
+          // Διπλότυπο όνομα καταστήματος — κάποιος άλλος (ή άλλο tab) το δημιούργησε ήδη.
+          // Ξαναφέρνουμε τη λίστα ώστε να εμφανιστεί η σωστή/υπάρχουσα εγγραφή, χωρίς error.
+          try {
+            const fresh = await StoreEquipment.list();
+            if (!cancelled) setRecords(fresh);
+          } catch (_) { /* αγνοείται — θα ξαναδοκιμάσει σε επόμενο refresh */ }
+        } else {
+          setError(err.message || String(err));
+        }
       }
     })();
     return () => { cancelled = true; };
