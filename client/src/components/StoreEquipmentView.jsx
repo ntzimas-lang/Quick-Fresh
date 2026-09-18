@@ -20,18 +20,18 @@ function toArray(v) {
   return [String(v).trim()];
 }
 
-// Κάθε Ψυγείο "κλειδώνει" με ΕΝΑ συγκεκριμένο PICO (και προαιρετικά ένα Stockwell No) —
-// δεν είναι ανεξάρτητες λίστες, είναι ζευγάρια/τριάδες {fridgeNo, picoNo, stockwellNo}.
-// Παλιές εγγραφές (πριν το ζευγάρωμα) είχαν δύο χωριστές λίστες fridgeNo[]/picoNo[] (ή ένα
-// απλό string) — εδώ τις μετατρέπουμε αυτόματα (ταιριάζοντας κατά σειρά· αν λείπει κάποια
-// πλευρά, μένει κενή).
+// Κάθε Ψυγείο "κλειδώνει" με ΕΝΑ συγκεκριμένο PICO (και προαιρετικά ένα Stockwell No και ένα
+// Serial No) — δεν είναι ανεξάρτητες λίστες, είναι ζευγάρια/τετράδες
+// {fridgeNo, picoNo, stockwellNo, serialNo}. Παλιές εγγραφές (πριν το ζευγάρωμα) είχαν δύο
+// χωριστές λίστες fridgeNo[]/picoNo[] (ή ένα απλό string) — εδώ τις μετατρέπουμε αυτόματα
+// (ταιριάζοντας κατά σειρά· αν λείπει κάποια πλευρά, μένει κενή).
 function toPairs(record) {
-  if (Array.isArray(record.equipment)) return record.equipment.map((p) => ({ fridgeNo: '', picoNo: '', stockwellNo: '', ...p }));
+  if (Array.isArray(record.equipment)) return record.equipment.map((p) => ({ fridgeNo: '', picoNo: '', stockwellNo: '', serialNo: '', ...p }));
   const fridges = toArray(record.fridgeNo);
   const picos = toArray(record.picoNo);
   const len = Math.max(fridges.length, picos.length);
   const pairs = [];
-  for (let i = 0; i < len; i++) pairs.push({ fridgeNo: fridges[i] || '', picoNo: picos[i] || '', stockwellNo: '' });
+  for (let i = 0; i < len; i++) pairs.push({ fridgeNo: fridges[i] || '', picoNo: picos[i] || '', stockwellNo: '', serialNo: '' });
   return pairs;
 }
 
@@ -433,7 +433,8 @@ export default function StoreEquipmentView({ readOnly = false }) {
           (rec && toPairs(rec).some((p) =>
             (p.fridgeNo || '').toLowerCase().includes(q) ||
             (p.picoNo || '').toLowerCase().includes(q) ||
-            (p.stockwellNo || '').toLowerCase().includes(q)
+            (p.stockwellNo || '').toLowerCase().includes(q) ||
+            (p.serialNo || '').toLowerCase().includes(q)
           ))
         );
       });
@@ -471,7 +472,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
   // διαγράφεται/επεξεργάζεται μαζί (δεν είναι ανεξάρτητες λίστες).
   // "pairDrafts" κρατάει το κείμενο πριν προστεθεί ένα νέο ζευγάρι.
   // "editingPair"/"editDraft" κρατάνε ποιο ήδη-καταχωρημένο ζευγάρι επεξεργαζόμαστε.
-  const emptyPair = { fridgeNo: '', picoNo: '', stockwellNo: '' };
+  const emptyPair = { fridgeNo: '', picoNo: '', stockwellNo: '', serialNo: '' };
   const [pairDrafts, setPairDrafts] = useState({});
   const [editingPair, setEditingPair] = useState(null); // { id, idx }
   const [editDraft, setEditDraft] = useState(emptyPair);
@@ -492,10 +493,11 @@ export default function StoreEquipmentView({ readOnly = false }) {
     const fridgeNo = (draft.fridgeNo || '').trim();
     const picoNo = (draft.picoNo || '').trim();
     const stockwellNo = (draft.stockwellNo || '').trim();
-    if (!fridgeNo && !picoNo && !stockwellNo) return;
+    const serialNo = (draft.serialNo || '').trim();
+    if (!fridgeNo && !picoNo && !stockwellNo && !serialNo) return;
     const current = records.find((r) => r.id === id);
     if (!current) return;
-    const nextPairs = [...toPairs(current), { fridgeNo, picoNo, stockwellNo }];
+    const nextPairs = [...toPairs(current), { fridgeNo, picoNo, stockwellNo, serialNo }];
     setPairDrafts((d) => ({ ...d, [id]: emptyPair }));
     setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, equipment: nextPairs } : r)));
     try {
@@ -519,7 +521,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
 
   function startEditPair(id, idx, pair) {
     setEditingPair({ id, idx });
-    setEditDraft({ fridgeNo: pair.fridgeNo || '', picoNo: pair.picoNo || '', stockwellNo: pair.stockwellNo || '' });
+    setEditDraft({ fridgeNo: pair.fridgeNo || '', picoNo: pair.picoNo || '', stockwellNo: pair.stockwellNo || '', serialNo: pair.serialNo || '' });
   }
   function cancelEditPair() {
     setEditingPair(null);
@@ -544,7 +546,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
   function renderEquipmentPairs(r, inputWidth) {
     const pairs = toPairs(r);
     if (readOnly) {
-      return pairs.length ? pairs.map((p) => `${p.fridgeNo || '—'} / ${p.picoNo || '—'} / ${p.stockwellNo || '—'}`).join(', ') : '—';
+      return pairs.length ? pairs.map((p) => `${p.fridgeNo || '—'} / ${p.picoNo || '—'} / ${p.stockwellNo || '—'} / ${p.serialNo || '—'}`).join(', ') : '—';
     }
     const draft = getPairDraft(r.id);
     return (
@@ -576,6 +578,13 @@ export default function StoreEquipmentView({ readOnly = false }) {
                   placeholder={t('se_add_stockwell_placeholder')}
                   style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
                 />
+                <input
+                  value={editDraft.serialNo}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, serialNo: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                  placeholder={t('se_add_serial_placeholder')}
+                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
+                />
                 <button type="button" onClick={saveEditPair} title={t('se_rename_button')} style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: 'pointer', fontSize: 13, padding: '4px 8px', lineHeight: 1 }}>✓</button>
                 <button type="button" onClick={cancelEditPair} title={t('common_cancel')} style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 13, padding: '4px 6px' }}>✕</button>
               </div>
@@ -595,6 +604,8 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 {p.picoNo || '—'}
                 <span style={{ color: '#c4cbd3', margin: '0 6px' }}>/</span>
                 {p.stockwellNo || '—'}
+                <span style={{ color: '#c4cbd3', margin: '0 6px' }}>/</span>
+                {p.serialNo || '—'}
               </span>
               <button
                 type="button"
@@ -627,6 +638,13 @@ export default function StoreEquipmentView({ readOnly = false }) {
               onChange={(e) => setPairDraftField(r.id, 'stockwellNo', e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } if (e.key === 'Escape') setAddingPairFor(null); }}
               placeholder={t('se_add_stockwell_placeholder')}
+              style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 60 }}
+            />
+            <input
+              value={draft.serialNo}
+              onChange={(e) => setPairDraftField(r.id, 'serialNo', e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEquipmentPair(r.id); } if (e.key === 'Escape') setAddingPairFor(null); }}
+              placeholder={t('se_add_serial_placeholder')}
               style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 60 }}
             />
             <button
@@ -783,7 +801,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11, textTransform: 'uppercase', background: '#f4f6f8' }}>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_store_name')}</th>
                   <th style={{ padding: '7px 10px' }}>{t('se_col_address_preview')}</th>
-                  <th style={{ padding: '7px 10px' }}>{t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')}</th>
+                  <th style={{ padding: '7px 10px' }}>{t('se_col_fridgeNo')} / {t('se_col_picoNo')} / {t('se_col_stockwellNo')} / {t('se_col_serialNo')}</th>
                   <th style={{ padding: '7px 10px' }}></th>
                 </tr>
               </thead>
