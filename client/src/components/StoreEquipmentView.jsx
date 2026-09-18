@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { StoreEquipment, Products, Entries, Destructions, upload } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
+import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
+import { QUICKFRESH_LOGO_BASE64 } from '../quickfresh-logo.js';
 
 // Κλειδί ομαδοποίησης "σχεδόν ίδιων" ονομάτων καταστήματος: αγνοεί κενά στην αρχή/τέλος,
 // πολλαπλά κενά, κεφαλαία/πεζά και τόνους — ώστε "Κοτσοβολος" / "Κοτσόβολος " / "ΚΟΤΣΟΒΟΛΟΣ"
@@ -36,7 +40,7 @@ function toPairs(record) {
 }
 
 export default function StoreEquipmentView({ readOnly = false }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [records, setRecords] = useState([]);
   const [products, setProducts] = useState([]);
   const [entries, setEntries] = useState([]);
@@ -549,73 +553,95 @@ export default function StoreEquipmentView({ readOnly = false }) {
       return pairs.length ? pairs.map((p) => `${p.fridgeNo || '—'} / ${p.picoNo || '—'} / ${p.stockwellNo || '—'} / ${p.serialNo || '—'}`).join(', ') : '—';
     }
     const draft = getPairDraft(r.id);
+    // Πραγματικός πίνακας (thead/tbody) αντί για "pills" σε σειρά — πιο καθαρή, ευθυγραμμισμένη
+    // εμφάνιση όταν ένα κατάστημα έχει πολλά ψυγεία. Κλικ σε μία γραμμή ανοίγει επεξεργασία και
+    // των 4 πεδίων της.
+    const thStyle = { padding: '4px 10px', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.3, color: '#97a2b0', textAlign: 'left', borderBottom: '1px solid #e4e8ec', whiteSpace: 'nowrap', fontWeight: 700 };
+    const tdStyle = { padding: '5px 10px', fontSize: 12.5, borderBottom: '1px solid #f1f3f5', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', color: '#2b3444' };
+    const cellInputStyle = { border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80, boxSizing: 'border-box' };
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
-        {pairs.map((p, i) => {
-          const isEditing = editingPair && editingPair.id === r.id && editingPair.idx === i;
-          if (isEditing) {
-            return (
-              <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center', background: '#eef7f6', border: '1px solid #2f8f8a', borderRadius: 5, padding: '3px 4px' }}>
-                <input
-                  autoFocus
-                  value={editDraft.fridgeNo}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, fridgeNo: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
-                  placeholder={t('se_add_fridge_placeholder')}
-                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
-                />
-                <input
-                  value={editDraft.picoNo}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, picoNo: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
-                  placeholder={t('se_add_pico_placeholder')}
-                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
-                />
-                <input
-                  value={editDraft.stockwellNo}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, stockwellNo: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
-                  placeholder={t('se_add_stockwell_placeholder')}
-                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
-                />
-                <input
-                  value={editDraft.serialNo}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, serialNo: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
-                  placeholder={t('se_add_serial_placeholder')}
-                  style={{ border: '1px solid #d7dce2', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
-                />
-                <button type="button" onClick={saveEditPair} title={t('se_rename_button')} style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: 'pointer', fontSize: 13, padding: '4px 8px', lineHeight: 1 }}>✓</button>
-                <button type="button" onClick={cancelEditPair} title={t('common_cancel')} style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 13, padding: '4px 6px' }}>✕</button>
-              </div>
-            );
-          }
-          // Και τα 3 πεδία μαζί, μία γραμμή ανά ζευγάρι (Ψυγείο / Pico / Stockwell) — κλικ
-          // στη γραμμή ανοίγει επεξεργασία και των 3 πεδίων. Στυλ "pill" με λεπτό περίγραμμα,
-          // monospace νούμερα και διακριτικό διαχωριστικό, για πιο καθαρή εμφάνιση.
-          return (
-            <span
-              key={i}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #e4e8ec', borderRadius: 8, padding: '5px 5px 5px 11px', fontSize: 12.5, boxShadow: '0 1px 2px rgba(20,30,40,0.04)' }}
-            >
-              <span onClick={() => startEditPair(r.id, i, p)} style={{ cursor: 'pointer', color: '#2b3444', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', letterSpacing: 0.1 }}>
-                {p.fridgeNo || '—'}
-                <span style={{ color: '#c4cbd3', margin: '0 6px' }}>/</span>
-                {p.picoNo || '—'}
-                <span style={{ color: '#c4cbd3', margin: '0 6px' }}>/</span>
-                {p.stockwellNo || '—'}
-                <span style={{ color: '#c4cbd3', margin: '0 6px' }}>/</span>
-                {p.serialNo || '—'}
-              </span>
-              <button
-                type="button"
-                onClick={() => removeEquipmentPair(r.id, i)}
-                title={t('common_delete')}
-                style={{ border: 'none', background: 'transparent', color: '#c4cbd3', cursor: 'pointer', fontSize: 12, padding: '2px 5px', lineHeight: 1, borderRadius: 4 }}
-              >✕</button>
-            </span>
-          );
-        })}
+      <div>
+        {pairs.length > 0 && (
+          <table style={{ borderCollapse: 'collapse', background: '#fff', border: '1px solid #e4e8ec', borderRadius: 8, overflow: 'hidden', marginBottom: 6 }}>
+            <thead>
+              <tr style={{ background: '#f7f9fa' }}>
+                <th style={thStyle}>{t('se_col_fridgeNo')}</th>
+                <th style={thStyle}>{t('se_col_picoNo')}</th>
+                <th style={thStyle}>{t('se_col_stockwellNo')}</th>
+                <th style={thStyle}>{t('se_col_serialNo')}</th>
+                <th style={thStyle}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {pairs.map((p, i) => {
+                const isEditing = editingPair && editingPair.id === r.id && editingPair.idx === i;
+                if (isEditing) {
+                  return (
+                    <tr key={i} style={{ background: '#eef7f6' }}>
+                      <td style={tdStyle}>
+                        <input
+                          autoFocus
+                          value={editDraft.fridgeNo}
+                          onChange={(e) => setEditDraft((d) => ({ ...d, fridgeNo: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                          placeholder={t('se_add_fridge_placeholder')}
+                          style={cellInputStyle}
+                        />
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          value={editDraft.picoNo}
+                          onChange={(e) => setEditDraft((d) => ({ ...d, picoNo: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                          placeholder={t('se_add_pico_placeholder')}
+                          style={cellInputStyle}
+                        />
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          value={editDraft.stockwellNo}
+                          onChange={(e) => setEditDraft((d) => ({ ...d, stockwellNo: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                          placeholder={t('se_add_stockwell_placeholder')}
+                          style={cellInputStyle}
+                        />
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          value={editDraft.serialNo}
+                          onChange={(e) => setEditDraft((d) => ({ ...d, serialNo: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditPair(); if (e.key === 'Escape') cancelEditPair(); }}
+                          placeholder={t('se_add_serial_placeholder')}
+                          style={cellInputStyle}
+                        />
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        <button type="button" onClick={saveEditPair} title={t('se_rename_button')} style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: 'pointer', fontSize: 12, padding: '3px 7px', lineHeight: 1, marginRight: 3 }}>✓</button>
+                        <button type="button" onClick={cancelEditPair} title={t('common_cancel')} style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 12, padding: '3px 5px' }}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr key={i} onClick={() => startEditPair(r.id, i, p)} style={{ cursor: 'pointer' }}>
+                    <td style={tdStyle}>{p.fridgeNo || '—'}</td>
+                    <td style={tdStyle}>{p.picoNo || '—'}</td>
+                    <td style={tdStyle}>{p.stockwellNo || '—'}</td>
+                    <td style={tdStyle}>{p.serialNo || '—'}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeEquipmentPair(r.id, i); }}
+                        title={t('common_delete')}
+                        style={{ border: 'none', background: 'transparent', color: '#c4cbd3', cursor: 'pointer', fontSize: 12, padding: '2px 5px', lineHeight: 1, borderRadius: 4 }}
+                      >✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
         {addingPairFor === r.id ? (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <input
@@ -771,15 +797,73 @@ export default function StoreEquipmentView({ readOnly = false }) {
     );
   }
 
+  // Εξαγωγή PDF με όλα τα γνωστά καταστήματα + τον εξοπλισμό τους (Ψυγείο/Pico/Stockwell/
+  // Serial) — μία γραμμή ανά ψυγείο (αν ένα κατάστημα έχει πολλά, επαναλαμβάνεται το όνομά
+  // του), ώστε να είναι έτοιμο για εκτύπωση/αποστολή. Χρησιμοποιεί ΟΛΗ τη γνωστή λίστα
+  // καταστημάτων (όχι μόνο το τρέχον φιλτραρισμένο υποσύνολο), landscape για άνεση χώρου.
+  function exportPDF() {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
+
+    const logoSize = 22;
+    doc.addImage(QUICKFRESH_LOGO_BASE64, 'PNG', 14, 10, logoSize, logoSize);
+    doc.setFontSize(14);
+    doc.setTextColor(22, 35, 63);
+    doc.text(t('title_store_equipment'), 14 + logoSize + 8, 22);
+    doc.setFontSize(9);
+    doc.setTextColor(107, 118, 132);
+    doc.text(new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'el-GR'), 14 + logoSize + 8, 29);
+
+    const rows = [];
+    allKnownStoreNames.forEach((name) => {
+      const rec = records.find((r) => (r.store || '').trim() === name);
+      const address = (rec && rec.address) || '—';
+      const pairs = rec ? toPairs(rec) : [];
+      if (!pairs.length) {
+        rows.push([name, address, '—', '—', '—', '—']);
+      } else {
+        pairs.forEach((p, i) => {
+          rows.push([i === 0 ? name : '', i === 0 ? address : '', p.fridgeNo || '—', p.picoNo || '—', p.stockwellNo || '—', p.serialNo || '—']);
+        });
+      }
+    });
+
+    autoTable(doc, {
+      startY: logoSize + 20,
+      head: [[t('se_col_store_name'), t('se_col_address_preview'), t('se_col_fridgeNo'), t('se_col_picoNo'), t('se_col_stockwellNo'), t('se_col_serialNo')]],
+      body: rows,
+      styles: { fontSize: 9, cellPadding: 3, font: 'DejaVuSans' },
+      headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' },
+      didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(151, 162, 176);
+        doc.text('Quick & Fresh smart store by gefsinus', 14, doc.internal.pageSize.getHeight() - 8);
+      }
+    });
+
+    doc.save(`quick-fresh-katastimata-eksoplismos-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15 }}>{t('title_store_equipment')}</strong>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={exportPDF}
+          style={{ marginLeft: 'auto' }}
+        >
+          {t('se_export_pdf_button')}
+        </button>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('common_filter_placeholder')}
-          style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13, width: 200 }}
+          style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 13, width: 200 }}
         />
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, background: '#f9fafb' }}>
