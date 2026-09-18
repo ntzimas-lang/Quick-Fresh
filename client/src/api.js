@@ -585,8 +585,13 @@ export const PendingDeliveries = {
 };
 
 export const StoreEquipment = {
+  // ascending: false (πιο πρόσφατα πρώτα) — αμυντικά, ώστε αν ποτέ ξαναδημιουργηθεί κατά λάθος
+  // διπλότυπη εγγραφή για το ίδιο κατάστημα (π.χ. δύο tabs ταυτόχρονα), το .find() στο
+  // StoreEquipmentView.jsx να πιάνει την πιο ΠΡΟΣΦΑΤΗ (με τα σωστά/τελευταία στοιχεία) κι όχι
+  // μια παλιά άδεια. Η βάση έχει πλέον και unique index στο όνομα καταστήματος που εμποδίζει
+  // νέα διπλότυπα εξ αρχής.
   async list() {
-    const data = await fetchAllRows('store_equipment', { orderBy: 'updated_at', ascending: true });
+    const data = await fetchAllRows('store_equipment', { orderBy: 'updated_at', ascending: false });
     return data.map(rowToRecord);
   },
   async create(body) {
