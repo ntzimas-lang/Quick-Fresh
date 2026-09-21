@@ -252,37 +252,29 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
         <p style={{ color: '#97a2b0', fontSize: 13 }}>{t('fb_no_store_selected')}</p>
       ) : (
         <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, overflow: 'hidden' }}>
+          {/* Οι μήνες είναι ΣΤΗΛΕΣ σε μία οριζόντια γραμμή (όχι μία γραμμή ανά μήνα) — η πρώτη
+              στήλη (ονόματα δεικτών) μένει "κολλημένη" (sticky) αριστερά όσο κάνεις οριζόντιο
+              scroll στους μήνες. */}
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: '#f4f6f8', textAlign: 'left' }}>
-                  <th style={thStyle}>{t('fb_col_month')}</th>
-                  <th style={thStyle}>{t('fb_col_opening')}</th>
-                  <th style={thStyle}>{t('fb_col_receipts')}</th>
-                  <th style={thStyle}>{t('fb_col_destructions')}</th>
-                  <th style={thStyle}>{t('fb_col_sales')}</th>
-                  <th style={thStyle}>{t('fb_col_closing')}</th>
-                  <th style={thStyle}>{t('fb_col_cost_of_sales')}</th>
-                  <th style={thStyle}>{t('fb_col_fc_pct')}</th>
+                  <th style={{ ...thStyle, ...stickyColStyle, background: '#f4f6f8', zIndex: 2 }}>{t('fb_col_month')}</th>
+                  {monthKeys.map((mk) => (
+                    <th key={mk} style={{ ...thStyle, textAlign: 'center' }}>{monthLabel(mk, lang)}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {monthKeys.map((mk) => {
-                  const rec = recordsByMonth[mk];
-                  const rowId = `${mk}|${selectedStore}`;
-                  const opening = rec && rec.openingValue !== null && rec.openingValue !== undefined ? Number(rec.openingValue) : null;
-                  const closing = rec && rec.closingValue !== null && rec.closingValue !== undefined ? Number(rec.closingValue) : null;
-                  const receipts = receiptsByMonth[mk] || 0;
-                  const destr = destructionsByMonth[mk] || 0;
-                  const revenue = salesRevenueByMonth[mk] || 0;
-                  const canCompute = opening !== null && closing !== null;
-                  // Κόστος Πωλήσεων = Απογραφή Έναρξης + Παραλαβές − Καταστροφές − Απογραφή Λήξης
-                  const costOfSales = canCompute ? opening + receipts - destr - closing : null;
-                  const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
-                  return (
-                    <tr key={mk} style={{ borderTop: '1px solid #eef0f3' }}>
-                      <td style={{ ...tdStyle, fontWeight: 600, color: '#16233f' }}>{monthLabel(mk, lang)}</td>
-                      <td style={tdStyle}>
+                {/* --- Απογραφή Έναρξης (επεξεργάσιμο) --- */}
+                <tr style={{ borderTop: '1px solid #eef0f3' }}>
+                  <td style={{ ...tdStyle, ...stickyColStyle, fontWeight: 600, color: '#16233f', background: '#fff' }}>{t('fb_col_opening')}</td>
+                  {monthKeys.map((mk) => {
+                    const rec = recordsByMonth[mk];
+                    const rowId = `${mk}|${selectedStore}`;
+                    const opening = rec && rec.openingValue !== null && rec.openingValue !== undefined ? Number(rec.openingValue) : null;
+                    return (
+                      <td key={mk} style={{ ...tdStyle, textAlign: 'center' }}>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -294,13 +286,45 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                           style={inputStyle}
                         />
                       </td>
-                      <td style={tdStyle}>{fmtEuro(receipts)}</td>
-                      <td style={tdStyle}>{fmtEuro(destr)}</td>
-                      <td style={tdStyle}>
+                    );
+                  })}
+                </tr>
+                {/* --- Παραλαβές (€, αυτόματο) --- */}
+                <tr style={{ borderTop: '1px solid #eef0f3' }}>
+                  <td style={{ ...tdStyle, ...stickyColStyle, fontWeight: 600, color: '#16233f', background: '#fff' }}>{t('fb_col_receipts')}</td>
+                  {monthKeys.map((mk) => (
+                    <td key={mk} style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(receiptsByMonth[mk] || 0)}</td>
+                  ))}
+                </tr>
+                {/* --- Καταστροφές (€, αυτόματο) --- */}
+                <tr style={{ borderTop: '1px solid #eef0f3' }}>
+                  <td style={{ ...tdStyle, ...stickyColStyle, fontWeight: 600, color: '#16233f', background: '#fff' }}>{t('fb_col_destructions')}</td>
+                  {monthKeys.map((mk) => (
+                    <td key={mk} style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destructionsByMonth[mk] || 0)}</td>
+                  ))}
+                </tr>
+                {/* --- Πωλήσεις (€, αυτόματο) --- */}
+                <tr style={{ borderTop: '1px solid #eef0f3' }}>
+                  <td style={{ ...tdStyle, ...stickyColStyle, fontWeight: 600, color: '#16233f', background: '#fff' }}>{t('fb_col_sales')}</td>
+                  {monthKeys.map((mk) => {
+                    const revenue = salesRevenueByMonth[mk] || 0;
+                    return (
+                      <td key={mk} style={{ ...tdStyle, textAlign: 'center' }}>
                         {fmtEuro(revenue)}
-                        {revenue === 0 && <div style={{ fontSize: 10, color: '#c0392b', marginTop: 2 }}>{t('fb_no_sales_hint')}</div>}
+                        {revenue === 0 && <div style={{ fontSize: 9.5, color: '#c0392b', marginTop: 2, maxWidth: 100 }}>{t('fb_no_sales_hint')}</div>}
                       </td>
-                      <td style={tdStyle}>
+                    );
+                  })}
+                </tr>
+                {/* --- Απογραφή Λήξης (επεξεργάσιμο) --- */}
+                <tr style={{ borderTop: '1px solid #eef0f3' }}>
+                  <td style={{ ...tdStyle, ...stickyColStyle, fontWeight: 600, color: '#16233f', background: '#fff' }}>{t('fb_col_closing')}</td>
+                  {monthKeys.map((mk) => {
+                    const rec = recordsByMonth[mk];
+                    const rowId = `${mk}|${selectedStore}`;
+                    const closing = rec && rec.closingValue !== null && rec.closingValue !== undefined ? Number(rec.closingValue) : null;
+                    return (
+                      <td key={mk} style={{ ...tdStyle, textAlign: 'center' }}>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -312,13 +336,41 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                           style={inputStyle}
                         />
                       </td>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{costOfSales !== null ? fmtEuro(costOfSales) : '—'}</td>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: fcPct !== null ? (fcPct <= 35 ? '#27ae60' : fcPct <= 45 ? '#e0a500' : '#c0392b') : '#97a2b0' }}>
+                    );
+                  })}
+                </tr>
+                {/* --- Κόστος Πωλήσεων (υπολογισμένο) --- */}
+                <tr style={{ borderTop: '1px solid #eef0f3' }}>
+                  <td style={{ ...tdStyle, ...stickyColStyle, fontWeight: 700, color: '#16233f', background: '#fff' }}>{t('fb_col_cost_of_sales')}</td>
+                  {monthKeys.map((mk) => {
+                    const rec = recordsByMonth[mk];
+                    const opening = rec && rec.openingValue !== null && rec.openingValue !== undefined ? Number(rec.openingValue) : null;
+                    const closing = rec && rec.closingValue !== null && rec.closingValue !== undefined ? Number(rec.closingValue) : null;
+                    const canCompute = opening !== null && closing !== null;
+                    const costOfSales = canCompute ? opening + (receiptsByMonth[mk] || 0) - (destructionsByMonth[mk] || 0) - closing : null;
+                    return (
+                      <td key={mk} style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{costOfSales !== null ? fmtEuro(costOfSales) : '—'}</td>
+                    );
+                  })}
+                </tr>
+                {/* --- F.C. % (υπολογισμένο) --- */}
+                <tr style={{ borderTop: '1px solid #eef0f3' }}>
+                  <td style={{ ...tdStyle, ...stickyColStyle, fontWeight: 700, color: '#16233f', background: '#fff' }}>{t('fb_col_fc_pct')}</td>
+                  {monthKeys.map((mk) => {
+                    const rec = recordsByMonth[mk];
+                    const opening = rec && rec.openingValue !== null && rec.openingValue !== undefined ? Number(rec.openingValue) : null;
+                    const closing = rec && rec.closingValue !== null && rec.closingValue !== undefined ? Number(rec.closingValue) : null;
+                    const canCompute = opening !== null && closing !== null;
+                    const revenue = salesRevenueByMonth[mk] || 0;
+                    const costOfSales = canCompute ? opening + (receiptsByMonth[mk] || 0) - (destructionsByMonth[mk] || 0) - closing : null;
+                    const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
+                    return (
+                      <td key={mk} style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: fcPct !== null ? (fcPct <= 35 ? '#27ae60' : fcPct <= 45 ? '#e0a500' : '#c0392b') : '#97a2b0' }}>
                         {fcPct !== null ? fcPct.toFixed(1) + '%' : '—'}
                       </td>
-                    </tr>
-                  );
-                })}
+                    );
+                  })}
+                </tr>
               </tbody>
             </table>
           </div>
@@ -335,4 +387,5 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
 
 const thStyle = { padding: '10px 12px', fontSize: 11.5, color: '#6b7684', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' };
 const tdStyle = { padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' };
+const stickyColStyle = { position: 'sticky', left: 0, boxShadow: '1px 0 0 #eef0f3' };
 const inputStyle = { width: 110, padding: '6px 8px', borderRadius: 6, border: '1px solid #d7dce3', fontSize: 12.5 };
