@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { FBInventory, Products, Entries, Destructions, SalesProducts } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
-const MONTH_LABELS_EL = ['Ιαν', 'Φεβ', 'Μαρ', 'Απρ', 'Μαϊ', 'Ιουν', 'Ιουλ', 'Αυγ', 'Σεπ', 'Οκτ', 'Νοε', 'Δεκ'];
-const MONTH_LABELS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_LABELS_EL = ['Ιανουάριος', 'Φεβρουάριος', 'Μάρτιος', 'Απρίλιος', 'Μάιος', 'Ιούνιος', 'Ιούλιος', 'Αύγουστος', 'Σεπτέμβριος', 'Οκτώβριος', 'Νοέμβριος', 'Δεκέμβριος'];
+const MONTH_LABELS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function monthLabel(key, lang) {
   const [y, m] = key.split('-');
@@ -36,17 +36,6 @@ function daysBetweenInclusive(a, b) {
   return Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
 }
 
-// Παράγει τα τελευταία N μηνιαία κλειδιά (yyyy-mm), το πιο πρόσφατο πρώτο.
-function lastMonthKeys(n) {
-  const out = [];
-  const now = new Date();
-  for (let i = 0; i < n; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-  }
-  return out;
-}
-
 export default function FBInventoryView({ readOnly = false, active = true }) {
   const { t, lang } = useLanguage();
   const [hasActivated, setHasActivated] = useState(active);
@@ -60,7 +49,7 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
-  const [showOlder, setShowOlder] = useState(false);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   // Το modal "Απογραφή" (Έναρξης ή Λήξης) για συγκεκριμένο μήνα — κανονική απογραφή ανά
   // προϊόν (ποσότητα), όχι ένα χειροκίνητο ποσό σε €. { monthKey, type: 'opening'|'closing' }
@@ -224,16 +213,28 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     return map;
   }, [records, selectedStore]);
 
-  // Μήνες προς εμφάνιση: τελευταίοι 12 ∪ οποιοσδήποτε μήνας έχει ήδη δεδομένα (απογραφή,
-  // παραλαβές, καταστροφές, πωλήσεις) για το κατάστημα — ώστε να μη χαθεί τίποτα παλιότερο.
+  // Έτη προς επιλογή: τρέχον έτος ± 1 ∪ οποιοδήποτε έτος έχει ήδη δεδομένα (απογραφή,
+  // παραλαβές, καταστροφές, πωλήσεις) για το κατάστημα — ώστε να μη λείπει ποτέ ένα έτος
+  // που όντως έχει καταχωρήσεις, ακόμα κι αν είναι παλιότερο.
+  const availableYears = useMemo(() => {
+    const set = new Set();
+    const nowYear = new Date().getFullYear();
+    set.add(nowYear - 1);
+    set.add(nowYear);
+    set.add(nowYear + 1);
+    const addYearsFrom = (obj) => Object.keys(obj).forEach((mk) => set.add(Number(mk.slice(0, 4))));
+    addYearsFrom(recordsByMonth);
+    addYearsFrom(receiptsByMonth);
+    addYearsFrom(destructionsByMonth);
+    addYearsFrom(salesRevenueByMonth);
+    return Array.from(set).sort((a, b) => b - a);
+  }, [recordsByMonth, receiptsByMonth, destructionsByMonth, salesRevenueByMonth]);
+
+  // Μήνες προς εμφάνιση: ΟΛΟΙ οι 12 μήνες του επιλεγμένου έτους, με τη σωστή ημερολογιακή
+  // σειρά (Ιανουάριος → Δεκέμβριος).
   const monthKeys = useMemo(() => {
-    const set = new Set(lastMonthKeys(showOlder ? 24 : 12));
-    Object.keys(recordsByMonth).forEach((mk) => set.add(mk));
-    Object.keys(receiptsByMonth).forEach((mk) => set.add(mk));
-    Object.keys(destructionsByMonth).forEach((mk) => set.add(mk));
-    Object.keys(salesRevenueByMonth).forEach((mk) => set.add(mk));
-    return Array.from(set).sort().reverse();
-  }, [recordsByMonth, receiptsByMonth, destructionsByMonth, salesRevenueByMonth, showOlder]);
+    return Array.from({ length: 12 }, (_, i) => `${selectedYear}-${String(i + 1).padStart(2, '0')}`);
+  }, [selectedYear]);
 
   function openCountModal(monthKey, type) {
     const rec = recordsByMonth[monthKey];
@@ -408,6 +409,14 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
         >
           {storeOptions.map((name) => <option key={name} value={name}>{name}</option>)}
         </select>
+        <label style={{ fontSize: 13, fontWeight: 600, color: '#16233f', marginLeft: 10 }}>{t('fb_year_select_label')}</label>
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(Number(e.target.value))}
+          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d7dce3', fontSize: 13, minWidth: 110 }}
+        >
+          {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
       </div>
 
       {!selectedStore ? (
@@ -462,11 +471,6 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
               </tbody>
             </table>
           </div>
-          {!showOlder && (
-            <div style={{ padding: 12, textAlign: 'center' }}>
-              <button type="button" className="btn-secondary" onClick={() => setShowOlder(true)}>{t('fb_show_older_months')}</button>
-            </div>
-          )}
         </div>
       )}
 
