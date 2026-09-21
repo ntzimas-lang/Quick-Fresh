@@ -15,6 +15,16 @@ const ENTRY_MODES = [
   { key: 'destruction', icon: '🗑️', labelKey: 'e_mode_destruction', color: '#c0392b', bg: '#fdecea' }
 ];
 
+// Τύπος αφαίρεσης — ίδιες κατηγορίες με το DestructionsReportView.jsx, ώστε να ξεχωρίζει η
+// πραγματική καταστροφή (χαλασμένο/ληγμένο) από δειγματισμό σε πελάτη ή αφαίρεση κατόπιν
+// ζήτησης της διοίκησης κ.λπ. — αυτή είναι η ΠΡΑΓΜΑΤΙΚΗ φόρμα καταχώρησης καταστροφής.
+const REASON_TYPES = [
+  { key: 'waste', labelKey: 'x_reason_type_waste' },
+  { key: 'sample', labelKey: 'x_reason_type_sample' },
+  { key: 'management', labelKey: 'x_reason_type_management' },
+  { key: 'other', labelKey: 'x_reason_type_other' }
+];
+
 // Μετατροπή "YYYY-MM-DD" (όπως το αποθηκεύουμε) σε "DD/MM/YYYY" για εμφάνιση.
 function formatDMY(isoDate) {
   if (!isoDate) return '';
@@ -59,11 +69,21 @@ function diffColor(diff) {
   return '#2f8f8a';
 }
 
-export default function ProductEntryView({ canDeletePending = false }) {
+export default function ProductEntryView({ canDeletePending = false, initialMode = null, onConsumeInitialMode }) {
   const { t, lang } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [entryMode, setEntryMode] = useState('expiry');
+
+  // Όταν έρχεσαι εδώ από ένα κουμπί αλλού στην εφαρμογή (π.χ. "+ Νέα Καταστροφή" στο
+  // Report Καταστροφών), ανοίγουμε κατευθείαν στη σωστή λειτουργία μία φορά.
+  useEffect(() => {
+    if (initialMode) {
+      setEntryMode(initialMode);
+      if (onConsumeInitialMode) onConsumeInitialMode();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMode]);
   const [method, setMethod] = useState('scan');
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState('');
@@ -73,6 +93,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
   const [store, setStore] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [reasonType, setReasonType] = useState('waste');
   const [reason, setReason] = useState('');
   const [destructionDate, setDestructionDate] = useState(todayIso());
   // Όταν επεξεργαζόμαστε ένα ληγμένο: 'destroyed' (πραγματικά πετάχτηκε) ή 'sold'
@@ -529,6 +550,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
     setStore('');
     setExpiryDate('');
     setQuantity('1');
+    setReasonType('waste');
     setReason('');
     setDestructionDate(todayIso());
     setNoBarcodeQuery('');
@@ -561,6 +583,7 @@ export default function ProductEntryView({ canDeletePending = false }) {
           productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
           store,
           quantity,
+          reasonType,
           reason,
           date: destructionDate
         });
@@ -1012,6 +1035,12 @@ export default function ProductEntryView({ canDeletePending = false }) {
                     <label>{t('x_date_label')}</label>
                     <input type="date" value={destructionDate} onChange={(e) => setDestructionDate(e.target.value)} required />
                   </div>
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label>{t('x_reason_type_label')}</label>
+                    <select value={reasonType} onChange={(e) => setReasonType(e.target.value)}>
+                      {REASON_TYPES.map((r) => <option key={r.key} value={r.key}>{t(r.labelKey)}</option>)}
+                    </select>
+                  </div>
                   <div className="field" style={{ marginBottom: 8 }}>
                     <label>{t('x_reason_label')}</label>
                     <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('x_reason_placeholder')} />
@@ -1048,6 +1077,11 @@ export default function ProductEntryView({ canDeletePending = false }) {
                     <>
                       <span style={{ marginRight: 4 }}>🗑️</span>
                       <strong>{e.productItemCode}</strong> — {e.store} — {t('e_quantity_label').toLowerCase()}: {e.quantity ?? '—'}
+                      {e.reasonType && e.reasonType !== 'waste' && (
+                        <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#fff', background: '#e0a500', borderRadius: 10, padding: '2px 7px' }}>
+                          {t(REASON_TYPES.find((r) => r.key === e.reasonType)?.labelKey || 'x_reason_type_other')}
+                        </span>
+                      )}
                       {e.removedEntries > 0 && (
                         <span style={{ color: '#2f8f8a' }}> · {t('x_removed_from_expired').replace('{n}', e.removedEntries)}</span>
                       )}

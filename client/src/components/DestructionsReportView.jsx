@@ -45,7 +45,7 @@ function getRowValue(d, key) {
   return '';
 }
 
-export default function DestructionsReportView({ canDelete = false }) {
+export default function DestructionsReportView({ canDelete = false, onNewDestruction }) {
   const { t } = useLanguage();
   const [destructions, setDestructions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -191,6 +191,11 @@ export default function DestructionsReportView({ canDelete = false }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15 }}>{t('title_destructions_report')}</strong>
+        {onNewDestruction && (
+          <button className="btn-primary" style={{ background: '#c0392b' }} onClick={onNewDestruction}>
+            + {t('x_new_destruction_button')}
+          </button>
+        )}
         <button className="btn-primary" style={{ background: '#b23b2e' }} onClick={exportPDF} title={t('common_export_pdf')}>
           PDF
         </button>
