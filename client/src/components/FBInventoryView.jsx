@@ -150,12 +150,32 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     return out;
   }, [entries, selectedStore, ptkByItemCode]);
 
-  // --- Καταστροφές (€) ανά μήνα, για το επιλεγμένο κατάστημα ------------------------
+  // --- Καταστροφές (€) ανά μήνα, για το επιλεγμένο κατάστημα — ΧΩΡΙΣΤΑ ανά Τύπο ------
+  // 1) destructionsWasteByMonth: μόνο "Καταστροφή/Ληγμένο" (πραγματική φθορά/λήξη).
+  // 2) destructionsOtherByMonth: όλα τα υπόλοιπα μαζί (Δειγματισμός σε Πελάτη, Ζήτηση
+  //    Διοίκησης, Άλλο) — αφαιρέσεις που δεν είναι "σπατάλη" με την κλασική έννοια.
   // Χρησιμοποιούμε το πεδίο "date" (επιλέξιμη ημ. καταστροφής), όχι το createdAt.
-  const destructionsByMonth = useMemo(() => {
+  const destructionsWasteByMonth = useMemo(() => {
     const out = {};
     destructions.forEach((d) => {
       if ((d.store || '').trim() !== selectedStore) return;
+      if ((d.reasonType || 'waste') !== 'waste') return;
+      const dateStr = d.date || (d.createdAt ? String(d.createdAt).slice(0, 10) : '');
+      if (!dateStr) return;
+      const mk = dateStr.slice(0, 7);
+      const code = (d.productItemCode || '').trim();
+      const ptk = ptkByItemCode.get(code) || 0;
+      const qty = Number(d.quantity) || 0;
+      out[mk] = (out[mk] || 0) + qty * ptk;
+    });
+    return out;
+  }, [destructions, selectedStore, ptkByItemCode]);
+
+  const destructionsOtherByMonth = useMemo(() => {
+    const out = {};
+    destructions.forEach((d) => {
+      if ((d.store || '').trim() !== selectedStore) return;
+      if ((d.reasonType || 'waste') === 'waste') return;
       const dateStr = d.date || (d.createdAt ? String(d.createdAt).slice(0, 10) : '');
       if (!dateStr) return;
       const mk = dateStr.slice(0, 7);
@@ -252,11 +272,12 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     const addYearsFrom = (obj) => Object.keys(obj).forEach((mk) => set.add(Number(mk.slice(0, 4))));
     addYearsFrom(recordsByMonth);
     addYearsFrom(receiptsByMonth);
-    addYearsFrom(destructionsByMonth);
+    addYearsFrom(destructionsWasteByMonth);
+    addYearsFrom(destructionsOtherByMonth);
     addYearsFrom(salesRevenueEstimateByMonth);
     addYearsFrom(salesDailyRevenueByMonth);
     return Array.from(set).sort((a, b) => b - a);
-  }, [recordsByMonth, receiptsByMonth, destructionsByMonth, salesRevenueEstimateByMonth, salesDailyRevenueByMonth]);
+  }, [recordsByMonth, receiptsByMonth, destructionsWasteByMonth, destructionsOtherByMonth, salesRevenueEstimateByMonth, salesDailyRevenueByMonth]);
 
   // Μήνες προς εμφάνιση: ΟΛΟΙ οι 12 μήνες του επιλεγμένου έτους, με τη σωστή ημερολογιακή
   // σειρά (Ιανουάριος → Δεκέμβριος).
@@ -462,7 +483,8 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                   <th style={thStyle}>{t('fb_col_month')}</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_opening')}</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_receipts')}</th>
-                  <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_destructions')}</th>
+                  <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_destructions_waste')}</th>
+                  <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_destructions_other')}</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_sales')}</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_closing')}</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_cost_of_sales')}</th>
@@ -476,7 +498,9 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                   const closingInfo = getInventoryValue(rec, 'closing');
                   const canCompute = openingInfo.value !== null && closingInfo.value !== null;
                   const receipts = receiptsByMonth[mk] || 0;
-                  const destr = destructionsByMonth[mk] || 0;
+                  const destrWaste = destructionsWasteByMonth[mk] || 0;
+                  const destrOther = destructionsOtherByMonth[mk] || 0;
+                  const destr = destrWaste + destrOther;
                   const { revenue, isEstimate } = getSalesForMonth(mk);
                   const costOfSales = canCompute ? (openingInfo.value || 0) + receipts - destr - (closingInfo.value || 0) : null;
                   const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
@@ -485,7 +509,8 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                       <td style={{ ...tdStyle, fontWeight: 600, color: '#16233f' }}>{monthLabel(mk, lang)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{renderInventoryCell(mk, 'opening')}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(receipts)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destr)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destrWaste)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destrOther)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         {fmtEuro(revenue)}
                         {revenue === 0 && <div style={{ fontSize: 9.5, color: '#c0392b', marginTop: 2 }}>{t('fb_no_sales_hint')}</div>}
