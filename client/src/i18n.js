@@ -654,6 +654,7 @@ export const translations = {
 
     // Καταστροφή προϊόντος
     x_new_destruction_button: 'Νέα Καταστροφή',
+    x_or_search_any_product: 'Ή αναζήτησε οποιοδήποτε προϊόν (π.χ. για δειγματισμό ή ζήτηση διοίκησης):',
     x_date_label: 'Ημερομηνία καταστροφής',
     x_reason_type_label: 'Τύπος',
     x_reason_type_waste: 'Καταστροφή / Ληγμένο',
@@ -1325,6 +1326,7 @@ export const translations = {
     sales_shift_details_history_title: 'Import history (Shift Breakdown)',
 
     x_new_destruction_button: 'New Destruction',
+    x_or_search_any_product: 'Or search any product (e.g. for sampling or a management request):',
     x_date_label: 'Destruction date',
     x_reason_type_label: 'Type',
     x_reason_type_waste: 'Destruction / Expired',
