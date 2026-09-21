@@ -535,6 +535,10 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
     if (entryMode === key) return;
     if (scanning) stopScan();
     setEntryMode(key);
+    // Το "Δελτίο Αποστολής (PDF)" είναι μόνο για παραλαβές, δεν έχει νόημα στην Καταστροφή —
+    // ξεκινάμε πάντα από 📷 σάρωση όταν αλλάζει η λειτουργία, ώστε να μη μείνει "κολλημένη"
+    // επιλογή μεθόδου που δεν εμφανίζεται πια στα κουμπιά.
+    setMethod('scan');
     resetSelection();
   }
 
@@ -680,10 +684,16 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
             </div>
           )}
 
-          {!matchedProduct && !notFoundBarcode && entryMode !== 'destruction' && (
+          {!matchedProduct && !notFoundBarcode && entryMode === 'destruction' && (
+            <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px', fontWeight: 600 }}>
+              {t('x_or_search_any_product')}
+            </p>
+          )}
+
+          {!matchedProduct && !notFoundBarcode && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
-                {METHODS.map((m) => (
+                {(entryMode === 'destruction' ? METHODS.filter((m) => m.key !== 'delivery-pdf') : METHODS).map((m) => (
                   <button
                     key={m.key}
                     type="button"
