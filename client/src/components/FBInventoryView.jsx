@@ -240,18 +240,6 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     return map;
   }, [records, selectedStore]);
 
-  // --- Καταστροφές (€) ανά μήνα — ΧΕΙΡΟΚΙΝΗΤΕΣ καταχωρήσεις μέσα από το F&B (π.χ. σπάσιμο,
-  // αλλοίωση κ.λπ. που δεν πέρασαν από το κανονικό σκανάρισμα προϊόντος στις Καταστροφές).
-  // Προστίθενται ΠΑΝΩ στις αυτόματες Καταστροφές παραπάνω, δεν τις αντικαθιστούν.
-  const manualDestructionsByMonth = useMemo(() => {
-    const out = {};
-    Object.entries(recordsByMonth).forEach(([mk, rec]) => {
-      const v = countsValue(rec.manualDestructionsCounts);
-      if (v) out[mk] = v;
-    });
-    return out;
-  }, [recordsByMonth, ptkByItemCode]);
-
   // Έτη προς επιλογή: τρέχον έτος ± 1 ∪ οποιοδήποτε έτος έχει ήδη δεδομένα (απογραφή,
   // παραλαβές, καταστροφές, πωλήσεις) για το κατάστημα — ώστε να μη λείπει ποτέ ένα έτος
   // που όντως έχει καταχωρήσεις, ακόμα κι αν είναι παλιότερο.
@@ -278,11 +266,7 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
 
   function openCountModal(monthKey, type) {
     const rec = recordsByMonth[monthKey];
-    const existing = (rec && (
-      type === 'opening' ? rec.openingCounts :
-      type === 'closing' ? rec.closingCounts :
-      rec.manualDestructionsCounts
-    )) || [];
+    const existing = (rec && (type === 'opening' ? rec.openingCounts : rec.closingCounts)) || [];
     const seed = {};
     existing.forEach((c) => { seed[(c.itemCode || '').trim()] = String(c.quantity).replace('.', ','); });
     setCountQuantities(seed);
@@ -324,14 +308,10 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
       closingMode: existing ? existing.closingMode : null,
       closingCounts: existing ? existing.closingCounts : [],
       closingValue: existing ? existing.closingValue : null,
-      manualDestructionsCounts: existing ? existing.manualDestructionsCounts : []
+      manualDestructionsCounts: existing ? existing.manualDestructionsCounts : [],
+      [type === 'opening' ? 'openingMode' : 'closingMode']: 'counts',
+      [type === 'opening' ? 'openingCounts' : 'closingCounts']: counts
     };
-    if (type === 'destructions') {
-      body.manualDestructionsCounts = counts;
-    } else {
-      body[type === 'opening' ? 'openingMode' : 'closingMode'] = 'counts';
-      body[type === 'opening' ? 'openingCounts' : 'closingCounts'] = counts;
-    }
     setSavingCount(true);
     try {
       const saved = await FBInventory.upsert(body);
@@ -496,9 +476,7 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                   const closingInfo = getInventoryValue(rec, 'closing');
                   const canCompute = openingInfo.value !== null && closingInfo.value !== null;
                   const receipts = receiptsByMonth[mk] || 0;
-                  const destrAuto = destructionsByMonth[mk] || 0;
-                  const destrManual = manualDestructionsByMonth[mk] || 0;
-                  const destr = destrAuto + destrManual;
+                  const destr = destructionsByMonth[mk] || 0;
                   const { revenue, isEstimate } = getSalesForMonth(mk);
                   const costOfSales = canCompute ? (openingInfo.value || 0) + receipts - destr - (closingInfo.value || 0) : null;
                   const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
@@ -507,17 +485,7 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                       <td style={{ ...tdStyle, fontWeight: 600, color: '#16233f' }}>{monthLabel(mk, lang)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{renderInventoryCell(mk, 'opening')}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(receipts)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                          <div>{fmtEuro(destr)}</div>
-                          {destrManual > 0 && (
-                            <div style={{ fontSize: 9, color: '#97a2b0' }}>{t('fb_destructions_manual_included_label')} {fmtEuro(destrManual)}</div>
-                          )}
-                          {!readOnly && (
-                            <button type="button" onClick={() => openCountModal(mk, 'destructions')} title={t('fb_destructions_manual_button')} style={smallModeButtonStyle}>📋 +</button>
-                          )}
-                        </div>
-                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destr)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         {fmtEuro(revenue)}
                         {revenue === 0 && <div style={{ fontSize: 9.5, color: '#c0392b', marginTop: 2 }}>{t('fb_no_sales_hint')}</div>}
@@ -543,11 +511,11 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <h3 style={{ margin: 0, fontSize: 16, color: '#16233f' }}>
-                {countModal.type === 'opening' ? t('fb_col_opening') : countModal.type === 'closing' ? t('fb_col_closing') : t('fb_col_destructions')} — {selectedStore} — {monthLabel(countModal.monthKey, lang)}
+                {countModal.type === 'opening' ? t('fb_col_opening') : t('fb_col_closing')} — {selectedStore} — {monthLabel(countModal.monthKey, lang)}
               </h3>
               <button type="button" onClick={closeCountModal} style={{ border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', color: '#97a2b0' }}>✕</button>
             </div>
-            <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px' }}>{countModal.type === 'destructions' ? t('fb_destructions_count_hint') : t('fb_count_hint')}</p>
+            <p style={{ fontSize: 12, color: '#97a2b0', margin: '0 0 10px' }}>{t('fb_count_hint')}</p>
             <input
               type="text"
               placeholder={t('fb_count_search_placeholder')}
