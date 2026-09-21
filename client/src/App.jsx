@@ -175,6 +175,7 @@ export default function App() {
           >
             {t('nav_dashboard')}
           </button>
+          <div style={{ height: 14 }} />
           <button
             className={'nav-item' + (view === 'entry' ? ' active' : '')}
             onClick={() => setView('entry')}
@@ -199,6 +200,7 @@ export default function App() {
           >
             <span>{t('nav_delivery_shortages')}</span>
           </button>
+          {role !== 'driver' && <div style={{ height: 14 }} />}
           {role !== 'driver' && (
             <button
               className={'nav-item' + (view === 'contacts' ? ' active' : '')}
@@ -231,6 +233,7 @@ export default function App() {
               {t('nav_products')}
             </button>
           )}
+          {role !== 'driver' && <div style={{ height: 14 }} />}
           {role !== 'driver' && (
             <button
               className={'nav-item' + (view === 'scenarios' ? ' active' : '')}
@@ -247,6 +250,7 @@ export default function App() {
               {t('nav_fb_inventory')}
             </button>
           )}
+          <div style={{ height: 14 }} />
           <button
             className="nav-item lang-toggle"
             onClick={() => setLang(lang === 'el' ? 'en' : 'el')}
@@ -255,6 +259,7 @@ export default function App() {
             <span>🌐 {t('language')}</span>
             <span className="lang-badge">{lang === 'el' ? 'ΕΛ / En' : 'El / ΕΝ'}</span>
           </button>
+          {role !== 'driver' && <div style={{ height: 14 }} />}
           {role !== 'driver' && (
             <button
               className={'nav-item' + (view === 'history' ? ' active' : '')}
