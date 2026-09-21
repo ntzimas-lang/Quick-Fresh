@@ -9,6 +9,7 @@ import DeliveryShortagesView from './components/DeliveryShortagesView.jsx';
 import StoreEquipmentView from './components/StoreEquipmentView.jsx';
 import NewCustomersView from './components/NewCustomersView.jsx';
 import ScenariosView from './components/ScenariosView.jsx';
+import FBInventoryView from './components/FBInventoryView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import SalesView from './components/SalesView.jsx';
@@ -250,6 +251,14 @@ export default function App() {
               {t('nav_scenarios')}
             </button>
           )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'fbInventory' ? ' active' : '')}
+              onClick={() => setView('fbInventory')}
+            >
+              {t('nav_fb_inventory')}
+            </button>
+          )}
           <button
             className="nav-item lang-toggle"
             onClick={() => setLang(lang === 'el' ? 'en' : 'el')}
@@ -330,6 +339,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'scenarios' ? ' active' : '')}>
             <ScenariosView readOnly={readOnly} canDelete={role === 'super_user'} active={view === 'scenarios'} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'fbInventory' ? ' active' : '')}>
+            <FBInventoryView readOnly={readOnly} active={view === 'fbInventory'} />
           </section>
         )}
         {role === 'super_user' && (

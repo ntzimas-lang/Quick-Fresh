@@ -622,6 +622,40 @@ export const StoreEquipment = {
   }
 };
 
+// Μηνιαία απογραφή αποθέματος F&B ανά κατάστημα (συνολική αξία σε €, ΟΧΙ ανά προϊόν) —
+// Απογραφή Έναρξης / Απογραφή Λήξης καταχωρούνται χειροκίνητα εδώ· οι ενδιάμεσες κινήσεις
+// (Παραλαβές, Καταστροφές, Πωλήσεις) υπολογίζονται ΑΥΤΟΜΑΤΑ στο FBInventoryView.jsx από
+// ήδη υπάρχοντα δεδομένα (product_entries, destructions, sales_products) — δεν αποθηκεύονται
+// εδώ. id = `${monthKey}|${store}` (π.χ. "2026-09|Altex Metamorphosis Q&F") ώστε το
+// ξαναπέρασμα της απογραφής του ίδιου μήνα/καταστήματος να κάνει update, όχι διπλή εγγραφή.
+export const FBInventory = {
+  async list() {
+    const data = await fetchAllRows('fb_inventory');
+    return data.map(rowToRecord);
+  },
+  async upsert({ store, monthKey, openingValue, closingValue }) {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const id = `${monthKey}|${store}`;
+    const record = {
+      id,
+      store,
+      monthKey,
+      openingValue: openingValue === '' || openingValue === undefined || openingValue === null ? null : Number(openingValue),
+      closingValue: closingValue === '' || closingValue === undefined || closingValue === null ? null : Number(closingValue),
+      updatedBy: user?.id || null,
+      updatedByEmail: user?.email || null
+    };
+    const { data, error } = await supabase
+      .from('fb_inventory')
+      .upsert({ id, data: record, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  }
+};
+
 export const History = {
   async list(limit = 300) {
     const { data, error } = await supabase
