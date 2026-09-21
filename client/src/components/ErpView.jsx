@@ -30,7 +30,11 @@ const COLS = {
   subcategory: 'Υποκατηγορία',
   vatCategory: 'Κατηγορία ΦΠΑ',
   standardCost: 'Πρότυπη τιμή κόστους',
-  itemType: 'Τύπος Ειδών'
+  itemType: 'Τύπος Ειδών',
+  // Αυτές είναι οι στήλες κατηγοριοποίησης που όντως θέλουμε να δείχνουμε στον
+  // κατάλογο (ζητήθηκε ρητά) — διαφορετικές από τις γενικές "Κατηγορία"/"Υποκατηγορία".
+  category3: 'Κατηγορία (Πινακας 3)1',
+  subcategory4: 'Υποκατηγορία (Πινακας 4)'
 };
 
 async function readWorkbook(file) {
@@ -88,7 +92,9 @@ function parseErpSheet(workbook) {
       subcategory: strOrEmpty(idx.subcategory >= 0 ? row[idx.subcategory] : null),
       vatCategory: strOrEmpty(idx.vatCategory >= 0 ? row[idx.vatCategory] : null),
       standardCost: numOrNull(idx.standardCost >= 0 ? row[idx.standardCost] : null),
-      itemType: strOrEmpty(idx.itemType >= 0 ? row[idx.itemType] : null)
+      itemType: strOrEmpty(idx.itemType >= 0 ? row[idx.itemType] : null),
+      category3: strOrEmpty(idx.category3 >= 0 ? row[idx.category3] : null),
+      subcategory4: strOrEmpty(idx.subcategory4 >= 0 ? row[idx.subcategory4] : null)
     };
     byCode.set(code, record);
   }
@@ -270,8 +276,8 @@ export default function ErpView({ canUpload = false }) {
                   <tr key={p.id} style={{ borderTop: '1px solid #eef1f4' }}>
                     <td style={{ padding: '10px 12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{p.code}</td>
                     <td style={{ padding: '10px 12px', color: '#3a4353' }}>{p.description || '—'}</td>
-                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>{p.category || '—'}</td>
-                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>{p.subcategory || '—'}</td>
+                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>{p.category3 || '—'}</td>
+                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>{p.subcategory4 || '—'}</td>
                     <td style={{ padding: '10px 12px' }}>{p.unit || '—'}</td>
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{fmtEuro(p.standardCost)}</td>
                   </tr>
