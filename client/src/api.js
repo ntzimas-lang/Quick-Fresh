@@ -643,7 +643,7 @@ export const FBInventory = {
     const data = await fetchAllRows('fb_inventory');
     return data.map(rowToRecord);
   },
-  async upsert({ store, monthKey, openingMode, openingCounts, openingValue, closingMode, closingCounts, closingValue }) {
+  async upsert({ store, monthKey, openingMode, openingCounts, openingValue, closingMode, closingCounts, closingValue, manualDestructionsCounts }) {
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user;
     const id = `${monthKey}|${store}`;
@@ -663,6 +663,10 @@ export const FBInventory = {
       closingMode: cleanMode(closingMode),
       closingCounts: cleanCounts(closingCounts),
       closingValue: cleanValue(closingValue),
+      // Χειροκίνητες καταχωρήσεις Καταστροφών μέσα από το ίδιο το F&B (π.χ. σπάσιμο,
+      // αλλοίωση) — προστίθενται πάνω στις αυτόματες Καταστροφές (πίνακας destructions),
+      // δεν τις αντικαθιστούν. Ίδια δομή {itemCode, quantity} με τις άλλες μετρήσεις.
+      manualDestructionsCounts: cleanCounts(manualDestructionsCounts),
       updatedBy: user?.id || null,
       updatedByEmail: user?.email || null
     };
