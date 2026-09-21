@@ -10,6 +10,7 @@ import StoreEquipmentView from './components/StoreEquipmentView.jsx';
 import NewCustomersView from './components/NewCustomersView.jsx';
 import ScenariosView from './components/ScenariosView.jsx';
 import FBInventoryView from './components/FBInventoryView.jsx';
+import ErpView from './components/ErpView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import SalesView from './components/SalesView.jsx';
@@ -233,6 +234,14 @@ export default function App() {
               {t('nav_products')}
             </button>
           )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'erp' ? ' active' : '')}
+              onClick={() => setView('erp')}
+            >
+              {t('nav_erp')}
+            </button>
+          )}
           {role !== 'driver' && <div style={{ height: 14 }} />}
           {role !== 'driver' && (
             <button
@@ -306,6 +315,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'products' ? ' active' : '')}>
             <ProductsView readOnly={readOnly} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'erp' ? ' active' : '')}>
+            <ErpView canUpload={role === 'super_user' || role === 'user'} />
           </section>
         )}
         {role !== 'driver' && (

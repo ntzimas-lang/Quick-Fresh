@@ -685,6 +685,83 @@ export const FBInventory = {
   }
 };
 
+// Ο κατάλογος ERP είναι μεγάλος (20.000+ γραμμές) — δεν τον φορτώνουμε ποτέ ολόκληρο
+// στο frontend. Το search() ψάχνει server-side (κωδικός / περιγραφή / barcode) και
+// γυρνάει μόνο τα ταιριαστά αποτελέσματα (μέχρι το limit). Το bulkUpsert() ανεβάζει
+// σε παρτίδες των 500 γραμμών, ώστε το μηνιαίο upload των 20.000+ προϊόντων να μην
+// σκάει σε timeout/μέγεθος request.
+export const ErpProducts = {
+  async stats() {
+    const { count, error: countErr } = await supabase
+      .from('erp_products')
+      .select('id', { count: 'exact', head: true });
+    if (countErr) throw countErr;
+    const { data: lastRows, error: lastErr } = await supabase
+      .from('erp_products')
+      .select('updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    if (lastErr) throw lastErr;
+    return { count: count || 0, lastUpdated: lastRows && lastRows[0] ? lastRows[0].updated_at : null };
+  },
+  async search(term, limit = 200) {
+    const t = (term || '').trim();
+    if (!t) {
+      const { data, error } = await supabase
+        .from('erp_products')
+        .select('*')
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (error) throw error;
+      return data.map(rowToRecord);
+    }
+    const like = `%${t}%`;
+    const [byId, byDesc, byBarcode] = await Promise.all([
+      supabase.from('erp_products').select('*').ilike('id', like).limit(limit),
+      supabase.from('erp_products').select('*').filter('data->>description', 'ilike', like).limit(limit),
+      supabase.from('erp_products').select('*').filter('data->>barcode', 'ilike', like).limit(limit)
+    ]);
+    if (byId.error) throw byId.error;
+    if (byDesc.error) throw byDesc.error;
+    if (byBarcode.error) throw byBarcode.error;
+    const map = new Map();
+    [...byId.data, ...byDesc.data, ...byBarcode.data].forEach((row) => map.set(row.id, row));
+    return Array.from(map.values())
+      .map(rowToRecord)
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  },
+  // Επιστρέφει ΟΛΟΥΣ τους υπάρχοντες κωδικούς (μόνο id, όχι data) — χρησιμοποιείται
+  // πριν από ένα upload για να μετρήσουμε πόσα από τα νέα rows είναι πραγματικά νέα
+  // προϊόντα και πόσα είναι ενημέρωση υπαρχόντων.
+  async listIds() {
+    const pageSize = 1000;
+    let from = 0;
+    const ids = new Set();
+    for (;;) {
+      const { data, error } = await supabase.from('erp_products').select('id').range(from, from + pageSize - 1);
+      if (error) throw error;
+      data.forEach((r) => ids.add(r.id));
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return ids;
+  },
+  async bulkUpsert(records, onProgress) {
+    const chunkSize = 500;
+    const now = new Date().toISOString();
+    let done = 0;
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      const payload = chunk.map((r) => ({ id: r.id, data: r, updated_at: now }));
+      const { error } = await supabase.from('erp_products').upsert(payload, { onConflict: 'id' });
+      if (error) throw error;
+      done += chunk.length;
+      if (onProgress) onProgress(done, records.length);
+    }
+    return done;
+  }
+};
+
 export const History = {
   async list(limit = 300) {
     const { data, error } = await supabase
