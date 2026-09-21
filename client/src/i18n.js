@@ -654,6 +654,11 @@ export const translations = {
 
     // Καταστροφή προϊόντος
     x_date_label: 'Ημερομηνία καταστροφής',
+    x_reason_type_label: 'Τύπος',
+    x_reason_type_waste: 'Καταστροφή / Ληγμένο',
+    x_reason_type_sample: 'Δειγματισμός σε Πελάτη',
+    x_reason_type_management: 'Ζήτηση Διοίκησης',
+    x_reason_type_other: 'Άλλο',
     x_reason_label: 'Λόγος καταστροφής (προαιρετικό)',
     x_reason_placeholder: 'π.χ. έληξε, φθορά συσκευασίας...',
     x_auto_remove_hint: 'Η καταχώρηση αυτού του προϊόντος στα Ληγμένα (ίδιο κατάστημα) θα αφαιρεθεί αυτόματα.',
@@ -1319,6 +1324,11 @@ export const translations = {
     sales_shift_details_history_title: 'Import history (Shift Breakdown)',
 
     x_date_label: 'Destruction date',
+    x_reason_type_label: 'Type',
+    x_reason_type_waste: 'Destruction / Expired',
+    x_reason_type_sample: 'Customer Sample',
+    x_reason_type_management: 'Management Request',
+    x_reason_type_other: 'Other',
     x_reason_label: 'Reason (optional)',
     x_reason_placeholder: 'e.g. expired, damaged packaging...',
     x_auto_remove_hint: 'Any expired-report entry for this product (same store) will be removed automatically.',

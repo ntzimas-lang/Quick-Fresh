@@ -329,10 +329,14 @@ export const Destructions = {
   // Καταγράφει την καταστροφή ΚΑΙ αφαιρεί αυτόματα τυχόν καταχωρήσεις "Ληγμένα"
   // (product_entries) για το ίδιο προϊόν στο ίδιο κατάστημα — δεν έχει νόημα να
   // συνεχίζει να εμφανίζεται ως "λήγει" κάτι που μόλις καταστράφηκε.
-  async create({ productId, productItemCode, productDescription, store, quantity, reason, date }) {
+  async create({ productId, productItemCode, productDescription, store, quantity, reason, date, reasonType }) {
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user;
     const id = newId();
+    // Τύπος αφαίρεσης — για να ξεχωρίζει η πραγματική καταστροφή (χαλασμένο/ληγμένο)
+    // από δειγματισμό σε πελάτη ή αφαίρεση κατόπιν ζήτησης της διοίκησης κ.λπ., ώστε να
+    // υπάρχει η πληροφορία στο Report Καταστροφών — δεν αλλάζει το πώς μετράει στο F&B.
+    const VALID_REASON_TYPES = ['waste', 'sample', 'management', 'other'];
     const record = {
       id,
       productId,
@@ -340,6 +344,7 @@ export const Destructions = {
       productDescription: productDescription || '',
       store,
       quantity: quantity === '' || quantity === undefined || quantity === null ? null : Number(quantity),
+      reasonType: VALID_REASON_TYPES.includes(reasonType) ? reasonType : 'waste',
       reason: reason || '',
       // Ημερομηνία καταστροφής (επιλέξιμη από τον χρήστη, προεπιλογή σήμερα) — ξεχωριστή
       // από το createdAt που είναι το πραγματικό timestamp καταχώρησης στο σύστημα.
