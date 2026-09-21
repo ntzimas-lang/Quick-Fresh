@@ -300,12 +300,17 @@ export default function StoreEquipmentView({ readOnly = false }) {
   const emptyDetails = {
     electricityMeterNo: '', waterMeterNo: '', address: '',
     contractFileUrl: '', contractFrom: '', contractTo: '',
-    healthCertFileUrl: '', operatingLicenseFileUrl: ''
+    healthCertFileUrl: '', operatingLicenseFileUrl: '',
+    ecommerceUsername: '', ecommercePassword: ''
   };
   const [expandedStore, setExpandedStore] = useState(null);
   const [detailsDraft, setDetailsDraft] = useState({});
   const [uploadingField, setUploadingField] = useState(null);
   const [detailsSavedFlash, setDetailsSavedFlash] = useState(null);
+  // Ποιου record το πεδίο Password δείχνεται προσωρινά ξεκρυμμένο (👁) — προεπιλογή
+  // κρυμμένο (type="password") ώστε να μην είναι ορατό σε κάποιον που απλά κοιτάζει
+  // πάνω από τον ώμο σου.
+  const [revealedPassword, setRevealedPassword] = useState(null);
 
   async function ensureRecordForStore(name) {
     let rec = records.find((r) => (r.store || '').trim() === name);
@@ -331,7 +336,9 @@ export default function StoreEquipmentView({ readOnly = false }) {
       contractFrom: rec.contractFrom || '',
       contractTo: rec.contractTo || '',
       healthCertFileUrl: rec.healthCertFileUrl || '',
-      operatingLicenseFileUrl: rec.operatingLicenseFileUrl || ''
+      operatingLicenseFileUrl: rec.operatingLicenseFileUrl || '',
+      ecommerceUsername: rec.ecommerceUsername || '',
+      ecommercePassword: rec.ecommercePassword || ''
     };
   }
   function setDetailsField(id, field, value) {
@@ -796,6 +803,43 @@ export default function StoreEquipmentView({ readOnly = false }) {
             {draft.operatingLicenseFileUrl ? (
               <a href={draft.operatingLicenseFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>
             ) : readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
+          </div>
+        </div>
+
+        <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
+          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5, fontWeight: 600 }}>{t('se_field_ecommerce_section')}</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_ecommerce_username')}</label>
+              <input
+                disabled={readOnly}
+                value={draft.ecommerceUsername}
+                onChange={(e) => setDetailsField(rec.id, 'ecommerceUsername', e.target.value)}
+                autoComplete="off"
+                style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 3 }}>{t('se_field_ecommerce_password')}</label>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  disabled={readOnly}
+                  type={revealedPassword === rec.id ? 'text' : 'password'}
+                  value={draft.ecommercePassword}
+                  onChange={(e) => setDetailsField(rec.id, 'ecommercePassword', e.target.value)}
+                  autoComplete="new-password"
+                  style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', border: '1px solid #d7dce2', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setRevealedPassword((cur) => (cur === rec.id ? null : rec.id))}
+                  title={revealedPassword === rec.id ? t('se_password_hide') : t('se_password_show')}
+                  style={{ border: '1px solid #d7dce2', background: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12, cursor: 'pointer', color: '#6b7684' }}
+                >
+                  {revealedPassword === rec.id ? '🙈' : '👁'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
