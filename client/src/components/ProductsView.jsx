@@ -190,6 +190,12 @@ export default function ProductsView({ readOnly = false }) {
   const [sortKey, setSortKey] = useState(() => loadViewState()?.sortKey ?? null);
   const [sortDir, setSortDir] = useState(() => loadViewState()?.sortDir || 'asc');
   const [barcodeInput, setBarcodeInput] = useState('');
+  // Σάρωση barcode με την κάμερα του κινητού (πεδίο Barcode στην Κάρτα Προϊόντος) — ίδια
+  // βιβλιοθήκη/λογική με την Καταχώρηση (ProductEntryView.jsx).
+  const [barcodeScanning, setBarcodeScanning] = useState(false);
+  const [barcodeScanError, setBarcodeScanError] = useState('');
+  const barcodeScannerDivId = 'qf-product-barcode-scanner-region';
+  const barcodeHtml5QrRef = useRef(null);
   // Κελί Τιμής Πώλησης/ΠΤΚ που επεξεργάζεται αυτή τη στιγμή στον Πίνακα — δείχνει raw
   // αριθμό όσο γράφεις (χωρίς σπάσιμο δεκαδικών), και μορφοποιημένη τιμή (0,00€) όταν χάσει
   // την εστίαση. Το draft κείμενο κρατιέται χωριστά από την αποθηκευμένη τιμή ώστε το
@@ -218,6 +224,17 @@ export default function ProductsView({ readOnly = false }) {
     Products.list().then(setProducts);
   }, []);
 
+  // Σιγουρεύει ότι η κάμερα κλείνει αν ο χρήστης φύγει από τη σελίδα ενώ σαρώνει.
+  useEffect(() => {
+    return () => {
+      if (barcodeHtml5QrRef.current) {
+        barcodeHtml5QrRef.current.stop().catch(() => {}).then(() => {
+          try { barcodeHtml5QrRef.current.clear(); } catch (e) { /* ignore */ }
+        });
+      }
+    };
+  }, []);
+
   // Η λίστα καταστημάτων είναι ΠΑΝΤΑ παράγωγη από το Products → Cost → Κατάστημα
   // (κεντρική πηγή αλήθειας, ίδιο μοτίβο με Πωλήσεις/Καταστήματα) — όχι από hardcoded
   // λίστα-seed. Ό,τι όνομα καταστήματος υπάρχει έστω σε ένα προϊόν, εμφανίζεται εδώ.
@@ -228,6 +245,7 @@ export default function ProductsView({ readOnly = false }) {
   }, [products]);
 
   async function selectProduct(id) {
+    if (barcodeScanning) stopBarcodeScan();
     const p = products.find((x) => x.id === id) || (await Products.get(id));
     setCurrent(p);
     setTab('info');
@@ -279,6 +297,51 @@ export default function ProductsView({ readOnly = false }) {
   }
   function removeBarcode(idx) {
     applyCardUpdate((prev) => ({ ...prev, barcodes: (prev.barcodes || []).filter((_, i) => i !== idx) }));
+  }
+
+  // Σάρωση barcode με την κάμερα του κινητού — προσθέτει αυτόματα το scanned barcode στη
+  // λίστα, χωρίς να χρειάζεται πληκτρολόγηση. Ίδια βιβλιοθήκη (html5-qrcode) με την Καταχώρηση.
+  async function startBarcodeScan() {
+    setBarcodeScanError('');
+    setBarcodeScanning(true);
+    try {
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
+      barcodeHtml5QrRef.current = new Html5Qrcode(barcodeScannerDivId);
+      await barcodeHtml5QrRef.current.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 260, height: 160 },
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.QR_CODE
+          ]
+        },
+        (decodedText) => {
+          applyCardUpdate((prev) => ({ ...prev, barcodes: [...(prev.barcodes || []), decodedText] }));
+          stopBarcodeScan();
+        },
+        () => { /* ignore per-frame scan errors */ }
+      );
+    } catch (err) {
+      setBarcodeScanError(t('p_camera_error_prefix') + ' ' + (err && err.message ? err.message : String(err)));
+      setBarcodeScanning(false);
+    }
+  }
+
+  async function stopBarcodeScan() {
+    if (barcodeHtml5QrRef.current) {
+      try {
+        await barcodeHtml5QrRef.current.stop();
+        barcodeHtml5QrRef.current.clear();
+      } catch (e) { /* ignore */ }
+    }
+    setBarcodeScanning(false);
   }
   function updateCost(key, value) {
     applyCardUpdate((prev) => ({ ...prev, cost: { ...prev.cost, [key]: value } }));
@@ -1000,15 +1063,36 @@ export default function ProductsView({ readOnly = false }) {
                     ))}
                   </div>
                   {!readOnly && (
-                    <div className="add-person-row">
+                    <div className="add-person-row" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <input
+                        style={{ flex: 1, width: 'auto' }}
                         placeholder={t('p_barcode_add_placeholder')}
                         value={barcodeInput}
                         onChange={(e) => setBarcodeInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBarcode(); } }}
                       />
+                      {!barcodeScanning && (
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ padding: '8px 12px', flexShrink: 0 }}
+                          onClick={startBarcodeScan}
+                          title={t('p_barcode_scan_button')}
+                        >
+                          📷
+                        </button>
+                      )}
                     </div>
                   )}
+                  {barcodeScanning && (
+                    <div style={{ marginTop: 10 }}>
+                      <div id={barcodeScannerDivId} style={{ width: '100%', maxWidth: 320, borderRadius: 8, overflow: 'hidden' }} />
+                      <button className="btn-danger" style={{ marginTop: 8 }} onClick={stopBarcodeScan}>
+                        {t('e_cancel_scan')}
+                      </button>
+                    </div>
+                  )}
+                  {barcodeScanError && <p style={{ color: '#c0392b', fontSize: 12.5, marginTop: 8 }}>{barcodeScanError}</p>}
                 </div>
                 <div className="field"><label>{t('p_col_descriptionErp')}</label><input disabled={readOnly} value={current.descriptionErp || ''} onChange={(e) => updateField('descriptionErp', e.target.value)} /></div>
                 <div className="field">
