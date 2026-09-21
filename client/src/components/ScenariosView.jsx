@@ -216,6 +216,14 @@ const ALL_CATEGORIES = Array.from(new Set(SCENARIO_BASELINE_PRODUCTS.map((p) => 
 // λιγότερα άτομα αναμένεται λογικά να έχει ανάλογα μεγαλύτερη ή μικρότερη ζήτηση.
 const REFERENCE_BUILDING_PEOPLE = 200;
 
+// Αριθμός ψυγείων (μηχανημάτων) στο κατάστημα-αναφορά (κεντρικά γραφεία) — από εκεί
+// προέρχεται ολόκληρη η βάση όγκου (juneQty). Σε αντίθεση με τα "Άτομα στο Κτίριο", ο
+// αριθμός ψυγείων ΕΠΗΡΕΑΖΕΙ τον πραγματικό υποτιθέμενο όγκο πωλήσεων: ένας πελάτης με 1
+// ψυγείο αναμένεται λογικά να πουλάει αναλογικά λιγότερο από ό,τι η βάση (2 ψυγεία), ένας με
+// 3 ψυγεία αναλογικά περισσότερο — η ΤΙΜΟΛΟΓΙΚΗ λογική (έκπτωση/επιδότηση) δεν αλλάζει, μόνο
+// τα απόλυτα € (τζίρος/κόστος/κέρδος) του σεναρίου κλιμακώνονται ανάλογα.
+const REFERENCE_FRIDGE_COUNT = 2;
+
 const DEFAULT_CUSTOMER_MESSAGE_EL =
   'Η εταιρία σας φροντίζει για εσάς! Απολαύστε φρέσκα, ποιοτικά γεύματα σε προνομιακές τιμές, κάθε μέρα στον χώρο εργασίας σας.';
 
@@ -228,6 +236,7 @@ function emptyDraft() {
     volumeGrowthPct: 0,
     destructionPct: 0,
     buildingPeople: REFERENCE_BUILDING_PEOPLE,
+    fridgeCount: REFERENCE_FRIDGE_COUNT,
     discountPct: 0,
     selectedCategories: [],
     categoryDiscounts: {},
@@ -463,11 +472,25 @@ function computeDiscountScenario(discountPctInput, categoryDiscounts, baselinePr
 
 // Dispatcher: επιλέγει το σωστό μοντέλο υπολογισμού βάσει του πεδίου mode του σεναρίου
 // (παλιά αποθηκευμένα σενάρια δεν έχουν mode — θεωρούνται 'subsidy' για συμβατότητα).
+// Πριν τον υπολογισμό, κλιμακώνει ΟΛΗ τη βάση όγκου (juneQty/basicValue) ανάλογα με το
+// fridgeCount του σεναρίου έναντι της βάσης αναφοράς (REFERENCE_FRIDGE_COUNT ψυγεία) — παλιά
+// σενάρια χωρίς fridgeCount θεωρούνται στα ψυγεία αναφοράς (καμία κλιμάκωση, ratio 1).
 function computeScenario(sc, baselineProducts = SCENARIO_BASELINE_PRODUCTS, basicTotals = BASIC_TOTALS) {
-  if (sc && sc.mode === 'discount') {
-    return computeDiscountScenario(sc.discountPct, sc.categoryDiscounts, baselineProducts, basicTotals, sc.productPriceOverrides);
-  }
-  return computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories, baselineProducts, basicTotals);
+  const fridgeCount = Number(sc && sc.fridgeCount) || REFERENCE_FRIDGE_COUNT;
+  const fridgeRatio = REFERENCE_FRIDGE_COUNT ? fridgeCount / REFERENCE_FRIDGE_COUNT : 1;
+  const scaledProducts = fridgeRatio === 1
+    ? baselineProducts
+    : baselineProducts.map((p) => {
+        const juneQty = (Number(p.juneQty) || 0) * fridgeRatio;
+        return { ...p, juneQty, basicValue: (p.basicPrice / 1.13) * juneQty };
+      });
+  const scaledTotals = fridgeRatio === 1 ? basicTotals : computeBaselineTotals(scaledProducts);
+
+  const result = sc && sc.mode === 'discount'
+    ? computeDiscountScenario(sc.discountPct, sc.categoryDiscounts, scaledProducts, scaledTotals, sc.productPriceOverrides)
+    : computeSubsidyScenario(sc.subsidyAmount, sc.volumeGrowthPct, sc.destructionPct, sc.buildingPeople, sc.selectedCategories, scaledProducts, scaledTotals);
+
+  return { ...result, fridgeCount, fridgeRatio };
 }
 
 export default function ScenariosView({ readOnly = false, canDelete = false, active = true }) {
@@ -703,6 +726,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
         volumeGrowthPct: Number(editing.volumeGrowthPct) || 0,
         destructionPct: Number(editing.destructionPct) || 0,
         buildingPeople: Number(editing.buildingPeople) || REFERENCE_BUILDING_PEOPLE,
+        fridgeCount: Number(editing.fridgeCount) || REFERENCE_FRIDGE_COUNT,
         discountPct: Number(editing.discountPct) || 0,
         selectedCategories: Array.isArray(editing.selectedCategories) ? editing.selectedCategories : [],
         categoryDiscounts: (editing.categoryDiscounts && typeof editing.categoryDiscounts === 'object')
@@ -966,13 +990,15 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
     const paramRows = isDiscountModeMgr
       ? [
           [t('sc_discount_general_pct_label'), fmtNum(Number(editing.discountPct) || 0, 0) + '%'],
-          ...categoryDiscountEntries.map(([cat, v]) => [cat, fmtNum(Number(v) || 0, 0) + '%'])
+          ...categoryDiscountEntries.map(([cat, v]) => [cat, fmtNum(Number(v) || 0, 0) + '%']),
+          [t('sc_fridge_count_label'), fmtNum(preview.fridgeCount, 0)]
         ]
       : [
           [t('sc_subsidy_amount_label'), fmtEuro(Number(editing.subsidyAmount) || 0)],
           [t('sc_volume_growth_label'), fmtNum(preview.volumeGrowthPct, 0) + '%'],
           [t('sc_destruction_pct_label'), fmtNum(preview.destructionPct, 0) + '%'],
           [t('sc_building_people_label'), fmtNum(preview.buildingPeople, 0)],
+          [t('sc_fridge_count_label'), fmtNum(preview.fridgeCount, 0)],
           [t('sc_categories_label'), catsLabel]
         ];
 
@@ -1290,6 +1316,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_growth')}</th>
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_destruction')}</th>
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_people')}</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_fridges')}</th>
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_erosion')}</th>
                         <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t('sc_col_list_benefit')}</th>
                         <th style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>{t('sc_col_list_date')}</th>
@@ -1306,6 +1333,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : '+' + fmtNum(result.volumeGrowthPct, 0) + '%'}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : fmtNum(result.destructionPct, 0) + '%'}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{sc.mode === 'discount' ? '—' : fmtNum(result.buildingPeople, 0)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16233f' }}>{fmtNum(result.fridgeCount, 0)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: sc.mode === 'discount' ? '#16233f' : (result.erosion >= 0 ? '#c0392b' : '#2f8f8a'), fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : fmtSignedCost(result.erosion)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#2f8f8a', fontWeight: 600 }}>{sc.mode === 'discount' ? '—' : '+' + fmtEuro(result.netBenefitVsToday)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#97a2b0', whiteSpace: 'nowrap' }}>{fmtDate(sc.createdAt, lang)}</td>
@@ -1398,6 +1426,16 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
                     style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
                   />
                 </div>
+                <div style={{ flex: '1 1 140px' }}>
+                  <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_fridge_count_label')}</label>
+                  <input
+                    type="number" step="1" min="1"
+                    value={editing.fridgeCount ?? REFERENCE_FRIDGE_COUNT}
+                    disabled={readOnly}
+                    onChange={(e) => setEditing((prev) => ({ ...prev, fridgeCount: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #dde2e8', borderRadius: 6, fontSize: 13 }}
+                  />
+                </div>
                 {editing.mode === 'discount' ? (
                   <div style={{ flex: '1 1 180px' }}>
                     <label style={{ display: 'block', fontSize: 11.5, color: '#6b7684', marginBottom: 4 }}>{t('sc_discount_general_pct_label')}</label>
@@ -1454,6 +1492,7 @@ export default function ScenariosView({ readOnly = false, canDelete = false, act
                   </>
                 )}
               </div>
+              <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 6px' }}>{t('sc_fridge_count_hint')}</p>
               {editing.mode === 'discount' ? (
                 <p style={{ fontSize: 11.5, color: '#97a2b0', margin: '0 0 14px' }}>{t('sc_discount_pct_hint')}</p>
               ) : (
