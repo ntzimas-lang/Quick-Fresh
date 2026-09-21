@@ -57,6 +57,13 @@ export default function DestructionsReportView({ canDelete = false, onNewDestruc
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
 
+  // Επεξεργασία γραμμής (Κατάστημα/Ποσότητα/Τύπος/Λόγος/Ημερομηνία) — το προϊόν (κωδικός/
+  // περιγραφή) παραμένει σταθερό, δεν αλλάζει μετά την καταχώρηση.
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+
   function toggleSort(key) {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -96,6 +103,46 @@ export default function DestructionsReportView({ canDelete = false, onNewDestruc
       setDestructions((prev) => prev.filter((d) => d.id !== id));
     } catch (err) {
       setDeleteError(t('r_delete_error_prefix') + ' ' + (err.message || err));
+    }
+  }
+
+  function startEdit(d) {
+    setEditError('');
+    setEditingId(d.id);
+    setEditDraft({
+      store: d.store || '',
+      quantity: d.quantity === null || d.quantity === undefined ? '' : String(d.quantity),
+      reasonType: REASON_TYPES.some((r) => r.key === d.reasonType) ? d.reasonType : 'waste',
+      reason: d.reason || '',
+      date: d.date || (d.createdAt ? String(d.createdAt).slice(0, 10) : '')
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditDraft({});
+    setEditError('');
+  }
+
+  async function saveEdit(d) {
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const body = {
+        ...d,
+        store: editDraft.store,
+        quantity: editDraft.quantity === '' ? null : Number(editDraft.quantity),
+        reasonType: REASON_TYPES.some((r) => r.key === editDraft.reasonType) ? editDraft.reasonType : 'waste',
+        reason: editDraft.reason,
+        date: editDraft.date
+      };
+      const updated = await Destructions.update(d.id, body);
+      setDestructions((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+      cancelEdit();
+    } catch (err) {
+      setEditError(t('x_edit_error_prefix') + ' ' + (err.message || err));
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -235,6 +282,12 @@ export default function DestructionsReportView({ canDelete = false, onNewDestruc
             <button type="button" onClick={() => setDeleteError('')} style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontWeight: 700 }}>✕</button>
           </div>
         )}
+        {editError && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: '#fdecea', color: '#c0392b', border: '1px solid #f3c1bb', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>
+            <span>{editError}</span>
+            <button type="button" onClick={() => setEditError('')} style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+          </div>
+        )}
         {loading ? (
           <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>
         ) : error ? (
@@ -273,25 +326,96 @@ export default function DestructionsReportView({ canDelete = false, onNewDestruc
               </tr>
             </thead>
             <tbody>
-              {filtered.map((d) => (
-                <tr key={d.id} style={{ borderTop: '1px solid #eef1f4' }}>
-                  <td style={{ padding: '10px 12px', fontWeight: 600 }}>{d.productItemCode}</td>
-                  <td style={{ padding: '10px 12px', color: '#3a4353' }}>{d.productDescription}</td>
-                  <td style={{ padding: '10px 12px' }}>{d.store}</td>
-                  <td style={{ padding: '10px 12px' }}>{d.quantity ?? '—'}</td>
-                  <td style={{ padding: '10px 12px', fontWeight: (d.reasonType || 'waste') !== 'waste' ? 700 : 400, color: (d.reasonType || 'waste') !== 'waste' ? '#e0a500' : '#3a4353' }}>
-                    {reasonTypeLabel(d.reasonType || 'waste')}
-                  </td>
-                  <td style={{ padding: '10px 12px', color: '#6b7684' }}>{d.reason || '—'}</td>
-                  <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{formatDate(d.date || d.createdAt)}</td>
-                  <td style={{ padding: '10px 12px', color: '#6b7684' }}>{d.destroyedByEmail || '—'}</td>
-                  {canDelete && (
+              {filtered.map((d) => {
+                const isEditing = editingId === d.id;
+                return (
+                  <tr key={d.id} style={{ borderTop: '1px solid #eef1f4', background: isEditing ? '#fffbf0' : 'transparent' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 600 }}>{d.productItemCode}</td>
+                    <td style={{ padding: '10px 12px', color: '#3a4353' }}>{d.productDescription}</td>
                     <td style={{ padding: '10px 12px' }}>
-                      <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDelete(d.id)}>{t('common_delete')}</button>
+                      {isEditing ? (
+                        <input
+                          value={editDraft.store}
+                          onChange={(e) => setEditDraft((prev) => ({ ...prev, store: e.target.value }))}
+                          style={{ width: '100%', padding: '5px 6px', borderRadius: 5, border: '1px solid #d7dce3', fontSize: 12.5 }}
+                        />
+                      ) : d.store}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td style={{ padding: '10px 12px' }}>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={editDraft.quantity}
+                          onChange={(e) => setEditDraft((prev) => ({ ...prev, quantity: e.target.value }))}
+                          style={{ width: 70, padding: '5px 6px', borderRadius: 5, border: '1px solid #d7dce3', fontSize: 12.5, textAlign: 'center' }}
+                        />
+                      ) : (d.quantity ?? '—')}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontWeight: (d.reasonType || 'waste') !== 'waste' ? 700 : 400, color: (d.reasonType || 'waste') !== 'waste' ? '#e0a500' : '#3a4353' }}>
+                      {isEditing ? (
+                        <select
+                          value={editDraft.reasonType}
+                          onChange={(e) => setEditDraft((prev) => ({ ...prev, reasonType: e.target.value }))}
+                          style={{ padding: '5px 6px', borderRadius: 5, border: '1px solid #d7dce3', fontSize: 12.5 }}
+                        >
+                          {REASON_TYPES.map((r) => <option key={r.key} value={r.key}>{t(r.labelKey)}</option>)}
+                        </select>
+                      ) : reasonTypeLabel(d.reasonType || 'waste')}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>
+                      {isEditing ? (
+                        <input
+                          value={editDraft.reason}
+                          onChange={(e) => setEditDraft((prev) => ({ ...prev, reason: e.target.value }))}
+                          style={{ width: '100%', padding: '5px 6px', borderRadius: 5, border: '1px solid #d7dce3', fontSize: 12.5 }}
+                        />
+                      ) : (d.reason || '—')}
+                    </td>
+                    <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                      {isEditing ? (
+                        <input
+                          type="date"
+                          value={editDraft.date}
+                          onChange={(e) => setEditDraft((prev) => ({ ...prev, date: e.target.value }))}
+                          style={{ padding: '5px 6px', borderRadius: 5, border: '1px solid #d7dce3', fontSize: 12.5 }}
+                        />
+                      ) : formatDate(d.date || d.createdAt)}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>{d.destroyedByEmail || '—'}</td>
+                    {canDelete && (
+                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                        {isEditing ? (
+                          <>
+                            <button className="btn-primary" style={{ padding: '4px 10px', fontSize: 11.5, marginRight: 6 }} onClick={() => saveEdit(d)} disabled={editSaving}>
+                              {editSaving ? '...' : t('common_save')}
+                            </button>
+                            <button
+                              type="button"
+                              style={{ padding: '4px 10px', fontSize: 11.5, border: '1px solid #d7dce3', background: '#f9fafb', color: '#6b7684', borderRadius: 6, cursor: 'pointer' }}
+                              onClick={cancelEdit}
+                              disabled={editSaving}
+                            >
+                              {t('common_cancel')}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              style={{ padding: '4px 10px', fontSize: 11.5, border: '1px solid #d7dce3', background: '#f9fafb', color: '#16233f', borderRadius: 6, cursor: 'pointer', marginRight: 6, fontWeight: 600 }}
+                              onClick={() => startEdit(d)}
+                            >
+                              {t('common_edit')}
+                            </button>
+                            <button className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDelete(d.id)}>{t('common_delete')}</button>
+                          </>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
