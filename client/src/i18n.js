@@ -442,6 +442,8 @@ export const translations = {
     e_saving: 'Αποθήκευση...',
     e_submit_button: 'Καταχώρηση',
     common_cancel: 'Άκυρο',
+    common_save: 'Αποθήκευση',
+    common_edit: 'Επεξεργασία',
     e_camera_error_prefix: 'Δεν ήταν δυνατή η πρόσβαση στην κάμερα:',
     e_save_error_prefix: 'Σφάλμα αποθήκευσης:',
     e_barcode_example: 'π.χ. 5201234567890',
@@ -654,6 +656,7 @@ export const translations = {
 
     // Καταστροφή προϊόντος
     x_new_destruction_button: 'Νέα Καταστροφή',
+    x_edit_error_prefix: 'Σφάλμα αποθήκευσης:',
     x_or_search_any_product: 'Ή αναζήτησε οποιοδήποτε προϊόν (π.χ. για δειγματισμό ή ζήτηση διοίκησης):',
     x_date_label: 'Ημερομηνία καταστροφής',
     x_reason_type_label: 'Τύπος',
@@ -1122,6 +1125,8 @@ export const translations = {
     e_saving: 'Saving...',
     e_submit_button: 'Submit',
     common_cancel: 'Cancel',
+    common_save: 'Save',
+    common_edit: 'Edit',
     e_camera_error_prefix: 'Could not access the camera:',
     e_save_error_prefix: 'Save error:',
     e_barcode_example: 'e.g. 5201234567890',
@@ -1326,6 +1331,7 @@ export const translations = {
     sales_shift_details_history_title: 'Import history (Shift Breakdown)',
 
     x_new_destruction_button: 'New Destruction',
+    x_edit_error_prefix: 'Save error:',
     x_or_search_any_product: 'Or search any product (e.g. for sampling or a management request):',
     x_date_label: 'Destruction date',
     x_reason_type_label: 'Type',
