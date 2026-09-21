@@ -69,6 +69,11 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
   const [countSearch, setCountSearch] = useState('');
   const [savingCount, setSavingCount] = useState(false);
 
+  // Εναλλακτικός τρόπος καταχώρησης Απογραφής: ένα χειροκίνητο ΣΥΝΟΛΙΚΟ ποσό σε €, αντί για
+  // ανάλυση ανά προϊόν. amountEditing = { monthKey, type } όταν είναι ενεργό το inline πεδίο.
+  const [amountEditing, setAmountEditing] = useState(null);
+  const [amountDrafts, setAmountDrafts] = useState({}); // `${monthKey}|${type}` -> κείμενο ποσού
+
   useEffect(() => {
     if (!hasActivated) return;
     Promise.all([FBInventory.list(), Products.list(), Entries.list(), Destructions.list(), SalesProducts.list()])
@@ -112,6 +117,22 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
   function countsValue(counts) {
     if (!Array.isArray(counts) || !counts.length) return 0;
     return counts.reduce((sum, c) => sum + (Number(c.quantity) || 0) * (ptkByItemCode.get((c.itemCode || '').trim()) || 0), 0);
+  }
+
+  // Η Απογραφή Έναρξης/Λήξης έχει 2 δυνατούς τρόπους καταχώρησης — 'counts' (ανά προϊόν,
+  // αυτόματος υπολογισμός αξίας) ή 'amount' (ένα χειροκίνητο ποσό σε €). Επιστρέφει ποιος
+  // από τους δύο είναι ο "ενεργός" γι' αυτή τη γραμμή/στήλη, και την τρέχουσα αξία σε €.
+  function getInventoryValue(rec, type) {
+    if (!rec) return { mode: null, value: null };
+    const storedMode = type === 'opening' ? rec.openingMode : rec.closingMode;
+    const counts = type === 'opening' ? rec.openingCounts : rec.closingCounts;
+    const amount = type === 'opening' ? rec.openingValue : rec.closingValue;
+    const hasCounts = Array.isArray(counts) && counts.length > 0;
+    const hasAmount = amount !== null && amount !== undefined;
+    const mode = storedMode === 'amount' || storedMode === 'counts' ? storedMode : (hasCounts ? 'counts' : (hasAmount ? 'amount' : null));
+    if (mode === 'amount') return { mode: 'amount', value: hasAmount ? Number(amount) : null };
+    if (mode === 'counts') return { mode: 'counts', value: hasCounts ? countsValue(counts) : null };
+    return { mode: null, value: null };
   }
 
   // Προϊόντα του επιλεγμένου καταστήματος (Cost tab → Κατάστημα) — αυτά εμφανίζονται στο
@@ -252,8 +273,13 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     const body = {
       store: selectedStore,
       monthKey,
+      openingMode: existing ? existing.openingMode : null,
       openingCounts: existing ? existing.openingCounts : [],
+      openingValue: existing ? existing.openingValue : null,
+      closingMode: existing ? existing.closingMode : null,
       closingCounts: existing ? existing.closingCounts : [],
+      closingValue: existing ? existing.closingValue : null,
+      [type === 'opening' ? 'openingMode' : 'closingMode']: 'counts',
       [type === 'opening' ? 'openingCounts' : 'closingCounts']: counts
     };
     setSavingCount(true);
@@ -269,6 +295,87 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     } finally {
       setSavingCount(false);
     }
+  }
+
+  // --- Εναλλακτικός τρόπος: χειροκίνητο ΣΥΝΟΛΙΚΟ ποσό σε € (αντί για ανά προϊόν) ---
+  function getAmountDraft(monthKey, type, fallback) {
+    const key = `${monthKey}|${type}`;
+    if (amountDrafts[key] !== undefined) return amountDrafts[key];
+    return fallback === null || fallback === undefined ? '' : String(fallback).replace('.', ',');
+  }
+  function setAmountDraft(monthKey, type, value) {
+    const key = `${monthKey}|${type}`;
+    setAmountDrafts((d) => ({ ...d, [key]: value }));
+  }
+
+  async function saveAmount(monthKey, type, rawValue) {
+    const cleaned = String(rawValue).replace(',', '.').trim();
+    const num = cleaned === '' ? null : Number(cleaned);
+    const rowId = `${monthKey}|${selectedStore}`;
+    const existing = recordsByMonth[monthKey];
+    const body = {
+      store: selectedStore,
+      monthKey,
+      openingMode: existing ? existing.openingMode : null,
+      openingCounts: existing ? existing.openingCounts : [],
+      openingValue: existing ? existing.openingValue : null,
+      closingMode: existing ? existing.closingMode : null,
+      closingCounts: existing ? existing.closingCounts : [],
+      closingValue: existing ? existing.closingValue : null,
+      [type === 'opening' ? 'openingMode' : 'closingMode']: 'amount',
+      [type === 'opening' ? 'openingValue' : 'closingValue']: num
+    };
+    try {
+      const saved = await FBInventory.upsert(body);
+      setRecords((prev) => {
+        const others = prev.filter((r) => r.id !== rowId);
+        return [...others, saved];
+      });
+      const key = `${monthKey}|${type}`;
+      setAmountDrafts((d) => { const next = { ...d }; delete next[key]; return next; });
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  }
+
+  // Ενιαίο rendering για τα κελιά Απογραφής Έναρξης/Λήξης — δείχνει την τρέχουσα αξία
+  // (όποιος τρόπος καταχώρησης είναι ενεργός) και δύο μικρά κουμπιά για να διαλέξεις/
+  // αλλάξεις τρόπο ανά πάσα στιγμή: 📋 (ανά προϊόν) ή € (ένα συνολικό ποσό).
+  function renderInventoryCell(mk, type) {
+    const rec = recordsByMonth[mk];
+    const { mode, value } = getInventoryValue(rec, type);
+    const isEditingAmount = amountEditing && amountEditing.monthKey === mk && amountEditing.type === type;
+    const existingAmount = rec ? (type === 'opening' ? rec.openingValue : rec.closingValue) : null;
+
+    if (isEditingAmount) {
+      return (
+        <input
+          type="text"
+          inputMode="decimal"
+          autoFocus
+          disabled={readOnly}
+          placeholder={t('fb_amount_placeholder')}
+          value={getAmountDraft(mk, type, existingAmount)}
+          onChange={(e) => setAmountDraft(mk, type, e.target.value)}
+          onBlur={(e) => { saveAmount(mk, type, e.target.value); setAmountEditing(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          style={{ width: 90, padding: '6px 8px', borderRadius: 6, border: '1px solid #d7dce3', fontSize: 12.5, textAlign: 'center' }}
+        />
+      );
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+        <div style={{ fontWeight: 600, color: value !== null ? '#16233f' : '#97a2b0' }}>{value !== null ? fmtEuro(value) : '—'}</div>
+        {mode && <div style={{ fontSize: 9, color: '#97a2b0' }}>{mode === 'counts' ? t('fb_mode_counts_label') : t('fb_mode_amount_label')}</div>}
+        {!readOnly && (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button type="button" onClick={() => openCountModal(mk, type)} title={t('fb_count_button_edit')} style={smallModeButtonStyle}>📋</button>
+            <button type="button" onClick={() => setAmountEditing({ monthKey: mk, type })} title={t('fb_amount_button_edit')} style={smallModeButtonStyle}>€</button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   const countModalProducts = useMemo(() => {
@@ -326,49 +433,25 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
               <tbody>
                 {monthKeys.map((mk) => {
                   const rec = recordsByMonth[mk];
-                  const hasOpening = rec && Array.isArray(rec.openingCounts) && rec.openingCounts.length > 0;
-                  const hasClosing = rec && Array.isArray(rec.closingCounts) && rec.closingCounts.length > 0;
-                  const canCompute = hasOpening && hasClosing;
-                  const opening = hasOpening ? countsValue(rec.openingCounts) : null;
-                  const closing = hasClosing ? countsValue(rec.closingCounts) : null;
+                  const openingInfo = getInventoryValue(rec, 'opening');
+                  const closingInfo = getInventoryValue(rec, 'closing');
+                  const canCompute = openingInfo.value !== null && closingInfo.value !== null;
                   const receipts = receiptsByMonth[mk] || 0;
                   const destr = destructionsByMonth[mk] || 0;
                   const revenue = salesRevenueByMonth[mk] || 0;
-                  const costOfSales = canCompute ? (opening || 0) + receipts - destr - (closing || 0) : null;
+                  const costOfSales = canCompute ? (openingInfo.value || 0) + receipts - destr - (closingInfo.value || 0) : null;
                   const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
                   return (
                     <tr key={mk} style={{ borderTop: '1px solid #eef0f3' }}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: '#16233f' }}>{monthLabel(mk, lang)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => openCountModal(mk, 'opening')}
-                          disabled={readOnly}
-                          style={countButtonStyle}
-                          title={t('fb_count_button_edit')}
-                        >
-                          {opening !== null ? fmtEuro(opening) : '—'}
-                          <span style={{ marginLeft: 5, opacity: 0.6 }}>📋</span>
-                        </button>
-                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{renderInventoryCell(mk, 'opening')}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(receipts)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destr)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         {fmtEuro(revenue)}
                         {revenue === 0 && <div style={{ fontSize: 9.5, color: '#c0392b', marginTop: 2 }}>{t('fb_no_sales_hint')}</div>}
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => openCountModal(mk, 'closing')}
-                          disabled={readOnly}
-                          style={countButtonStyle}
-                          title={t('fb_count_button_edit')}
-                        >
-                          {closing !== null ? fmtEuro(closing) : '—'}
-                          <span style={{ marginLeft: 5, opacity: 0.6 }}>📋</span>
-                        </button>
-                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{renderInventoryCell(mk, 'closing')}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{costOfSales !== null ? fmtEuro(costOfSales) : '—'}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: fcPct !== null ? (fcPct <= 35 ? '#27ae60' : fcPct <= 45 ? '#e0a500' : '#c0392b') : '#97a2b0' }}>
                         {fcPct !== null ? fcPct.toFixed(1) + '%' : '—'}
@@ -466,5 +549,6 @@ const thStyle = { padding: '10px 12px', fontSize: 11.5, color: '#6b7684', textTr
 const tdStyle = { padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' };
 const stickyColStyle = { position: 'sticky', left: 0, boxShadow: '1px 0 0 #eef0f3' };
 const countButtonStyle = { border: '1px solid #d7dce3', background: '#f9fafb', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, cursor: 'pointer', fontWeight: 600, color: '#16233f', whiteSpace: 'nowrap' };
+const smallModeButtonStyle = { border: '1px solid #d7dce3', background: '#f9fafb', borderRadius: 5, padding: '2px 6px', fontSize: 11, cursor: 'pointer', color: '#6b7684', lineHeight: 1.4 };
 const overlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 };
 const modalStyle = { background: '#fff', borderRadius: 12, padding: 20, width: '100%', maxWidth: 720, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' };
