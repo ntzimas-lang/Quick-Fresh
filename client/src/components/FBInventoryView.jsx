@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FBInventory, Products, Entries, Destructions, SalesProducts } from '../api.js';
+import { FBInventory, Products, Entries, Destructions, SalesProducts, SalesDaily } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const MONTH_LABELS_EL = ['Ιανουάριος', 'Φεβρουάριος', 'Μάρτιος', 'Απρίλιος', 'Μάιος', 'Ιούνιος', 'Ιούλιος', 'Αύγουστος', 'Σεπτέμβριος', 'Οκτώβριος', 'Νοέμβριος', 'Δεκέμβριος'];
@@ -46,6 +46,7 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
   const [entries, setEntries] = useState([]);
   const [destructions, setDestructions] = useState([]);
   const [salesProducts, setSalesProducts] = useState([]);
+  const [salesDaily, setSalesDaily] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
@@ -65,13 +66,14 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
 
   useEffect(() => {
     if (!hasActivated) return;
-    Promise.all([FBInventory.list(), Products.list(), Entries.list(), Destructions.list(), SalesProducts.list()])
-      .then(([fb, prods, ent, destr, sp]) => {
+    Promise.all([FBInventory.list(), Products.list(), Entries.list(), Destructions.list(), SalesProducts.list(), SalesDaily.list()])
+      .then(([fb, prods, ent, destr, sp, sd]) => {
         setRecords(fb);
         setProducts(prods);
         setEntries(ent);
         setDestructions(destr);
         setSalesProducts(sp);
+        setSalesDaily(sd);
         setLoading(false);
       })
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
@@ -165,11 +167,28 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     return out;
   }, [destructions, selectedStore, ptkByItemCode]);
 
-  // --- Πωλήσεις (καθαρός τζίρος, €) ανά μήνα, για το επιλεγμένο κατάστημα -----------
-  // Κρατάμε μόνο την πιο πρόσφατη ανεβασμένη παρτίδα (batch) ανά κατάστημα — τα Sales
-  // Analysis Reports είναι συνήθως σωρευτικά, οπότε παλιότερα batches θα διπλομετρούσαν
-  // επικαλυπτόμενες περιόδους. Ίδια λογική με το DashboardView.jsx.
-  const salesRevenueByMonth = useMemo(() => {
+  // --- Πωλήσεις (καθαρός τζίρος, €) ανά μήνα — 2 πηγές, προτεραιότητα στην ΑΚΡΙΒΗ -------
+  // 1) sales_daily ("Ημερήσιες Πωλήσεις"): ΠΡΑΓΜΑΤΙΚΟ άθροισμα ανά ημέρα (ένα upload =
+  //    ένα πραγματικό σύνολο για τη συγκεκριμένη ημέρα) — ακριβές, αλλά μόνο για τις
+  //    ημέρες που όντως έχουν ανέβει. Ίδια πηγή/λογική με το "Στοιχεία ανά Μήνα" (Καθαρές
+  //    Πωλήσεις) του Πίνακα Ελέγχου, ώστε τα δύο σημεία να ΣΥΜΦΩΝΟΥΝ.
+  // 2) sales_products ("Sales Analysis Report"): δίνει ΕΝΑ σωρευτικό σύνολο για ολόκληρη
+  //    την περίοδο εξαγωγής (π.χ. πολλούς μήνες μαζί) — το καταμερίζουμε αναλογικά ανά
+  //    ημέρα (proration), οπότε είναι μια ΕΚΤΙΜΗΣΗ, όχι πραγματικό ανά-μήνα ποσό. Την
+  //    χρησιμοποιούμε ΜΟΝΟ σαν fallback, για μήνες που δεν έχουν καθόλου δεδομένα
+  //    sales_daily — για να μη μείνει ποτέ ένας μήνας εντελώς κενός.
+  const salesDailyRevenueByMonth = useMemo(() => {
+    const out = {};
+    salesDaily.forEach((r) => {
+      if ((r.store || '').trim() !== selectedStore) return;
+      if (!r.date) return;
+      const mk = String(r.date).slice(0, 7);
+      out[mk] = (out[mk] || 0) + (Number(r.netSales) || 0);
+    });
+    return out;
+  }, [salesDaily, selectedStore]);
+
+  const salesRevenueEstimateByMonth = useMemo(() => {
     const out = {};
     const storeRows = salesProducts.filter((p) => (p.store || '').trim() === selectedStore);
     let latestUploadedAt = null;
@@ -203,6 +222,14 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     return out;
   }, [salesProducts, selectedStore]);
 
+  // Συνδυασμός των δύο πηγών: προτεραιότητα στο ΑΚΡΙΒΕΣ sales_daily· fallback στην
+  // ΕΚΤΙΜΗΣΗ (proration) μόνο για μήνες που δεν έχουν καθόλου daily δεδομένα.
+  function getSalesForMonth(mk) {
+    const exact = salesDailyRevenueByMonth[mk];
+    if (exact !== undefined) return { revenue: exact, isEstimate: false };
+    return { revenue: salesRevenueEstimateByMonth[mk] || 0, isEstimate: true };
+  }
+
   // records για το επιλεγμένο κατάστημα, ανά μήνα (Απογραφή Έναρξης/Λήξης)
   const recordsByMonth = useMemo(() => {
     const map = {};
@@ -226,9 +253,10 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
     addYearsFrom(recordsByMonth);
     addYearsFrom(receiptsByMonth);
     addYearsFrom(destructionsByMonth);
-    addYearsFrom(salesRevenueByMonth);
+    addYearsFrom(salesRevenueEstimateByMonth);
+    addYearsFrom(salesDailyRevenueByMonth);
     return Array.from(set).sort((a, b) => b - a);
-  }, [recordsByMonth, receiptsByMonth, destructionsByMonth, salesRevenueByMonth]);
+  }, [recordsByMonth, receiptsByMonth, destructionsByMonth, salesRevenueEstimateByMonth, salesDailyRevenueByMonth]);
 
   // Μήνες προς εμφάνιση: ΟΛΟΙ οι 12 μήνες του επιλεγμένου έτους, με τη σωστή ημερολογιακή
   // σειρά (Ιανουάριος → Δεκέμβριος).
@@ -447,7 +475,7 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                   const canCompute = openingInfo.value !== null && closingInfo.value !== null;
                   const receipts = receiptsByMonth[mk] || 0;
                   const destr = destructionsByMonth[mk] || 0;
-                  const revenue = salesRevenueByMonth[mk] || 0;
+                  const { revenue, isEstimate } = getSalesForMonth(mk);
                   const costOfSales = canCompute ? (openingInfo.value || 0) + receipts - destr - (closingInfo.value || 0) : null;
                   const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
                   return (
@@ -459,6 +487,7 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         {fmtEuro(revenue)}
                         {revenue === 0 && <div style={{ fontSize: 9.5, color: '#c0392b', marginTop: 2 }}>{t('fb_no_sales_hint')}</div>}
+                        {revenue !== 0 && isEstimate && <div style={{ fontSize: 9.5, color: '#e0a500', marginTop: 2 }}>{t('fb_sales_estimate_hint')}</div>}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{renderInventoryCell(mk, 'closing')}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{costOfSales !== null ? fmtEuro(costOfSales) : '—'}</td>
