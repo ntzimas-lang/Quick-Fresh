@@ -9,6 +9,15 @@ const METHODS = [
   { key: 'description', icon: '🔎', labelKey: 'e_method_description' }
 ];
 
+// Τύπος αφαίρεσης — για να ξεχωρίζει η πραγματική καταστροφή (χαλασμένο/ληγμένο) από
+// δειγματισμό σε πελάτη ή αφαίρεση κατόπιν ζήτησης της διοίκησης κ.λπ.
+const REASON_TYPES = [
+  { key: 'waste', labelKey: 'x_reason_type_waste' },
+  { key: 'sample', labelKey: 'x_reason_type_sample' },
+  { key: 'management', labelKey: 'x_reason_type_management' },
+  { key: 'other', labelKey: 'x_reason_type_other' }
+];
+
 // Placeholder που παίρνει αυτόματα ένα προϊόν όταν δημιουργείται από τα "Προϊόντα"
 // χωρίς να συμπληρωθεί ακόμα — δεν έχει νόημα να εμφανίζεται στις λίστες αναζήτησης εδώ.
 function isUnfinishedPlaceholder(p) {
@@ -27,6 +36,7 @@ export default function DestructionView() {
   const [notFoundBarcode, setNotFoundBarcode] = useState('');
   const [store, setStore] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [reasonType, setReasonType] = useState('waste');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -174,6 +184,7 @@ export default function DestructionView() {
     setManualBarcode('');
     setStore('');
     setQuantity('1');
+    setReasonType('waste');
     setReason('');
     setNoBarcodeQuery('');
     setDescQuery('');
@@ -190,6 +201,7 @@ export default function DestructionView() {
         productDescription: matchedProduct.descriptionErp || matchedProduct.descriptionGr,
         store,
         quantity,
+        reasonType,
         reason
       });
       setRecentDestructions((prev) => [{ ...record, removedEntries }, ...prev].slice(0, 8));
@@ -366,6 +378,13 @@ export default function DestructionView() {
                 <input type="number" min="0" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
               </div>
 
+              <div className="field" style={{ marginBottom: 14 }}>
+                <label>{t('x_reason_type_label')}</label>
+                <select value={reasonType} onChange={(e) => setReasonType(e.target.value)}>
+                  {REASON_TYPES.map((r) => <option key={r.key} value={r.key}>{t(r.labelKey)}</option>)}
+                </select>
+              </div>
+
               <div className="field" style={{ marginBottom: 8 }}>
                 <label>{t('x_reason_label')}</label>
                 <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('x_reason_placeholder')} />
@@ -390,6 +409,11 @@ export default function DestructionView() {
               {recentDestructions.map((d) => (
                 <div key={d.id} style={{ background: '#fff', border: '1px solid #eef1f4', borderRadius: 8, padding: '10px 12px', marginBottom: 6, fontSize: 13 }}>
                   <strong>{d.productItemCode}</strong> — {d.store} — {t('e_quantity_label').toLowerCase()}: {d.quantity ?? '—'}
+                  {d.reasonType && d.reasonType !== 'waste' && (
+                    <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#fff', background: '#e0a500', borderRadius: 10, padding: '2px 7px' }}>
+                      {t(REASON_TYPES.find((r) => r.key === d.reasonType)?.labelKey || 'x_reason_type_other')}
+                    </span>
+                  )}
                   {d.removedEntries > 0 && (
                     <span style={{ color: '#2f8f8a' }}> · {t('x_removed_from_expired').replace('{n}', d.removedEntries)}</span>
                   )}

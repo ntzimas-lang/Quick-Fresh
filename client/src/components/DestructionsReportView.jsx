@@ -11,11 +11,23 @@ function formatDate(isoStr) {
   return d.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// Τύπος αφαίρεσης — ίδιες κατηγορίες με το DestructionView.jsx, ώστε να ξεχωρίζει η
+// πραγματική καταστροφή (χαλασμένο/ληγμένο) από δειγματισμό σε πελάτη ή αφαίρεση
+// κατόπιν ζήτησης της διοίκησης κ.λπ. Δεν επηρεάζει το πώς μετράει στο F&B — είναι
+// μόνο για ενημέρωση/αναφορά.
+const REASON_TYPES = [
+  { key: 'waste', labelKey: 'x_reason_type_waste' },
+  { key: 'sample', labelKey: 'x_reason_type_sample' },
+  { key: 'management', labelKey: 'x_reason_type_management' },
+  { key: 'other', labelKey: 'x_reason_type_other' }
+];
+
 const REPORT_COLUMNS = [
   { key: 'itemCode', labelKey: 'r_col_itemCode' },
   { key: 'description', labelKey: 'r_col_description' },
   { key: 'store', labelKey: 'r_col_store' },
   { key: 'quantity', labelKey: 'r_col_quantity' },
+  { key: 'reasonType', labelKey: 'x_reason_type_label' },
   { key: 'reason', labelKey: 'x_col_reason' },
   { key: 'date', labelKey: 'x_col_date' },
   { key: 'createdBy', labelKey: 'r_col_createdBy' }
@@ -26,6 +38,7 @@ function getRowValue(d, key) {
   if (key === 'description') return d.productDescription || '';
   if (key === 'store') return d.store || '';
   if (key === 'quantity') return d.quantity ?? null;
+  if (key === 'reasonType') return d.reasonType || 'waste';
   if (key === 'reason') return d.reason || '';
   if (key === 'date') return d.date || d.createdAt || '';
   if (key === 'createdBy') return d.destroyedByEmail || '';
@@ -53,8 +66,14 @@ export default function DestructionsReportView({ canDelete = false }) {
     }
   }
 
+  function reasonTypeLabel(key) {
+    const found = REASON_TYPES.find((r) => r.key === key);
+    return t(found ? found.labelKey : 'x_reason_type_waste');
+  }
+
   function getRowFilterText(d, key) {
     if (key === 'date') return formatDate(d.date || d.createdAt);
+    if (key === 'reasonType') return reasonTypeLabel(d.reasonType || 'waste');
     const v = getRowValue(d, key);
     return v === null || v === undefined ? '' : String(v);
   }
@@ -89,11 +108,15 @@ export default function DestructionsReportView({ canDelete = false }) {
   const summary = useMemo(() => {
     let totalQty = 0;
     let events = destructions.length;
+    const byType = { waste: 0, sample: 0, management: 0, other: 0 };
     destructions.forEach((d) => {
       const q = Number(d.quantity);
-      totalQty += Number.isFinite(q) && q > 0 ? q : 0;
+      const qty = Number.isFinite(q) && q > 0 ? q : 0;
+      totalQty += qty;
+      const rt = REASON_TYPES.some((r) => r.key === d.reasonType) ? d.reasonType : 'waste';
+      byType[rt] += qty;
     });
-    return { totalQty, events };
+    return { totalQty, events, byType };
   }, [destructions]);
 
   const filtered = useMemo(() => {
@@ -147,12 +170,13 @@ export default function DestructionsReportView({ canDelete = false }) {
     doc.text(`Quick & Fresh — ${t('title_destructions_report')}`, 14, 12);
     autoTable(doc, {
       startY: 18,
-      head: [[t('r_col_itemCode'), t('r_col_description'), t('r_col_store'), t('r_col_quantity'), t('x_col_reason'), t('x_col_date'), t('r_col_createdBy')]],
+      head: [[t('r_col_itemCode'), t('r_col_description'), t('r_col_store'), t('r_col_quantity'), t('x_reason_type_label'), t('x_col_reason'), t('x_col_date'), t('r_col_createdBy')]],
       body: filtered.map((d) => [
         d.productItemCode || '',
         d.productDescription || '',
         d.store || '',
         d.quantity ?? '',
+        reasonTypeLabel(d.reasonType || 'waste'),
         d.reason || '',
         formatDate(d.date || d.createdAt),
         d.destroyedByEmail || ''
@@ -191,6 +215,12 @@ export default function DestructionsReportView({ canDelete = false }) {
             <div style={{ fontSize: 24, fontWeight: 700, color: '#16233f' }}>{summary.events}</div>
             <div style={{ fontSize: 11.5, color: '#6b7684' }}>{t('x_total_events')}</div>
           </div>
+          {REASON_TYPES.map((r) => (
+            <div key={r.key}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: r.key === 'waste' ? '#16233f' : '#e0a500' }}>{summary.byType[r.key]}</div>
+              <div style={{ fontSize: 11.5, color: '#6b7684' }}>{t(r.labelKey)}</div>
+            </div>
+          ))}
         </div>
       )}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
@@ -244,6 +274,9 @@ export default function DestructionsReportView({ canDelete = false }) {
                   <td style={{ padding: '10px 12px', color: '#3a4353' }}>{d.productDescription}</td>
                   <td style={{ padding: '10px 12px' }}>{d.store}</td>
                   <td style={{ padding: '10px 12px' }}>{d.quantity ?? '—'}</td>
+                  <td style={{ padding: '10px 12px', fontWeight: (d.reasonType || 'waste') !== 'waste' ? 700 : 400, color: (d.reasonType || 'waste') !== 'waste' ? '#e0a500' : '#3a4353' }}>
+                    {reasonTypeLabel(d.reasonType || 'waste')}
+                  </td>
                   <td style={{ padding: '10px 12px', color: '#6b7684' }}>{d.reason || '—'}</td>
                   <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{formatDate(d.date || d.createdAt)}</td>
                   <td style={{ padding: '10px 12px', color: '#6b7684' }}>{d.destroyedByEmail || '—'}</td>
