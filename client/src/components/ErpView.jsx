@@ -259,6 +259,8 @@ export default function ErpView({ canUpload = false }) {
                 <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
                   <th style={{ padding: '10px 12px' }}>{t('erp_col_code')}</th>
                   <th style={{ padding: '10px 12px' }}>{t('erp_col_description')}</th>
+                  <th style={{ padding: '10px 12px' }}>{t('erp_col_category')}</th>
+                  <th style={{ padding: '10px 12px' }}>{t('erp_col_subcategory')}</th>
                   <th style={{ padding: '10px 12px' }}>{t('erp_col_unit')}</th>
                   <th style={{ padding: '10px 12px' }}>{t('erp_col_standard_cost')}</th>
                 </tr>
@@ -268,6 +270,8 @@ export default function ErpView({ canUpload = false }) {
                   <tr key={p.id} style={{ borderTop: '1px solid #eef1f4' }}>
                     <td style={{ padding: '10px 12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{p.code}</td>
                     <td style={{ padding: '10px 12px', color: '#3a4353' }}>{p.description || '—'}</td>
+                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>{p.category || '—'}</td>
+                    <td style={{ padding: '10px 12px', color: '#6b7684' }}>{p.subcategory || '—'}</td>
                     <td style={{ padding: '10px 12px' }}>{p.unit || '—'}</td>
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{fmtEuro(p.standardCost)}</td>
                   </tr>
