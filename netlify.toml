@@ -3,9 +3,18 @@
   command = "npm run build"
   publish = "dist"
 
-# React Router-style SPA fallback: κάθε path επιστρέφει το index.html
-# ώστε client-side navigation να μη σκάει σε 404 μετά από refresh.
+[[redirects]]
+  from = "/assets/*"
+  to = "/404.html"
+  status = 404
+  force = false
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
