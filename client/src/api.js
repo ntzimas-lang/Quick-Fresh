@@ -628,21 +628,41 @@ export const StoreEquipment = {
 // ήδη υπάρχοντα δεδομένα (product_entries, destructions, sales_products) — δεν αποθηκεύονται
 // εδώ. id = `${monthKey}|${store}` (π.χ. "2026-09|Altex Metamorphosis Q&F") ώστε το
 // ξαναπέρασμα της απογραφής του ίδιου μήνα/καταστήματος να κάνει update, όχι διπλή εγγραφή.
+// Η Απογραφή Έναρξης/Λήξης έχει ΔΥΟ τρόπους καταχώρησης, επιλέξιμους ανά μήνα/κατάστημα:
+// - 'counts': "κανονική" απογραφή ανά προϊόν (πραγματική ποσότητα, όπως θα τη μετρούσες
+//   φυσικά στο κατάστημα) — openingCounts/closingCounts = [{ itemCode, quantity }], το
+//   FBInventoryView.jsx υπολογίζει το ΠΟΣΟ σε € αυτόματα (Σ ποσότητα × ΠΤΚ προϊόντος).
+// - 'amount': ένα χειροκίνητο ΣΥΝΟΛΙΚΟ ποσό σε € (openingValue/closingValue), για όποιον
+//   προτιμά να καταχωρεί απευθείας το τελικό ποσό χωρίς ανάλυση ανά προϊόν.
+// openingMode/closingMode δείχνει ποιος από τους δύο τρόπους είναι ο "ενεργός" (αυτός που
+// μετράει στους υπολογισμούς Κόστους Πωλήσεων/F.C.%) — κρατάμε ΚΑΙ τα δύο σετ δεδομένων
+// αποθηκευμένα ταυτόχρονα (δεν σβήνεται το ένα όταν αλλάζεις σε άλλο mode), ώστε να μπορείς
+// να εναλλάσσεσαι ελεύθερα χωρίς να χάνεις ό,τι είχες καταχωρήσει με τον άλλο τρόπο.
 export const FBInventory = {
   async list() {
     const data = await fetchAllRows('fb_inventory');
     return data.map(rowToRecord);
   },
-  async upsert({ store, monthKey, openingValue, closingValue }) {
+  async upsert({ store, monthKey, openingMode, openingCounts, openingValue, closingMode, closingCounts, closingValue }) {
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user;
     const id = `${monthKey}|${store}`;
+    const cleanCounts = (arr) =>
+      (Array.isArray(arr) ? arr : [])
+        .map((c) => ({ itemCode: (c.itemCode || '').trim(), quantity: Number(c.quantity) || 0 }))
+        .filter((c) => c.itemCode && c.quantity !== 0);
+    const cleanValue = (v) => (v === '' || v === undefined || v === null ? null : Number(v));
+    const cleanMode = (m) => (m === 'amount' ? 'amount' : m === 'counts' ? 'counts' : null);
     const record = {
       id,
       store,
       monthKey,
-      openingValue: openingValue === '' || openingValue === undefined || openingValue === null ? null : Number(openingValue),
-      closingValue: closingValue === '' || closingValue === undefined || closingValue === null ? null : Number(closingValue),
+      openingMode: cleanMode(openingMode),
+      openingCounts: cleanCounts(openingCounts),
+      openingValue: cleanValue(openingValue),
+      closingMode: cleanMode(closingMode),
+      closingCounts: cleanCounts(closingCounts),
+      closingValue: cleanValue(closingValue),
       updatedBy: user?.id || null,
       updatedByEmail: user?.email || null
     };
