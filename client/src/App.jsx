@@ -35,6 +35,10 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
   const [profile, setProfile] = useState(null);
+  // Όταν πατιέται "+ Νέα Καταστροφή" στο Report Καταστροφών, θέλουμε να πάμε κατευθείαν
+  // στην Καταχώρηση με προεπιλεγμένη τη λειτουργία "Καταστροφή" — one-shot τιμή, καταναλώνεται
+  // από το ProductEntryView μόλις ανοίξει.
+  const [pendingEntryMode, setPendingEntryMode] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
       const v = localStorage.getItem(SIDEBAR_KEY);
@@ -310,13 +314,20 @@ export default function App() {
           </section>
         )}
         <section className={'view' + (view === 'entry' ? ' active' : '')}>
-          <ProductEntryView canDeletePending={role === 'super_user'} />
+          <ProductEntryView
+            canDeletePending={role === 'super_user'}
+            initialMode={pendingEntryMode}
+            onConsumeInitialMode={() => setPendingEntryMode(null)}
+          />
         </section>
         <section className={'view' + (view === 'expired' ? ' active' : '')}>
           <ExpiredReportView canDelete={role === 'super_user'} />
         </section>
         <section className={'view' + (view === 'destructionsReport' ? ' active' : '')}>
-          <DestructionsReportView canDelete={role === 'super_user' || role === 'user'} />
+          <DestructionsReportView
+            canDelete={role === 'super_user' || role === 'user'}
+            onNewDestruction={() => { setPendingEntryMode('destruction'); setView('entry'); }}
+          />
         </section>
         <section className={'view' + (view === 'deliveryShortages' ? ' active' : '')}>
           <DeliveryShortagesView canDelete={role === 'super_user' || role === 'user'} />

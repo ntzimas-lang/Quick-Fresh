@@ -653,6 +653,7 @@ export const translations = {
     sales_shift_details_history_title: 'Ιστορικό εισαγωγών (Βάρδιες ανά Κατάστημα)',
 
     // Καταστροφή προϊόντος
+    x_new_destruction_button: 'Νέα Καταστροφή',
     x_date_label: 'Ημερομηνία καταστροφής',
     x_reason_type_label: 'Τύπος',
     x_reason_type_waste: 'Καταστροφή / Ληγμένο',
@@ -1323,6 +1324,7 @@ export const translations = {
     sales_time_buckets_history_title: 'Import history (Peak Hours)',
     sales_shift_details_history_title: 'Import history (Shift Breakdown)',
 
+    x_new_destruction_button: 'New Destruction',
     x_date_label: 'Destruction date',
     x_reason_type_label: 'Type',
     x_reason_type_waste: 'Destruction / Expired',
