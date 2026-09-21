@@ -209,10 +209,10 @@ export default function App() {
           )}
           {role !== 'driver' && (
             <button
-              className={'nav-item' + (view === 'products' ? ' active' : '')}
-              onClick={() => setView('products')}
+              className={'nav-item' + (view === 'newCustomers' ? ' active' : '')}
+              onClick={() => setView('newCustomers')}
             >
-              {t('nav_products')}
+              {t('nav_new_customers')}
             </button>
           )}
           {role !== 'driver' && (
@@ -225,26 +225,10 @@ export default function App() {
           )}
           {role !== 'driver' && (
             <button
-              className={'nav-item' + (view === 'history' ? ' active' : '')}
-              onClick={() => setView('history')}
+              className={'nav-item' + (view === 'products' ? ' active' : '')}
+              onClick={() => setView('products')}
             >
-              {t('nav_history')}
-            </button>
-          )}
-          {role !== 'driver' && (
-            <button
-              className={'nav-item' + (view === 'sales' ? ' active' : '')}
-              onClick={() => setView('sales')}
-            >
-              {t('nav_sales')}
-            </button>
-          )}
-          {role !== 'driver' && (
-            <button
-              className={'nav-item' + (view === 'newCustomers' ? ' active' : '')}
-              onClick={() => setView('newCustomers')}
-            >
-              {t('nav_new_customers')}
+              {t('nav_products')}
             </button>
           )}
           {role !== 'driver' && (
@@ -271,6 +255,22 @@ export default function App() {
             <span>🌐 {t('language')}</span>
             <span className="lang-badge">{lang === 'el' ? 'ΕΛ / En' : 'El / ΕΝ'}</span>
           </button>
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'history' ? ' active' : '')}
+              onClick={() => setView('history')}
+            >
+              {t('nav_history')}
+            </button>
+          )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'sales' ? ' active' : '')}
+              onClick={() => setView('sales')}
+            >
+              {t('nav_sales')}
+            </button>
+          )}
           {role === 'super_user' && (
             <button
               className={'nav-item' + (view === 'users' ? ' active' : '')}
