@@ -488,7 +488,8 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_sales')}</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_closing')}</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_cost_of_sales')}</th>
-                  <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_fc_pct')}</th>
+                  <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_fc_pct_all')}</th>
+                  <th style={{ ...thStyle, textAlign: 'center' }}>{t('fb_col_fc_pct_waste_only')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -502,8 +503,13 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                   const destrOther = destructionsOtherByMonth[mk] || 0;
                   const destr = destrWaste + destrOther;
                   const { revenue, isEstimate } = getSalesForMonth(mk);
+                  // Κόστος Πωλήσεων / F.C. % με ΟΛΕΣ τις αφαιρέσεις (Καταστροφή/Ληγμένο + Λοιπές Αφαιρέσεις) — η "επίσημη" μέτρηση.
                   const costOfSales = canCompute ? (openingInfo.value || 0) + receipts - destr - (closingInfo.value || 0) : null;
                   const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
+                  // F.C. % μόνο με Καταστροφή/Ληγμένο (χωρίς Λοιπές Αφαιρέσεις) — δείχνει το "καθαρό" F.C. χωρίς
+                  // ό,τι αφαιρέθηκε για δειγματισμό/ζήτηση διοίκησης/άλλο, που δεν είναι πραγματική φθορά.
+                  const costOfSalesWasteOnly = canCompute ? (openingInfo.value || 0) + receipts - destrWaste - (closingInfo.value || 0) : null;
+                  const fcPctWasteOnly = canCompute && revenue > 0 ? (costOfSalesWasteOnly / revenue) * 100 : null;
                   return (
                     <tr key={mk} style={{ borderTop: '1px solid #eef0f3' }}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: '#16233f' }}>{monthLabel(mk, lang)}</td>
@@ -520,6 +526,9 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{costOfSales !== null ? fmtEuro(costOfSales) : '—'}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: fcPct !== null ? (fcPct <= 35 ? '#27ae60' : fcPct <= 45 ? '#e0a500' : '#c0392b') : '#97a2b0' }}>
                         {fcPct !== null ? fcPct.toFixed(1) + '%' : '—'}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: fcPctWasteOnly !== null ? (fcPctWasteOnly <= 35 ? '#27ae60' : fcPctWasteOnly <= 45 ? '#e0a500' : '#c0392b') : '#97a2b0' }}>
+                        {fcPctWasteOnly !== null ? fcPctWasteOnly.toFixed(1) + '%' : '—'}
                       </td>
                     </tr>
                   );
