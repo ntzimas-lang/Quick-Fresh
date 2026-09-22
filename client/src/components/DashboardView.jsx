@@ -225,6 +225,20 @@ export default function DashboardView({ isDriver = false } = {}) {
   const avgTicket = salesTx ? salesNet / salesTx : 0;
   const avgBasket = salesTx ? salesItems / salesTx : 0;
 
+  // Ίδια KPIs (Καθαρές πωλήσεις / Συναλλαγές / Μέσο ταλόν / Μέσο καλάθι / F.C.%) αλλά
+  // σπασμένα ανά κατάστημα — το salesDaily έχει ήδη πεδίο "store" (id = date|store), και
+  // το F.C.% χρησιμοποιεί το currentProducts, που είναι ήδη η πιο πρόσφατη παρτίδα ΑΝΑ
+  // κατάστημα (latestBatchByStore παρακάτω) — άρα το group-by-store εδώ είναι ήδη σωστό
+  // ανά κατάστημα χωρίς να μπερδεύει διαφορετικές περιόδους μεταξύ καταστημάτων.
+  const salesByStoreMap = {};
+  salesDaily.forEach((r) => {
+    const store = r.store || '—';
+    if (!salesByStoreMap[store]) salesByStoreMap[store] = { tx: 0, net: 0, items: 0 };
+    salesByStoreMap[store].tx += r.transactions || 0;
+    salesByStoreMap[store].net += r.netSales || 0;
+    salesByStoreMap[store].items += r.itemCount || 0;
+  });
+
   // Τάση ανά μήνα (καθαρές πωλήσεις / συναλλαγές / μέσο καλάθι).
   const monthMap = {};
   salesDaily.forEach((r) => {
@@ -296,6 +310,29 @@ export default function DashboardView({ isDriver = false } = {}) {
   const fcTotalCost = currentProducts.reduce((s, p) => s + (p.cost || 0), 0);
   const fcTotalRevenue = currentProducts.reduce((s, p) => s + (p.netRevenue || 0), 0);
   const fcPct = fcTotalRevenue ? (fcTotalCost / fcTotalRevenue) * 100 : 0;
+
+  const fcByStoreMap = {};
+  currentProducts.forEach((p) => {
+    const store = p.store || '—';
+    if (!fcByStoreMap[store]) fcByStoreMap[store] = { cost: 0, revenue: 0 };
+    fcByStoreMap[store].cost += p.cost || 0;
+    fcByStoreMap[store].revenue += p.netRevenue || 0;
+  });
+  const salesByStoreList = Array.from(new Set([...Object.keys(salesByStoreMap), ...Object.keys(fcByStoreMap)]))
+    .map((store) => {
+      const s = salesByStoreMap[store] || { tx: 0, net: 0, items: 0 };
+      const f = fcByStoreMap[store] || { cost: 0, revenue: 0 };
+      return {
+        store,
+        net: s.net,
+        tx: s.tx,
+        avgTicket: s.tx ? s.net / s.tx : 0,
+        avgBasket: s.tx ? s.items / s.tx : 0,
+        fcRevenue: f.revenue,
+        fcPct: f.revenue ? (f.cost / f.revenue) * 100 : null
+      };
+    })
+    .sort((a, b) => b.net - a.net);
 
   const productTotals = {};
   const categoryTotals = {};
@@ -708,6 +745,38 @@ export default function DashboardView({ isDriver = false } = {}) {
                     </div>
                   )}
                 </div>
+
+                {salesByStoreList.length > 1 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
+                    <div style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10 }}>
+                      {t('d_sales_by_store_title')}
+                    </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #eef1f4' }}>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('r_col_store')}</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_sales_net')}</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_sales_tx')}</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_sales_avg_ticket')}</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_sales_avg_basket')}</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7684', fontWeight: 600 }}>{t('d_sales_fc')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {salesByStoreList.map((s) => (
+                          <tr key={s.store} style={{ borderBottom: '1px solid #f3f5f7' }}>
+                            <td style={{ padding: '6px 8px', color: '#16233f', fontWeight: 600 }}>{s.store}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#16233f' }}>€{s.net.toFixed(0)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#2f8f8a' }}>{s.tx}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c98a1f' }}>€{s.avgTicket.toFixed(2)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#7a4fc9' }}>{s.avgBasket.toFixed(2)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#c0392b' }}>{s.fcRevenue > 0 ? s.fcPct.toFixed(1) + '%' : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 {monthKeys.length > 1 && (
                   <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
