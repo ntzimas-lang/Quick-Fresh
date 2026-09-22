@@ -341,6 +341,10 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
       sku: r.sku,
       pdfName: r.pdfName || r.productDescription || '',
       qty: r.qty != null ? String(r.qty) : '1',
+      // Παλιές αποθηκευμένες εκκρεμότητες δεν έχουν orderedQty (προστέθηκε αργότερα) —
+      // fallback στο qty τους, οπότε απλά δεν θα ανιχνευτεί μερική έλλειψη σε αυτές,
+      // χωρίς να σκάσει τίποτα.
+      orderedQty: r.orderedQty != null ? String(r.orderedQty) : (r.qty != null ? String(r.qty) : '1'),
       matchedProduct: r.productId
         ? (products.find((p) => p.id === r.productId) || { id: r.productId, itemCode: r.productItemCode, descriptionErp: r.productDescription, descriptionGr: r.productDescription })
         : null,
@@ -366,6 +370,7 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
       sku: r.sku,
       pdfName: r.pdfName,
       qty: r.qty,
+      orderedQty: r.orderedQty,
       productId: r.matchedProduct ? r.matchedProduct.id : null,
       productItemCode: r.matchedProduct ? r.matchedProduct.itemCode : null,
       productDescription: r.matchedProduct ? (r.matchedProduct.descriptionErp || r.matchedProduct.descriptionGr) : null,
@@ -436,6 +441,11 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
         sku: r.sku,
         pdfName: r.name,
         qty: r.qty != null ? String(r.qty) : '1',
+        // Κρατάμε ΞΕΧΩΡΙΣΤΑ την αρχική ποσότητα του δελτίου (όπως τη διάβασε το PDF) από
+        // το qty, που ο χρήστης μπορεί να το αλλάξει αν παραλάβει λιγότερα τεμάχια — έτσι
+        // μπορούμε αργότερα να ανιχνεύσουμε τη διαφορά και να τη στείλουμε στις Ελλείψεις
+        // Παραλαβής, ακόμα κι αν η γραμμή παραμείνει "παραλήφθηκε" (checkbox ενεργό).
+        orderedQty: r.qty != null ? String(r.qty) : '1',
         matchedProduct: products.find((p) => (p.itemCode || '').trim() === r.sku.trim()) || null,
         expiryDate: '',
         include: true,
@@ -492,8 +502,18 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
       }
       setRecentEntries((prev) => [...created.map((entry) => ({ ...entry, type: 'expiry' })), ...prev].slice(0, 8));
 
-      if (notReceived.length > 0) {
-        await DeliveryShortages.insertMany(notReceived.map((r) => ({
+      // Ελλείψεις Παραλαβής = γραμμές εντελώς εκτός παραλαβής (checkbox unchecked) ΚΑΙ
+      // γραμμές που παραλήφθηκαν αλλά με μικρότερη ποσότητα από όση έγραφε το δελτίο
+      // (π.χ. παραγγέλθηκαν 10, ο χρήστης έγραψε 7 στο πεδίο ποσότητας) — και οι δύο
+      // περιπτώσεις σημαίνουν ότι κάτι δεν ήρθε, απλά η πρώτη είναι 100% έλλειψη ενώ η
+      // δεύτερη μερική. Πριν προστεθεί το orderedQty, μόνο η πρώτη περίπτωση καταγραφόταν.
+      const partialShortages = toSave
+        .filter((r) => r.orderedQty != null && Number(r.orderedQty) > Number(r.qty))
+        .map((r) => ({ ...r, qty: Number(r.orderedQty) - Number(r.qty) }));
+      const allShortages = [...notReceived, ...partialShortages];
+
+      if (allShortages.length > 0) {
+        await DeliveryShortages.insertMany(allShortages.map((r) => ({
           sku: r.sku,
           pdfName: r.pdfName,
           productId: r.matchedProduct ? r.matchedProduct.id : null,
@@ -520,8 +540,8 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
       resetBatch();
-      if (notReceived.length > 0) {
-        setBatchFlash(t('e_batch_shortages_flash').replace('{n}', String(notReceived.length)));
+      if (allShortages.length > 0) {
+        setBatchFlash(t('e_batch_shortages_flash').replace('{n}', String(allShortages.length)));
         setTimeout(() => setBatchFlash(''), 4000);
       }
     } catch (err) {
@@ -962,6 +982,11 @@ export default function ProductEntryView({ canDeletePending = false, initialMode
                                         onChange={(e) => updateBatchRow(idx, 'qty', e.target.value)}
                                         style={{ width: '100%', padding: '5px 7px', border: '1px solid #d7dce2', borderRadius: 5, fontSize: 12.5 }}
                                       />
+                                      {row.orderedQty != null && Number(row.orderedQty) > Number(row.qty || 0) && (
+                                        <div style={{ fontSize: 10.5, color: '#c0392b', marginTop: 2, whiteSpace: 'nowrap' }}>
+                                          {t('e_batch_ordered_qty_hint').replace('{n}', row.orderedQty)}
+                                        </div>
+                                      )}
                                     </td>
                                     <td style={{ padding: '6px 8px' }}>
                                       <input
