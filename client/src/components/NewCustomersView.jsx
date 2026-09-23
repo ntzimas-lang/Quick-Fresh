@@ -128,14 +128,17 @@ export default function NewCustomersView({ canDelete = false }) {
   const [attachmentsLoading, setAttachmentsLoading] = useState(true);
   const [attachmentsError, setAttachmentsError] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
+  const [attachmentCategory, setAttachmentCategory] = useState('');
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const attachmentFileInputRef = useRef(null);
   const [editingAttachmentId, setEditingAttachmentId] = useState(null);
   const [editAttachmentName, setEditAttachmentName] = useState('');
+  const [editAttachmentCategory, setEditAttachmentCategory] = useState('');
   const [editAttachmentFile, setEditAttachmentFile] = useState(null);
   const [editAttachmentSaving, setEditAttachmentSaving] = useState(false);
   const editAttachmentFileInputRef = useRef(null);
+  const [attachmentReordering, setAttachmentReordering] = useState(null);
 
   useEffect(() => {
     load();
@@ -163,18 +166,70 @@ export default function NewCustomersView({ canDelete = false }) {
       return;
     }
     const name = attachmentName.trim() || attachmentFile.name;
+    const category = attachmentCategory.trim();
     setAttachmentUploading(true);
     try {
       const { url } = await upload(attachmentFile);
-      const created = await NcAttachments.create({ name, url, fileName: attachmentFile.name || '' });
-      setAttachments((prev) => [created, ...prev]);
+      const maxOrder = attachments.reduce((m, a) => Math.max(m, Number(a.order) || 0), 0);
+      const created = await NcAttachments.create({ name, category, url, fileName: attachmentFile.name || '', order: maxOrder + 1 });
+      setAttachments((prev) => [...prev, created]);
       setAttachmentName('');
+      setAttachmentCategory('');
       setAttachmentFile(null);
       if (attachmentFileInputRef.current) attachmentFileInputRef.current.value = '';
     } catch (err) {
       setAttachmentsError(err.message || String(err));
     } finally {
       setAttachmentUploading(false);
+    }
+  }
+
+  const attachmentCategories = useMemo(() => {
+    const set = new Set();
+    attachments.forEach((a) => { if (a.category) set.add(a.category); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'el'));
+  }, [attachments]);
+
+  const attachmentGroups = useMemo(() => {
+    const byCategory = {};
+    attachments.forEach((a) => {
+      const cat = a.category || '';
+      if (!byCategory[cat]) byCategory[cat] = [];
+      byCategory[cat].push(a);
+    });
+    Object.values(byCategory).forEach((list) =>
+      list.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+    );
+    const keys = Object.keys(byCategory)
+      .filter((k) => k !== '')
+      .sort((a, b) => a.localeCompare(b, 'el'));
+    if (byCategory['']) keys.push('');
+    return keys.map((key) => ({ category: key, items: byCategory[key] }));
+  }, [attachments]);
+
+  async function moveAttachment(group, index, direction) {
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= group.length) return;
+    const a = group[index];
+    const b = group[targetIdx];
+    setAttachmentReordering(a.id);
+    setAttachmentsError('');
+    try {
+      const orderA = Number(b.order) || 0;
+      const orderB = Number(a.order) || 0;
+      const [updatedA, updatedB] = await Promise.all([
+        NcAttachments.update(a.id, { ...a, order: orderA }),
+        NcAttachments.update(b.id, { ...b, order: orderB })
+      ]);
+      setAttachments((prev) => prev.map((x) => {
+        if (x.id === updatedA.id) return updatedA;
+        if (x.id === updatedB.id) return updatedB;
+        return x;
+      }));
+    } catch (err) {
+      setAttachmentsError(err.message || String(err));
+    } finally {
+      setAttachmentReordering(null);
     }
   }
 
@@ -192,6 +247,7 @@ export default function NewCustomersView({ canDelete = false }) {
   function startEditAttachment(a) {
     setEditingAttachmentId(a.id);
     setEditAttachmentName(a.name || a.fileName || '');
+    setEditAttachmentCategory(a.category || '');
     setEditAttachmentFile(null);
     setAttachmentsError('');
   }
@@ -199,6 +255,7 @@ export default function NewCustomersView({ canDelete = false }) {
   function cancelEditAttachment() {
     setEditingAttachmentId(null);
     setEditAttachmentName('');
+    setEditAttachmentCategory('');
     setEditAttachmentFile(null);
     if (editAttachmentFileInputRef.current) editAttachmentFileInputRef.current.value = '';
   }
@@ -219,7 +276,8 @@ export default function NewCustomersView({ canDelete = false }) {
         url = res.url;
         fileName = editAttachmentFile.name || '';
       }
-      const updated = await NcAttachments.update(a.id, { ...a, name, url, fileName });
+      const category = editAttachmentCategory.trim();
+      const updated = await NcAttachments.update(a.id, { ...a, name, category, url, fileName });
       setAttachments((prev) => prev.map((x) => (x.id === a.id ? updated : x)));
       cancelEditAttachment();
     } catch (err) {
@@ -416,11 +474,21 @@ export default function NewCustomersView({ canDelete = false }) {
           )}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
             <input
-              style={{ ...inputStyle, width: 240, flex: '1 1 220px' }}
+              style={{ ...inputStyle, width: 220, flex: '1 1 200px' }}
               value={attachmentName}
               placeholder={t('nc_att_name_placeholder')}
               onChange={(e) => setAttachmentName(e.target.value)}
             />
+            <input
+              style={{ ...inputStyle, width: 180, flex: '1 1 160px' }}
+              value={attachmentCategory}
+              placeholder={t('nc_att_category_placeholder')}
+              list="nc-att-categories"
+              onChange={(e) => setAttachmentCategory(e.target.value)}
+            />
+            <datalist id="nc-att-categories">
+              {attachmentCategories.map((c) => <option key={c} value={c} />)}
+            </datalist>
             <input
               ref={attachmentFileInputRef}
               type="file"
@@ -442,47 +510,77 @@ export default function NewCustomersView({ canDelete = false }) {
           ) : attachments.length === 0 ? (
             <p style={{ color: '#97a2b0', fontSize: 13 }}>{t('nc_att_no_records')}</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {attachments.map((a) =>
-                editingAttachmentId === a.id ? (
-                  <div key={a.id} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: '#eaf3fe', borderRadius: 6, padding: 8 }}>
-                    <input
-                      style={{ ...inputStyle, width: 200, flex: '1 1 180px' }}
-                      value={editAttachmentName}
-                      placeholder={t('nc_att_name_placeholder')}
-                      onChange={(e) => setEditAttachmentName(e.target.value)}
-                    />
-                    <input
-                      ref={editAttachmentFileInputRef}
-                      type="file"
-                      style={{ fontSize: 12 }}
-                      onChange={(e) => setEditAttachmentFile(e.target.files[0] || null)}
-                    />
-                    {a.fileName && !editAttachmentFile && (
-                      <span style={{ fontSize: 11, color: '#6b7684' }}>{t('nc_att_current_file')}: {a.fileName}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {attachmentGroups.map((grp) => (
+                <div key={grp.category || '__none__'}>
+                  <div style={{ fontSize: 11.5, color: '#97a2b0', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 }}>
+                    {grp.category || t('nc_att_no_category')}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {grp.items.map((a, idx) =>
+                      editingAttachmentId === a.id ? (
+                        <div key={a.id} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: '#eaf3fe', borderRadius: 6, padding: 8 }}>
+                          <input
+                            style={{ ...inputStyle, width: 180, flex: '1 1 160px' }}
+                            value={editAttachmentName}
+                            placeholder={t('nc_att_name_placeholder')}
+                            onChange={(e) => setEditAttachmentName(e.target.value)}
+                          />
+                          <input
+                            style={{ ...inputStyle, width: 160, flex: '1 1 140px' }}
+                            value={editAttachmentCategory}
+                            placeholder={t('nc_att_category_placeholder')}
+                            list="nc-att-categories"
+                            onChange={(e) => setEditAttachmentCategory(e.target.value)}
+                          />
+                          <input
+                            ref={editAttachmentFileInputRef}
+                            type="file"
+                            style={{ fontSize: 12 }}
+                            onChange={(e) => setEditAttachmentFile(e.target.files[0] || null)}
+                          />
+                          {a.fileName && !editAttachmentFile && (
+                            <span style={{ fontSize: 11, color: '#6b7684' }}>{t('nc_att_current_file')}: {a.fileName}</span>
+                          )}
+                          <button type="button" className="btn-primary" disabled={editAttachmentSaving} style={{ padding: '5px 10px', fontSize: 12 }} onClick={() => saveEditAttachment(a)}>
+                            {editAttachmentSaving ? t('nc_att_uploading') : '✓'}
+                          </button>
+                          <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={cancelEditAttachment}>✕</button>
+                        </div>
+                      ) : (
+                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f4f6f8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <button
+                              type="button"
+                              disabled={idx === 0 || attachmentReordering}
+                              onClick={() => moveAttachment(grp.items, idx, -1)}
+                              style={{ border: 'none', background: 'transparent', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#c7cdd6' : '#6b7684', fontSize: 12, lineHeight: 1, padding: 0 }}
+                            >▲</button>
+                            <button
+                              type="button"
+                              disabled={idx === grp.items.length - 1 || attachmentReordering}
+                              onClick={() => moveAttachment(grp.items, idx, 1)}
+                              style={{ border: 'none', background: 'transparent', cursor: idx === grp.items.length - 1 ? 'default' : 'pointer', color: idx === grp.items.length - 1 ? '#c7cdd6' : '#6b7684', fontSize: 12, lineHeight: 1, padding: 0 }}
+                            >▼</button>
+                          </div>
+                          <span style={{ flex: 1 }}>
+                            📎 <a href={a.url} target="_blank" rel="noreferrer" style={{ color: '#2a6fd6', textDecoration: 'none' }}>
+                              {a.name || a.fileName || '—'}
+                            </a>
+                            {a.createdAt && <span style={{ color: '#97a2b0', fontSize: 11.5 }}> — {formatDate(a.createdAt.slice(0, 10))}</span>}
+                          </span>
+                          <button type="button" className="btn-secondary" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => startEditAttachment(a)}>
+                            {t('nc_att_edit_button')}
+                          </button>
+                          <button type="button" className="btn-danger" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => handleRemoveAttachment(a.id)}>
+                            {t('common_delete')}
+                          </button>
+                        </div>
+                      )
                     )}
-                    <button type="button" className="btn-primary" disabled={editAttachmentSaving} style={{ padding: '5px 10px', fontSize: 12 }} onClick={() => saveEditAttachment(a)}>
-                      {editAttachmentSaving ? t('nc_att_uploading') : '✓'}
-                    </button>
-                    <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={cancelEditAttachment}>✕</button>
                   </div>
-                ) : (
-                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f4f6f8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
-                    <span style={{ flex: 1 }}>
-                      📎 <a href={a.url} target="_blank" rel="noreferrer" style={{ color: '#2a6fd6', textDecoration: 'none' }}>
-                        {a.name || a.fileName || '—'}
-                      </a>
-                      {a.createdAt && <span style={{ color: '#97a2b0', fontSize: 11.5 }}> — {formatDate(a.createdAt.slice(0, 10))}</span>}
-                    </span>
-                    <button type="button" className="btn-secondary" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => startEditAttachment(a)}>
-                      {t('nc_att_edit_button')}
-                    </button>
-                    <button type="button" className="btn-danger" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => handleRemoveAttachment(a.id)}>
-                      {t('common_delete')}
-                    </button>
-                  </div>
-                )
-              )}
+                </div>
+              ))}
             </div>
           )}
         </div>
