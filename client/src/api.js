@@ -439,6 +439,40 @@ export const DeliveryShortages = {
   }
 };
 
+export const NcAttachments = {
+  async list() {
+    const data = await fetchAllRows('nc_attachments', { orderBy: 'updated_at', ascending: false });
+    return data.map(rowToRecord);
+  },
+  async create(body) {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    const id = newId();
+    const record = {
+      id,
+      name: '',
+      url: '',
+      fileName: '',
+      ...body,
+      id,
+      createdBy: user?.id || null,
+      createdByEmail: user?.email || null,
+      createdAt: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('nc_attachments')
+      .insert({ id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async remove(id) {
+    const { error } = await supabase.from('nc_attachments').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 export const NewCustomers = {
   async list() {
     const data = await fetchAllRows('new_customers', { orderBy: 'updated_at', ascending: false });
