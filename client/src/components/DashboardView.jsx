@@ -372,6 +372,14 @@ export default function DashboardView({ isDriver = false } = {}) {
     if (!cur || new Date(p.uploadedAt) > new Date(cur)) latestBatchByStore[p.store] = p.uploadedAt;
   });
   const currentProducts = salesProducts.filter((p) => p.uploadedAt === latestBatchByStore[p.store]);
+  // Ίδιο φίλτρο καταστημάτων (effectiveTrendSelectedStores, από την επιλογή πάνω-πάνω
+  // στην κάρτα Πωλήσεις) εφαρμόζεται και σε όλα τα breakdown blocks παρακάτω — Πωλήσεις
+  // ανά Κατηγορία, Top20/Worst20 (απλό + ανά κατηγορία + μέση ημερήσια πώληση), Πωλήσεις
+  // Τεμάχια ανά Κατηγορία/Μήνα. Όταν είναι επιλεγμένα 1+ καταστήματα, αυτά τα blocks
+  // δείχνουν δεδομένα ΜΟΝΟ για αυτά· χωρίς επιλογή, παραμένουν αθροιστικά όπως πριν.
+  const currentProductsForBreakdown = effectiveTrendSelectedStores.length
+    ? currentProducts.filter((p) => effectiveTrendSelectedStores.includes(p.store))
+    : currentProducts;
 
   // Μερικές φορές το Sales Analysis Report περιέχει το ΙΔΙΟ προϊόν δύο φορές με το ίδιο
   // όνομα — μία με τη σωστή κατηγορία (Cat1) και μία "φάντασμα" γραμμή χωρίς κατηγορία
@@ -424,7 +432,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   const categoryTotals = {};
   let periodStart = null;
   let periodEnd = null;
-  currentProducts.forEach((p) => {
+  currentProductsForBreakdown.forEach((p) => {
     const name = p.productName || '—';
     if (!productTotals[name]) productTotals[name] = { sold: 0, netRevenue: 0 };
     productTotals[name].sold += p.sold || 0;
@@ -460,7 +468,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   // currentProducts (πιο πρόσφατη παρτίδα ανά κατάστημα) που χρησιμοποιεί ήδη το
   // παραπάνω flat Top20/Worst20 block, ομαδοποιημένα κατά Cat1.
   const categoryProductTotals = {};
-  currentProducts.forEach((p) => {
+  currentProductsForBreakdown.forEach((p) => {
     const cat = resolvedCat1(p) || t('d_category_uncategorized_label');
     const name = p.productName || '—';
     if (!categoryProductTotals[cat]) categoryProductTotals[cat] = {};
@@ -502,7 +510,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   const activeDaysByCategoryProduct = {}; // cat -> name -> Set
   const soldByCategoryProduct = {}; // cat -> name -> σύνολο
 
-  currentProducts.forEach((p) => {
+  currentProductsForBreakdown.forEach((p) => {
     if (!(p.sold > 0)) return;
     const range = extractPeriodRange(p.periodLabel);
     if (!range) return;
@@ -566,7 +574,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   const monthCategoryQty = {}; // monthKey -> { cat -> qty }
   const monthCategoryProductQty = {}; // monthKey -> { cat -> { productName -> qty } }
   const monthPeriodTexts = {}; // monthKey -> Set(periodText) — για το hint
-  currentProducts.forEach((p) => {
+  currentProductsForBreakdown.forEach((p) => {
     if (!(p.sold > 0)) return;
     const range = extractPeriodRange(p.periodLabel);
     if (!range) return;
@@ -703,7 +711,14 @@ export default function DashboardView({ isDriver = false } = {}) {
   const knownStoreNames = new Set();
   allProducts.forEach((p) => (p.stores || []).forEach((s) => s && s.name && knownStoreNames.add(s.name)));
   const latestShiftUploadedAt = salesShiftBreakdown.reduce((max, r) => (!max || new Date(r.uploadedAt) > new Date(max) ? r.uploadedAt : max), null);
-  const shiftRowsLatest = salesShiftBreakdown.filter((r) => r.uploadedAt === latestShiftUploadedAt && knownStoreNames.has(r.store));
+  // Ίδιο φίλτρο καταστημάτων εφαρμόζεται κι εδώ — αν είναι επιλεγμένα καταστήματα,
+  // δείχνουμε μόνο τις δικές τους γραμμές.
+  const shiftRowsLatest = salesShiftBreakdown.filter(
+    (r) =>
+      r.uploadedAt === latestShiftUploadedAt &&
+      knownStoreNames.has(r.store) &&
+      (effectiveTrendSelectedStores.length === 0 || effectiveTrendSelectedStores.includes(r.store))
+  );
   const shiftPeriodLabel = shiftRowsLatest.length ? shiftRowsLatest[0].periodLabel : '';
   const shiftLabelsOrder = [];
   const shiftByStore = {};
@@ -1148,6 +1163,9 @@ export default function DashboardView({ isDriver = false } = {}) {
                         </span>
                       )}
                     </div>
+                    {effectiveTrendSelectedStores.length > 0 && (
+                      <p style={{ fontSize: 11, color: '#97a2b0', margin: '0 0 10px' }}>{t('d_peak_hours_no_store_data')}</p>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 100, overflowX: 'auto' }}>
                       {peakHoursBuckets.map((b) => {
                         const pct = peakHoursMax ? Math.max(2, Math.round((b.grossSales / peakHoursMax) * 100)) : 2;
