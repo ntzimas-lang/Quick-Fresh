@@ -677,6 +677,7 @@ export const translations = {
     d_category_uncategorized_label: 'Χωρίς κατηγορία',
     d_peak_hours_title: 'Ώρες Αιχμής',
     d_peak_hours_peak_prefix: 'Αιχμή στις',
+    d_peak_hours_no_store_data: 'Το αρχείο "Ώρες Αιχμής" δεν έχει στοιχεία ανά κατάστημα — δείχνει πάντα όλα τα καταστήματα μαζί, ανεξαρτήτως επιλογής παραπάνω.',
     d_shift_breakdown_title: 'Βάρδιες ανά Κατάστημα',
 
     // Πεδίο "Πωλήσεις" — upload
@@ -1415,6 +1416,7 @@ export const translations = {
     d_category_uncategorized_label: 'Uncategorized',
     d_peak_hours_title: 'Peak Hours',
     d_peak_hours_peak_prefix: 'Peak at',
+    d_peak_hours_no_store_data: 'The "Peak Hours" report has no per-store breakdown — it always shows all stores combined, regardless of the selection above.',
     d_shift_breakdown_title: 'Shift Breakdown by Store',
 
     sales_daily_title: 'Daily Sales Summary',
