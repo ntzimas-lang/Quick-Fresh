@@ -37,7 +37,7 @@ input[type=number] {
 .sidebar-toggle--inline:hover { background: rgba(255,255,255,0.18); }
 
 /* Sidebar */
-.sidebar { width: 240px; background: #16233f; color: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar { width: 240px; height: 100vh; background: #16233f; color: #fff; display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 .brand-logo { width: 34px; height: 34px; border-radius: 8px; background: #2f8f8a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
 .brand-name { font-weight: 600; font-size: 15px; }
