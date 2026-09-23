@@ -104,6 +104,10 @@ export default function DashboardView({ isDriver = false } = {}) {
   const [showCategoryMonthlyQty, setShowCategoryMonthlyQty] = useState(false);
   // Κέρδος ανά μήνα (γράφημα) — κρυμμένο by default, ίδιο pattern.
   const [showProfitByMonth, setShowProfitByMonth] = useState(false);
+  // Φίλτρο καταστήματος για τα γραφήματα "Τάσεις ανά μήνα/μέρα" — '' = όλα τα
+  // καταστήματα μαζί (αθροιστικά, όπως πριν). Επιλέγοντας συγκεκριμένο κατάστημα,
+  // οι καμπύλες δείχνουν μόνο τα δικά του δεδομένα.
+  const [trendStoreFilter, setTrendStoreFilter] = useState('');
   // Ποιες κατηγορίες (ανά μήνα) είναι ανοιχτές για να δείχνουν τα προϊόντα τους
   // από μέσα — key: "monthKey|category".
   const [expandedMonthCategories, setExpandedMonthCategories] = useState(() => new Set());
@@ -239,9 +243,22 @@ export default function DashboardView({ isDriver = false } = {}) {
     salesByStoreMap[store].items += r.itemCount || 0;
   });
 
+  // Λίστα καταστημάτων διαθέσιμων στα δεδομένα Ημερήσιων Πωλήσεων, για το φίλτρο
+  // των γραφημάτων τάσεων — αλφαβητικά, χωρίς κενά/διπλότυπα.
+  const trendStoreOptions = Array.from(new Set(salesDaily.map((r) => r.store).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, 'el')
+  );
+  // Αν το επιλεγμένο κατάστημα εξαφανιστεί από τα δεδομένα (π.χ. διαγράφηκε μια
+  // λανθασμένη εγγραφή), γυρνάμε αυτόματα σε "Όλα τα καταστήματα" ώστε να μη μείνει
+  // το γράφημα άδειο/κολλημένο σε ανύπαρκτο φίλτρο.
+  const effectiveTrendStoreFilter = trendStoreFilter && trendStoreOptions.includes(trendStoreFilter) ? trendStoreFilter : '';
+  const salesDailyForTrend = effectiveTrendStoreFilter
+    ? salesDaily.filter((r) => r.store === effectiveTrendStoreFilter)
+    : salesDaily;
+
   // Τάση ανά μήνα (καθαρές πωλήσεις / συναλλαγές / μέσο καλάθι).
   const monthMap = {};
-  salesDaily.forEach((r) => {
+  salesDailyForTrend.forEach((r) => {
     if (!r.date) return;
     const mk = monthKey(r.date);
     if (!monthMap[mk]) monthMap[mk] = { tx: 0, net: 0, items: 0 };
@@ -261,7 +278,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   // αλλά με ένα σημείο ανά ημερομηνία. Το πλάτος του γραφήματος μεγαλώνει ανάλογα με τον
   // αριθμό ημερών ώστε να μη στριμώχνονται οι ετικέτες, μέσα σε οριζόντια scrollable θήκη.
   const dayMap = {};
-  salesDaily.forEach((r) => {
+  salesDailyForTrend.forEach((r) => {
     if (!r.date) return;
     if (!dayMap[r.date]) dayMap[r.date] = { tx: 0, net: 0 };
     dayMap[r.date].tx += r.transactions || 0;
@@ -775,6 +792,22 @@ export default function DashboardView({ isDriver = false } = {}) {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {(trendStoreOptions.length > 0 && (monthKeys.length > 1 || dayKeys.length > 1)) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 600 }}>{t('d_trend_store_filter_label')}</label>
+                    <select
+                      value={effectiveTrendStoreFilter}
+                      onChange={(e) => setTrendStoreFilter(e.target.value)}
+                      style={{ padding: '5px 8px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 12.5, background: '#fff', color: '#1f2733' }}
+                    >
+                      <option value="">{t('d_trend_store_all')}</option>
+                      {trendStoreOptions.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
