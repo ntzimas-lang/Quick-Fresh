@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { NewCustomers } from '../api.js';
+import { NewCustomers, NcAttachments, upload } from '../api.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 const emptyForm = {
@@ -124,8 +124,17 @@ export default function NewCustomersView({ canDelete = false }) {
   const canvasRef = useRef(null);
   const canvasHasContent = useRef(false);
 
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(true);
+  const [attachmentsError, setAttachmentsError] = useState('');
+  const [attachmentName, setAttachmentName] = useState('');
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const attachmentFileInputRef = useRef(null);
+
   useEffect(() => {
     load();
+    loadAttachments();
   }, []);
 
   function load() {
@@ -133,6 +142,46 @@ export default function NewCustomersView({ canDelete = false }) {
     NewCustomers.list()
       .then((rows) => { setRecords(rows); setLoading(false); })
       .catch((err) => { setError(err.message || t('common_load_error')); setLoading(false); });
+  }
+
+  function loadAttachments() {
+    setAttachmentsLoading(true);
+    NcAttachments.list()
+      .then((rows) => { setAttachments(rows); setAttachmentsLoading(false); })
+      .catch((err) => { setAttachmentsError(err.message || t('common_load_error')); setAttachmentsLoading(false); });
+  }
+
+  async function handleAddAttachment() {
+    setAttachmentsError('');
+    if (!attachmentFile) {
+      setAttachmentsError(t('nc_att_file_required'));
+      return;
+    }
+    const name = attachmentName.trim() || attachmentFile.name;
+    setAttachmentUploading(true);
+    try {
+      const { url } = await upload(attachmentFile);
+      const created = await NcAttachments.create({ name, url, fileName: attachmentFile.name || '' });
+      setAttachments((prev) => [created, ...prev]);
+      setAttachmentName('');
+      setAttachmentFile(null);
+      if (attachmentFileInputRef.current) attachmentFileInputRef.current.value = '';
+    } catch (err) {
+      setAttachmentsError(err.message || String(err));
+    } finally {
+      setAttachmentUploading(false);
+    }
+  }
+
+  async function handleRemoveAttachment(id) {
+    if (!window.confirm(t('nc_att_delete_confirm'))) return;
+    setAttachmentsError('');
+    try {
+      await NcAttachments.remove(id);
+      setAttachments((prev) => prev.filter((a) => a.id !== id));
+    } catch (err) {
+      setAttachmentsError(err.message || String(err));
+    }
   }
 
   function clearCanvas() {
@@ -312,6 +361,60 @@ export default function NewCustomersView({ canDelete = false }) {
         <strong style={{ fontSize: 15 }}>{t('title_new_customers')}</strong>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
+        <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18, marginBottom: 20 }}>
+          <strong style={{ fontSize: 13.5, display: 'block', marginBottom: 4 }}>{t('nc_att_title')}</strong>
+          <div style={{ fontSize: 12, color: '#97a2b0', marginBottom: 12 }}>{t('nc_att_hint')}</div>
+          {attachmentsError && (
+            <div style={{ background: '#fdecea', color: '#c0392b', border: '1px solid #f3c1bb', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>
+              {attachmentsError}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+            <input
+              style={{ ...inputStyle, width: 240, flex: '1 1 220px' }}
+              value={attachmentName}
+              placeholder={t('nc_att_name_placeholder')}
+              onChange={(e) => setAttachmentName(e.target.value)}
+            />
+            <input
+              ref={attachmentFileInputRef}
+              type="file"
+              style={{ fontSize: 12.5 }}
+              onChange={(e) => setAttachmentFile(e.target.files[0] || null)}
+            />
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={attachmentUploading}
+              style={{ padding: '6px 14px', fontSize: 12.5 }}
+              onClick={handleAddAttachment}
+            >
+              {attachmentUploading ? t('nc_att_uploading') : t('nc_att_add_button')}
+            </button>
+          </div>
+          {attachmentsLoading ? (
+            <p style={{ color: '#97a2b0', fontSize: 13 }}>{t('d_loading')}</p>
+          ) : attachments.length === 0 ? (
+            <p style={{ color: '#97a2b0', fontSize: 13 }}>{t('nc_att_no_records')}</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {attachments.map((a) => (
+                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f4f6f8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+                  <span style={{ flex: 1 }}>
+                    📎 <a href={a.url} target="_blank" rel="noreferrer" style={{ color: '#2a6fd6', textDecoration: 'none' }}>
+                      {a.name || a.fileName || '—'}
+                    </a>
+                    {a.createdAt && <span style={{ color: '#97a2b0', fontSize: 11.5 }}> — {formatDate(a.createdAt.slice(0, 10))}</span>}
+                  </span>
+                  <button type="button" className="btn-danger" style={{ padding: '3px 8px', fontSize: 11.5 }} onClick={() => handleRemoveAttachment(a.id)}>
+                    {t('common_delete')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 18, marginBottom: 20 }}>
           <strong style={{ fontSize: 13.5, display: 'block', marginBottom: 14 }}>
             {editingId ? t('nc_form_title_edit') : t('nc_form_title_new')}
