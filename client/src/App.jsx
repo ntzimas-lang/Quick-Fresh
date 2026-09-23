@@ -8,6 +8,7 @@ import DestructionsReportView from './components/DestructionsReportView.jsx';
 import DeliveryShortagesView from './components/DeliveryShortagesView.jsx';
 import StoreEquipmentView from './components/StoreEquipmentView.jsx';
 import NewCustomersView from './components/NewCustomersView.jsx';
+import NcAttachmentsView from './components/NcAttachmentsView.jsx';
 import ScenariosView from './components/ScenariosView.jsx';
 import FBInventoryView from './components/FBInventoryView.jsx';
 import ErpView from './components/ErpView.jsx';
@@ -220,6 +221,14 @@ export default function App() {
           )}
           {role !== 'driver' && (
             <button
+              className={'nav-item' + (view === 'ncAttachments' ? ' active' : '')}
+              onClick={() => setView('ncAttachments')}
+            >
+              {t('nav_nc_attachments')}
+            </button>
+          )}
+          {role !== 'driver' && (
+            <button
               className={'nav-item' + (view === 'storeEquipment' ? ' active' : '')}
               onClick={() => setView('storeEquipment')}
             >
@@ -364,6 +373,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'newCustomers' ? ' active' : '')}>
             <NewCustomersView canDelete={role === 'super_user'} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'ncAttachments' ? ' active' : '')}>
+            <NcAttachmentsView />
           </section>
         )}
         {role !== 'driver' && (
