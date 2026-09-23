@@ -521,15 +521,22 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destrWaste)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destrOther)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          {fmtEuro(revenue)}
-                          {revenue === 0 && (
-                            <span title={t('fb_no_sales_hint')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#fdecea', color: '#c0392b', fontSize: 9.5, fontWeight: 700, cursor: 'default' }}>!</span>
-                          )}
-                          {revenue !== 0 && isEstimate && (
-                            <span title={t('fb_sales_estimate_hint')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#fdf2da', color: '#e0a500', fontSize: 9.5, fontWeight: 700, cursor: 'default' }}>~</span>
-                          )}
-                        </span>
+                        {isEstimate ? (
+                          // Δεν δείχνουμε καθόλου το εκτιμώμενο (prorated) ποσό — είναι υποθετικό και
+                          // μπορεί να είναι παραπλανητικά μικρό/μεγάλο. Δείχνουμε "—" με tooltip εξήγησης,
+                          // μέχρι να ανέβει πραγματικό αρχείο Ημερήσιων Πωλήσεων για τον μήνα.
+                          <span title={t('fb_sales_estimate_hint')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#97a2b0' }}>
+                            —
+                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#fdf2da', color: '#e0a500', fontSize: 9.5, fontWeight: 700, cursor: 'default' }}>~</span>
+                          </span>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            {fmtEuro(revenue)}
+                            {revenue === 0 && (
+                              <span title={t('fb_no_sales_hint')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#fdecea', color: '#c0392b', fontSize: 9.5, fontWeight: 700, cursor: 'default' }}>!</span>
+                            )}
+                          </span>
+                        )}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{renderInventoryCell(mk, 'closing')}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{costOfSales !== null ? fmtEuro(costOfSales) : '—'}</td>
