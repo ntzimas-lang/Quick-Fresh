@@ -210,21 +210,28 @@ export default function NewCustomersView({ canDelete = false }) {
   async function moveAttachment(group, index, direction) {
     const targetIdx = index + direction;
     if (targetIdx < 0 || targetIdx >= group.length) return;
-    const a = group[index];
-    const b = group[targetIdx];
-    setAttachmentReordering(a.id);
+    // Re-normalize the whole group to sequential order values (0,1,2,...) based on the
+    // CURRENT on-screen sequence, then swap the two positions. This also fixes older
+    // records that all share order=0 (a plain swap of equal values would do nothing).
+    const reordered = group.slice();
+    const tmp = reordered[index];
+    reordered[index] = reordered[targetIdx];
+    reordered[targetIdx] = tmp;
+
+    const toPersist = reordered
+      .map((item, i) => ({ item, newOrder: i }))
+      .filter(({ item, newOrder }) => (Number(item.order) || 0) !== newOrder);
+
+    if (toPersist.length === 0) return;
+    setAttachmentReordering(group[index].id);
     setAttachmentsError('');
     try {
-      const orderA = Number(b.order) || 0;
-      const orderB = Number(a.order) || 0;
-      const [updatedA, updatedB] = await Promise.all([
-        NcAttachments.update(a.id, { ...a, order: orderA }),
-        NcAttachments.update(b.id, { ...b, order: orderB })
-      ]);
+      const updated = await Promise.all(
+        toPersist.map(({ item, newOrder }) => NcAttachments.update(item.id, { ...item, order: newOrder }))
+      );
       setAttachments((prev) => prev.map((x) => {
-        if (x.id === updatedA.id) return updatedA;
-        if (x.id === updatedB.id) return updatedB;
-        return x;
+        const match = updated.find((u) => u.id === x.id);
+        return match || x;
       }));
     } catch (err) {
       setAttachmentsError(err.message || String(err));
