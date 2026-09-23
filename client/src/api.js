@@ -467,6 +467,17 @@ export const NcAttachments = {
     if (error) throw error;
     return rowToRecord(data);
   },
+  async update(id, body) {
+    const record = { ...body, id };
+    const { data, error } = await supabase
+      .from('nc_attachments')
+      .update({ data: record, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
   async remove(id) {
     const { error } = await supabase.from('nc_attachments').delete().eq('id', id);
     if (error) throw error;
