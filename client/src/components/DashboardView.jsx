@@ -3,6 +3,9 @@ import { Contacts, Entries, SalesDaily, SalesProducts, SalesTimeBuckets, SalesSh
 import { useLanguage } from '../LanguageContext.jsx';
 
 const SALES_LINE_COLORS = { net: '#2f8f8a', tx: '#c98a1f' };
+// Χρώματα για τις καμπύλες ανά κατάστημα, όταν επιλέγονται 1+ καταστήματα στο φίλτρο
+// των γραφημάτων τάσεων — κυκλική χρήση αν υπάρχουν περισσότερα καταστήματα από χρώματα.
+const STORE_TREND_COLORS = ['#2f8f8a', '#c98a1f', '#7a4fc9', '#c0392b', '#2f80ed', '#e0a500', '#16a085', '#8e44ad', '#d35400', '#27ae60', '#c2185b', '#00838f'];
 
 function monthKey(dateStr) {
   return String(dateStr).slice(0, 7); // 'yyyy-mm-dd' -> 'yyyy-mm'
@@ -29,6 +32,20 @@ function trendCoords(series, width = 360, height = 100, topPad = 20) {
   if (!series.length) return [];
   const lo = Math.min(...series);
   const hi = Math.max(...series);
+  const n = series.length;
+  return series.map((v, i) => {
+    const x = n > 1 ? (i * width) / (n - 1) : width / 2;
+    const frac = hi !== lo ? (v - lo) / (hi - lo) : 0.5;
+    const y = topPad + (1 - frac) * (height - topPad * 1.5);
+    return { x, y, value: v };
+  });
+}
+
+// Ίδια λογική με trendCoords, αλλά με ΚΟΙΝΟ lo/hi περασμένο απ' έξω — ώστε πολλές
+// καμπύλες (μία ανά κατάστημα) να μοιράζονται την ίδια κλίμακα στο ίδιο γράφημα και
+// να είναι οπτικά συγκρίσιμες μεταξύ τους (αλλιώς κάθε καμπύλη θα κανονικοποιούνταν
+// στο δικό της min/max και θα έχανε το νόημα της σύγκρισης).
+function trendCoordsShared(series, lo, hi, width = 360, height = 100, topPad = 20) {
   const n = series.length;
   return series.map((v, i) => {
     const x = n > 1 ? (i * width) / (n - 1) : width / 2;
@@ -104,10 +121,20 @@ export default function DashboardView({ isDriver = false } = {}) {
   const [showCategoryMonthlyQty, setShowCategoryMonthlyQty] = useState(false);
   // Κέρδος ανά μήνα (γράφημα) — κρυμμένο by default, ίδιο pattern.
   const [showProfitByMonth, setShowProfitByMonth] = useState(false);
-  // Φίλτρο καταστήματος για τα γραφήματα "Τάσεις ανά μήνα/μέρα" — '' = όλα τα
-  // καταστήματα μαζί (αθροιστικά, όπως πριν). Επιλέγοντας συγκεκριμένο κατάστημα,
-  // οι καμπύλες δείχνουν μόνο τα δικά του δεδομένα.
-  const [trendStoreFilter, setTrendStoreFilter] = useState('');
+  // Επιλογή καταστημάτων (multi-select) για τα γραφήματα "Τάσεις ανά μήνα/μέρα" —
+  // άδειο σύνολο = μία αθροιστική καμπύλη όλων των καταστημάτων μαζί (όπως πριν).
+  // Επιλέγοντας ένα ή περισσότερα καταστήματα, δείχνουμε ΜΙΑ καμπύλη (Καθαρές
+  // πωλήσεις) ΑΝΑ κατάστημα πάνω στο ίδιο γράφημα, με διαφορετικό χρώμα η καθεμία,
+  // ώστε να συγκρίνονται οπτικά — αυτό ζήτησε ρητά ο χρήστης ("θέλω να το βλέπω σε
+  // καμπύλη"), όχι ένα dropdown που δείχνει ένα κατάστημα τη φορά.
+  const [trendSelectedStores, setTrendSelectedStores] = useState(() => new Set());
+  function toggleTrendStore(store) {
+    setTrendSelectedStores((prev) => {
+      const next = new Set(prev);
+      if (next.has(store)) next.delete(store); else next.add(store);
+      return next;
+    });
+  }
   // Ποιες κατηγορίες (ανά μήνα) είναι ανοιχτές για να δείχνουν τα προϊόντα τους
   // από μέσα — key: "monthKey|category".
   const [expandedMonthCategories, setExpandedMonthCategories] = useState(() => new Set());
@@ -243,22 +270,24 @@ export default function DashboardView({ isDriver = false } = {}) {
     salesByStoreMap[store].items += r.itemCount || 0;
   });
 
-  // Λίστα καταστημάτων διαθέσιμων στα δεδομένα Ημερήσιων Πωλήσεων, για το φίλτρο
-  // των γραφημάτων τάσεων — αλφαβητικά, χωρίς κενά/διπλότυπα.
+  // Λίστα καταστημάτων διαθέσιμων στα δεδομένα Ημερήσιων Πωλήσεων, για την επιλογή
+  // καταστημάτων στα γραφήματα τάσεων — αλφαβητικά, χωρίς κενά/διπλότυπα. Αυτή η λίστα
+  // (και άρα το UI της επιλογής) ΔΕΝ εξαρτάται από το ποιο κατάστημα είναι επιλεγμένο,
+  // ώστε να μην εξαφανίζεται μόλις ο χρήστης επιλέξει κάτι.
   const trendStoreOptions = Array.from(new Set(salesDaily.map((r) => r.store).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b, 'el')
   );
-  // Αν το επιλεγμένο κατάστημα εξαφανιστεί από τα δεδομένα (π.χ. διαγράφηκε μια
-  // λανθασμένη εγγραφή), γυρνάμε αυτόματα σε "Όλα τα καταστήματα" ώστε να μη μείνει
-  // το γράφημα άδειο/κολλημένο σε ανύπαρκτο φίλτρο.
-  const effectiveTrendStoreFilter = trendStoreFilter && trendStoreOptions.includes(trendStoreFilter) ? trendStoreFilter : '';
-  const salesDailyForTrend = effectiveTrendStoreFilter
-    ? salesDaily.filter((r) => r.store === effectiveTrendStoreFilter)
-    : salesDaily;
+  // Αν κάποιο επιλεγμένο κατάστημα εξαφανιστεί από τα δεδομένα (π.χ. διαγράφηκε μια
+  // λανθασμένη εγγραφή), το αγνοούμε αυτόματα ώστε να μη μείνει "κολλημένη" καμπύλη σε
+  // ανύπαρκτο κατάστημα.
+  const effectiveTrendSelectedStores = trendStoreOptions.filter((s) => trendSelectedStores.has(s));
 
-  // Τάση ανά μήνα (καθαρές πωλήσεις / συναλλαγές / μέσο καλάθι).
+  // Τάση ανά μήνα (καθαρές πωλήσεις / συναλλαγές / μέσο καλάθι) — ΠΑΝΤΑ αθροιστικά, σε
+  // ΟΛΟ το χρονοδιάγραμμα (monthKeys/dayKeys), ανεξάρτητα από την επιλογή καταστημάτων.
+  // Έτσι ο άξονας χρόνου και ο παρακάτω πίνακας KPI παραμένουν σταθεροί, και οι
+  // επιμέρους καμπύλες ανά κατάστημα (παρακάτω) ευθυγραμμίζονται πάνω στον ίδιο άξονα.
   const monthMap = {};
-  salesDailyForTrend.forEach((r) => {
+  salesDaily.forEach((r) => {
     if (!r.date) return;
     const mk = monthKey(r.date);
     if (!monthMap[mk]) monthMap[mk] = { tx: 0, net: 0, items: 0 };
@@ -278,7 +307,7 @@ export default function DashboardView({ isDriver = false } = {}) {
   // αλλά με ένα σημείο ανά ημερομηνία. Το πλάτος του γραφήματος μεγαλώνει ανάλογα με τον
   // αριθμό ημερών ώστε να μη στριμώχνονται οι ετικέτες, μέσα σε οριζόντια scrollable θήκη.
   const dayMap = {};
-  salesDailyForTrend.forEach((r) => {
+  salesDaily.forEach((r) => {
     if (!r.date) return;
     if (!dayMap[r.date]) dayMap[r.date] = { tx: 0, net: 0 };
     dayMap[r.date].tx += r.transactions || 0;
@@ -290,6 +319,46 @@ export default function DashboardView({ isDriver = false } = {}) {
   const dayChartWidth = Math.max(360, dayKeys.length * 42);
   const dayNetCoords = trendCoords(dayNet, dayChartWidth);
   const dayTxCoords = trendCoords(dayTx, dayChartWidth);
+
+  // --- Καμπύλες ανά κατάστημα (όταν ο χρήστης έχει επιλέξει 1+ καταστήματα) ---------
+  // Μία καμπύλη Καθαρών Πωλήσεων ΑΝΑ επιλεγμένο κατάστημα, πάνω στον ΙΔΙΟ άξονα χρόνου
+  // (monthKeys/dayKeys) και με ΚΟΙΝΗ κλίμακα (trendCoordsShared) ώστε να συγκρίνονται
+  // οπτικά μεταξύ τους σωστά (χωρίς κάθε καμπύλη να κανονικοποιείται ξεχωριστά).
+  const storeMonthNetMap = {}; // store -> { mk: net }
+  const storeDayNetMap = {}; // store -> { date: net }
+  salesDaily.forEach((r) => {
+    if (!r.date || !r.store) return;
+    if (!effectiveTrendSelectedStores.includes(r.store)) return;
+    const mk = monthKey(r.date);
+    if (!storeMonthNetMap[r.store]) storeMonthNetMap[r.store] = {};
+    storeMonthNetMap[r.store][mk] = (storeMonthNetMap[r.store][mk] || 0) + (r.netSales || 0);
+    if (!storeDayNetMap[r.store]) storeDayNetMap[r.store] = {};
+    storeDayNetMap[r.store][r.date] = (storeDayNetMap[r.store][r.date] || 0) + (r.netSales || 0);
+  });
+  const storeMonthSeries = effectiveTrendSelectedStores.map((store, i) => ({
+    store,
+    color: STORE_TREND_COLORS[i % STORE_TREND_COLORS.length],
+    values: monthKeys.map((mk) => (storeMonthNetMap[store] && storeMonthNetMap[store][mk]) || 0)
+  }));
+  const storeDaySeries = effectiveTrendSelectedStores.map((store, i) => ({
+    store,
+    color: STORE_TREND_COLORS[i % STORE_TREND_COLORS.length],
+    values: dayKeys.map((dk) => (storeDayNetMap[store] && storeDayNetMap[store][dk]) || 0)
+  }));
+  const storeMonthAllValues = storeMonthSeries.flatMap((s) => s.values);
+  const storeMonthLo = storeMonthAllValues.length ? Math.min(0, ...storeMonthAllValues) : 0;
+  const storeMonthHi = storeMonthAllValues.length ? Math.max(...storeMonthAllValues) : 0;
+  const storeMonthCoords = storeMonthSeries.map((s) => ({
+    ...s,
+    coords: trendCoordsShared(s.values, storeMonthLo, storeMonthHi, trendChartWidth)
+  }));
+  const storeDayAllValues = storeDaySeries.flatMap((s) => s.values);
+  const storeDayLo = storeDayAllValues.length ? Math.min(0, ...storeDayAllValues) : 0;
+  const storeDayHi = storeDayAllValues.length ? Math.max(...storeDayAllValues) : 0;
+  const storeDayCoords = storeDaySeries.map((s) => ({
+    ...s,
+    coords: trendCoordsShared(s.values, storeDayLo, storeDayHi, dayChartWidth)
+  }));
 
   // Top 5 προϊόντα + κατηγορίες: το Sales Analysis Report δίνει ΕΝΑ συγκεντρωτικό
   // σύνολο ανά προϊόν για ΟΛΗ την περίοδο που ζητήθηκε κατά την εξαγωγή (δεν έχει
@@ -795,19 +864,40 @@ export default function DashboardView({ isDriver = false } = {}) {
                   </div>
                 )}
 
-                {(trendStoreOptions.length > 0 && (monthKeys.length > 1 || dayKeys.length > 1)) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 600 }}>{t('d_trend_store_filter_label')}</label>
-                    <select
-                      value={effectiveTrendStoreFilter}
-                      onChange={(e) => setTrendStoreFilter(e.target.value)}
-                      style={{ padding: '5px 8px', border: '1px solid #d7dce2', borderRadius: 6, fontSize: 12.5, background: '#fff', color: '#1f2733' }}
-                    >
-                      <option value="">{t('d_trend_store_all')}</option>
-                      {trendStoreOptions.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
+                {trendStoreOptions.length > 0 && (
+                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 14, marginBottom: 4 }}>
+                    <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 600, marginBottom: 8 }}>{t('d_trend_store_filter_label')}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {trendStoreOptions.map((s, i) => {
+                        const active = effectiveTrendSelectedStores.includes(s);
+                        const color = STORE_TREND_COLORS[effectiveTrendSelectedStores.indexOf(s) >= 0 ? effectiveTrendSelectedStores.indexOf(s) % STORE_TREND_COLORS.length : 0];
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => toggleTrendStore(s)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 14,
+                              border: active ? `1px solid ${color}` : '1px solid #d7dce2',
+                              background: active ? color + '1a' : '#fff', color: active ? color : '#6b7684',
+                              fontSize: 12, fontWeight: active ? 700 : 500, cursor: 'pointer'
+                            }}
+                          >
+                            {active && <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />}
+                            {s}
+                          </button>
+                        );
+                      })}
+                      {effectiveTrendSelectedStores.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setTrendSelectedStores(new Set())}
+                          style={{ padding: '5px 10px', borderRadius: 14, border: '1px solid #d7dce2', background: '#fff', color: '#c0392b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {t('d_trend_store_clear')}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -815,31 +905,57 @@ export default function DashboardView({ isDriver = false } = {}) {
                   <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
                       <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_sales_trend_title')}</span>
-                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684' }}>
-                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
-                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684', flexWrap: 'wrap' }}>
+                        {effectiveTrendSelectedStores.length > 0 ? (
+                          storeMonthCoords.map((s) => (
+                            <span key={s.store}><span style={{ display: 'inline-block', width: 14, height: 2.5, background: s.color, marginRight: 4, verticalAlign: 'middle' }} />{s.store}</span>
+                          ))
+                        ) : (
+                          <>
+                            <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
+                            <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div ref={trendChartWrapRef} style={{ width: '100%' }}>
                       <svg viewBox={`0 0 ${trendChartWidth} 110`} style={{ width: trendChartWidth, height: 160, display: 'block' }}>
-                        <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
-                        <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
-                        {netCoords.map((c, i) => (
-                          <g key={'net' + i}>
-                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
-                            <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === netCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
-                              {formatEuro(c.value)}
-                            </text>
-                          </g>
-                        ))}
-                        {txCoords.map((c, i) => (
-                          <g key={'tx' + i}>
-                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
-                            <text x={c.x} y={c.y + 15} textAnchor={i === 0 ? 'start' : i === txCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
-                              {Math.round(c.value)}
-                            </text>
-                          </g>
-                        ))}
+                        {effectiveTrendSelectedStores.length > 0 ? (
+                          storeMonthCoords.map((s) => (
+                            <g key={s.store}>
+                              <polyline points={coordsToPoints(s.coords)} fill="none" stroke={s.color} strokeWidth="2.5" />
+                              {s.coords.map((c, i) => (
+                                <g key={s.store + i}>
+                                  <circle cx={c.x} cy={c.y} r="2.5" fill={s.color} />
+                                  <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === s.coords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={s.color}>
+                                    {formatEuro(c.value)}
+                                  </text>
+                                </g>
+                              ))}
+                            </g>
+                          ))
+                        ) : (
+                          <>
+                            <polyline points={coordsToPoints(netCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
+                            <polyline points={coordsToPoints(txCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
+                            {netCoords.map((c, i) => (
+                              <g key={'net' + i}>
+                                <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
+                                <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === netCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
+                                  {formatEuro(c.value)}
+                                </text>
+                              </g>
+                            ))}
+                            {txCoords.map((c, i) => (
+                              <g key={'tx' + i}>
+                                <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
+                                <text x={c.x} y={c.y + 15} textAnchor={i === 0 ? 'start' : i === txCoords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
+                                  {Math.round(c.value)}
+                                </text>
+                              </g>
+                            ))}
+                          </>
+                        )}
                       </svg>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: '#97a2b0', marginTop: 4 }}>
                         {monthKeys.map((k) => <span key={k}>{monthLabel(k, lang)}</span>)}
@@ -852,31 +968,57 @@ export default function DashboardView({ isDriver = false } = {}) {
                   <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18, marginBottom: 22 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
                       <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>{t('d_sales_daily_trend_title')}</span>
-                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684' }}>
-                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
-                        <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684', flexWrap: 'wrap' }}>
+                        {effectiveTrendSelectedStores.length > 0 ? (
+                          storeDayCoords.map((s) => (
+                            <span key={s.store}><span style={{ display: 'inline-block', width: 14, height: 2.5, background: s.color, marginRight: 4, verticalAlign: 'middle' }} />{s.store}</span>
+                          ))
+                        ) : (
+                          <>
+                            <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.net, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_net')}</span>
+                            <span><span style={{ display: 'inline-block', width: 14, height: 2.5, background: SALES_LINE_COLORS.tx, marginRight: 4, verticalAlign: 'middle' }} />{t('d_sales_tx')}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div style={{ overflowX: 'auto' }}>
                       <svg viewBox={`0 0 ${dayChartWidth} 110`} style={{ width: dayChartWidth, height: 160, display: 'block' }}>
-                        <polyline points={coordsToPoints(dayNetCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
-                        <polyline points={coordsToPoints(dayTxCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
-                        {dayNetCoords.map((c, i) => (
-                          <g key={'net' + i}>
-                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
-                            <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
-                              {formatEuro(c.value)}
-                            </text>
-                          </g>
-                        ))}
-                        {dayTxCoords.map((c, i) => (
-                          <g key={'tx' + i}>
-                            <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
-                            <text x={c.x} y={c.y + 15} textAnchor="middle" fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
-                              {Math.round(c.value)}
-                            </text>
-                          </g>
-                        ))}
+                        {effectiveTrendSelectedStores.length > 0 ? (
+                          storeDayCoords.map((s) => (
+                            <g key={s.store}>
+                              <polyline points={coordsToPoints(s.coords)} fill="none" stroke={s.color} strokeWidth="2.5" />
+                              {s.coords.map((c, i) => (
+                                <g key={s.store + i}>
+                                  <circle cx={c.x} cy={c.y} r="2.5" fill={s.color} />
+                                  <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="8" fontWeight="700" fill={s.color}>
+                                    {formatEuro(c.value)}
+                                  </text>
+                                </g>
+                              ))}
+                            </g>
+                          ))
+                        ) : (
+                          <>
+                            <polyline points={coordsToPoints(dayNetCoords)} fill="none" stroke={SALES_LINE_COLORS.net} strokeWidth="2.5" />
+                            <polyline points={coordsToPoints(dayTxCoords)} fill="none" stroke={SALES_LINE_COLORS.tx} strokeWidth="2" strokeDasharray="4,3" />
+                            {dayNetCoords.map((c, i) => (
+                              <g key={'net' + i}>
+                                <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.net} />
+                                <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.net}>
+                                  {formatEuro(c.value)}
+                                </text>
+                              </g>
+                            ))}
+                            {dayTxCoords.map((c, i) => (
+                              <g key={'tx' + i}>
+                                <circle cx={c.x} cy={c.y} r="2.5" fill={SALES_LINE_COLORS.tx} />
+                                <text x={c.x} y={c.y + 15} textAnchor="middle" fontSize="8" fontWeight="700" fill={SALES_LINE_COLORS.tx}>
+                                  {Math.round(c.value)}
+                                </text>
+                              </g>
+                            ))}
+                          </>
+                        )}
                       </svg>
                       <div style={{ display: 'flex', width: dayChartWidth, justifyContent: 'space-between', fontSize: 9.5, color: '#97a2b0', marginTop: 4 }}>
                         {dayKeys.map((k) => <span key={k}>{dayLabel(k)}</span>)}
