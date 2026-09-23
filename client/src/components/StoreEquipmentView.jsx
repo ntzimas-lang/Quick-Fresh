@@ -30,12 +30,12 @@ function toArray(v) {
 // χωριστές λίστες fridgeNo[]/picoNo[] (ή ένα απλό string) — εδώ τις μετατρέπουμε αυτόματα
 // (ταιριάζοντας κατά σειρά· αν λείπει κάποια πλευρά, μένει κενή).
 function toPairs(record) {
-  if (Array.isArray(record.equipment)) return record.equipment.map((p) => ({ fridgeNo: '', picoNo: '', stockwellNo: '', serialNo: '', ...p }));
+  if (Array.isArray(record.equipment)) return record.equipment.map((p) => ({ fridgeNo: '', picoNo: '', stockwellNo: '', serialNo: '', position: '', ...p }));
   const fridges = toArray(record.fridgeNo);
   const picos = toArray(record.picoNo);
   const len = Math.max(fridges.length, picos.length);
   const pairs = [];
-  for (let i = 0; i < len; i++) pairs.push({ fridgeNo: fridges[i] || '', picoNo: picos[i] || '', stockwellNo: '', serialNo: '' });
+  for (let i = 0; i < len; i++) pairs.push({ fridgeNo: fridges[i] || '', picoNo: picos[i] || '', stockwellNo: '', serialNo: '', position: '' });
   return pairs;
 }
 
@@ -537,7 +537,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
   // διαγράφεται/επεξεργάζεται μαζί (δεν είναι ανεξάρτητες λίστες).
   // "pairDrafts" κρατάει το κείμενο πριν προστεθεί ένα νέο ζευγάρι.
   // "editingPair"/"editDraft" κρατάνε ποιο ήδη-καταχωρημένο ζευγάρι επεξεργαζόμαστε.
-  const emptyPair = { fridgeNo: '', picoNo: '', stockwellNo: '', serialNo: '' };
+  const emptyPair = { fridgeNo: '', picoNo: '', stockwellNo: '', serialNo: '', position: '' };
   const [pairDrafts, setPairDrafts] = useState({});
   const [editingPair, setEditingPair] = useState(null); // { id, idx }
   const [editDraft, setEditDraft] = useState(emptyPair);
@@ -559,10 +559,11 @@ export default function StoreEquipmentView({ readOnly = false }) {
     const picoNo = (draft.picoNo || '').trim();
     const stockwellNo = (draft.stockwellNo || '').trim();
     const serialNo = (draft.serialNo || '').trim();
+    const position = draft.position || '';
     if (!fridgeNo && !picoNo && !stockwellNo && !serialNo) return;
     const current = records.find((r) => r.id === id);
     if (!current) return;
-    const nextPairs = [...toPairs(current), { fridgeNo, picoNo, stockwellNo, serialNo }];
+    const nextPairs = [...toPairs(current), { fridgeNo, picoNo, stockwellNo, serialNo, position }];
     setPairDrafts((d) => ({ ...d, [id]: emptyPair }));
     setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, equipment: nextPairs } : r)));
     try {
@@ -586,7 +587,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
 
   function startEditPair(id, idx, pair) {
     setEditingPair({ id, idx });
-    setEditDraft({ fridgeNo: pair.fridgeNo || '', picoNo: pair.picoNo || '', stockwellNo: pair.stockwellNo || '', serialNo: pair.serialNo || '' });
+    setEditDraft({ fridgeNo: pair.fridgeNo || '', picoNo: pair.picoNo || '', stockwellNo: pair.stockwellNo || '', serialNo: pair.serialNo || '', position: pair.position || '' });
   }
   function cancelEditPair() {
     setEditingPair(null);
@@ -608,10 +609,17 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
   }
 
+  function positionLabel(v) {
+    if (v === 'left') return t('se_position_left');
+    if (v === 'center') return t('se_position_center');
+    if (v === 'right') return t('se_position_right');
+    return '—';
+  }
+
   function renderEquipmentPairs(r, inputWidth) {
     const pairs = toPairs(r);
     if (readOnly) {
-      return pairs.length ? pairs.map((p) => `${p.fridgeNo || '—'} / ${p.picoNo || '—'} / ${p.stockwellNo || '—'} / ${p.serialNo || '—'}`).join(', ') : '—';
+      return pairs.length ? pairs.map((p) => `${p.fridgeNo || '—'} / ${p.picoNo || '—'} / ${p.stockwellNo || '—'} / ${p.serialNo || '—'} / ${positionLabel(p.position)}`).join(', ') : '—';
     }
     const draft = getPairDraft(r.id);
     // Πραγματικός πίνακας (thead/tbody) αντί για "pills" σε σειρά — πιο καθαρή, ευθυγραμμισμένη
@@ -630,6 +638,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                 <th style={thStyle}>{t('se_col_picoNo')}</th>
                 <th style={thStyle}>{t('se_col_stockwellNo')}</th>
                 <th style={thStyle}>{t('se_col_serialNo')}</th>
+                <th style={thStyle}>{t('se_col_position')}</th>
                 <th style={thStyle}></th>
               </tr>
             </thead>
@@ -676,6 +685,18 @@ export default function StoreEquipmentView({ readOnly = false }) {
                           style={cellInputStyle}
                         />
                       </td>
+                      <td style={tdStyle}>
+                        <select
+                          value={editDraft.position}
+                          onChange={(e) => setEditDraft((d) => ({ ...d, position: e.target.value }))}
+                          style={cellInputStyle}
+                        >
+                          <option value="">—</option>
+                          <option value="left">{t('se_position_left')}</option>
+                          <option value="center">{t('se_position_center')}</option>
+                          <option value="right">{t('se_position_right')}</option>
+                        </select>
+                      </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         <button type="button" onClick={saveEditPair} title={t('se_rename_button')} style={{ border: 'none', background: '#2f8f8a', color: '#fff', borderRadius: 5, cursor: 'pointer', fontSize: 12, padding: '3px 7px', lineHeight: 1, marginRight: 3 }}>✓</button>
                         <button type="button" onClick={cancelEditPair} title={t('common_cancel')} style={{ border: 'none', background: 'transparent', color: '#6b7684', cursor: 'pointer', fontSize: 12, padding: '3px 5px' }}>✕</button>
@@ -689,6 +710,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
                     <td style={tdStyle}>{p.picoNo || '—'}</td>
                     <td style={tdStyle}>{p.stockwellNo || '—'}</td>
                     <td style={tdStyle}>{p.serialNo || '—'}</td>
+                    <td style={tdStyle}>{positionLabel(p.position)}</td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       <button
                         type="button"
@@ -734,6 +756,16 @@ export default function StoreEquipmentView({ readOnly = false }) {
               placeholder={t('se_add_serial_placeholder')}
               style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 60 }}
             />
+            <select
+              value={draft.position}
+              onChange={(e) => setPairDraftField(r.id, 'position', e.target.value)}
+              style={{ border: '1px solid #e1e5ea', borderRadius: 5, padding: '3px 6px', fontSize: 12.5, width: inputWidth || 80 }}
+            >
+              <option value="">—</option>
+              <option value="left">{t('se_position_left')}</option>
+              <option value="center">{t('se_position_center')}</option>
+              <option value="right">{t('se_position_right')}</option>
+            </select>
             <button
               type="button"
               onClick={() => addEquipmentPair(r.id)}
@@ -915,17 +947,17 @@ export default function StoreEquipmentView({ readOnly = false }) {
       const address = (rec && rec.address) || '—';
       const pairs = rec ? toPairs(rec) : [];
       if (!pairs.length) {
-        rows.push([name, address, '—', '—', '—', '—']);
+        rows.push([name, address, '—', '—', '—', '—', '—']);
       } else {
         pairs.forEach((p, i) => {
-          rows.push([i === 0 ? name : '', i === 0 ? address : '', p.fridgeNo || '—', p.picoNo || '—', p.stockwellNo || '—', p.serialNo || '—']);
+          rows.push([i === 0 ? name : '', i === 0 ? address : '', p.fridgeNo || '—', p.picoNo || '—', p.stockwellNo || '—', p.serialNo || '—', positionLabel(p.position)]);
         });
       }
     });
 
     autoTable(doc, {
       startY: logoSize + 20,
-      head: [[t('se_col_store_name'), t('se_col_address_preview'), t('se_col_fridgeNo'), t('se_col_picoNo'), t('se_col_stockwellNo'), t('se_col_serialNo')]],
+      head: [[t('se_col_store_name'), t('se_col_address_preview'), t('se_col_fridgeNo'), t('se_col_picoNo'), t('se_col_stockwellNo'), t('se_col_serialNo'), t('se_col_position')]],
       body: rows,
       styles: { fontSize: 9, cellPadding: 3, font: 'DejaVuSans' },
       headStyles: { fillColor: [47, 143, 138], font: 'DejaVuSans' },
