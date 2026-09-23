@@ -297,12 +297,30 @@ export default function StoreEquipmentView({ readOnly = false }) {
   // χρειάζεται SQL migration, απλά νέα πεδία στο ήδη υπάρχον record). Τα κείμενα/ημερομηνίες
   // μένουν σε τοπικό draft μέχρι το "Αποθήκευση στοιχείων" — τα αρχεία αποθηκεύονται αμέσως
   // μόλις ολοκληρωθεί το upload (ίδια λογική με τις εικόνες προϊόντων).
+  // Κάθε κατηγορία εγγράφου (Σύμβαση/Υγειονομικό/Άδεια Λειτουργίας/Ασφαλιστήριο/Υπεύθυνη
+  // Δήλωση) δέχεται πλέον ΠΟΛΛΑ αρχεία — λίστα από { url, name, uploadedAt } αντί για ένα
+  // μόνο xFileUrl string. Τα "Ισχύς από/έως" παραμένουν ένα ζευγάρι ημερομηνιών για ΟΛΗ την
+  // κατηγορία Σύμβαση (όχι ανά αρχείο), όπως ήταν και πριν.
+  const DOC_CATEGORIES = [
+    { key: 'contract', labelKey: 'se_field_contract_file', hasDates: true },
+    { key: 'health', labelKey: 'se_field_health_file', hasDates: false },
+    { key: 'license', labelKey: 'se_field_license_file', hasDates: false },
+    { key: 'insurance', labelKey: 'se_field_insurance_file', hasDates: false },
+    { key: 'declaration', labelKey: 'se_field_declaration_file', hasDates: false }
+  ];
   const emptyDetails = {
     electricityMeterNo: '', waterMeterNo: '', address: '',
-    contractFileUrl: '', contractFrom: '', contractTo: '',
-    healthCertFileUrl: '', operatingLicenseFileUrl: '',
+    contractFiles: [], contractFrom: '', contractTo: '',
+    healthFiles: [], licenseFiles: [], insuranceFiles: [], declarationFiles: [],
     ecommerceUsername: '', ecommercePassword: ''
   };
+  // Μετατρέπει ένα παλιό μοναδικό xFileUrl σε λίστα ενός αρχείου (για records που
+  // αποθηκεύτηκαν πριν την αλλαγή σε πολλαπλά αρχεία) — έτσι δεν χάνεται τίποτα.
+  function filesFor(rec, arrayField, legacyUrlField) {
+    if (Array.isArray(rec[arrayField]) && rec[arrayField].length) return rec[arrayField];
+    if (rec[legacyUrlField]) return [{ url: rec[legacyUrlField], name: '', uploadedAt: null }];
+    return [];
+  }
   const [expandedStore, setExpandedStore] = useState(null);
   const [detailsDraft, setDetailsDraft] = useState({});
   const [uploadingField, setUploadingField] = useState(null);
@@ -332,11 +350,13 @@ export default function StoreEquipmentView({ readOnly = false }) {
       electricityMeterNo: rec.electricityMeterNo || '',
       waterMeterNo: rec.waterMeterNo || '',
       address: rec.address || '',
-      contractFileUrl: rec.contractFileUrl || '',
+      contractFiles: filesFor(rec, 'contractFiles', 'contractFileUrl'),
       contractFrom: rec.contractFrom || '',
       contractTo: rec.contractTo || '',
-      healthCertFileUrl: rec.healthCertFileUrl || '',
-      operatingLicenseFileUrl: rec.operatingLicenseFileUrl || '',
+      healthFiles: filesFor(rec, 'healthFiles', 'healthCertFileUrl'),
+      licenseFiles: filesFor(rec, 'licenseFiles', 'operatingLicenseFileUrl'),
+      insuranceFiles: rec.insuranceFiles || [],
+      declarationFiles: rec.declarationFiles || [],
       ecommerceUsername: rec.ecommerceUsername || '',
       ecommercePassword: rec.ecommercePassword || ''
     };
@@ -367,6 +387,9 @@ export default function StoreEquipmentView({ readOnly = false }) {
     }
   }
 
+  // Κάθε upload ΠΡΟΣΘΕΤΕΙ ένα αρχείο στη λίστα της κατηγορίας (field = π.χ. 'contractFiles'),
+  // δεν αντικαθιστά πια το προηγούμενο — έτσι μπορεί να υπάρχουν όσα αρχεία χρειάζονται ανά
+  // κατηγορία (π.χ. πολλές σελίδες σύμβασης, ή σύμβαση + τροποποίηση).
   async function handleDocUpload(record, field, file) {
     if (!file) return;
     const key = `${record.id}:${field}`;
@@ -374,14 +397,29 @@ export default function StoreEquipmentView({ readOnly = false }) {
     setError('');
     try {
       const { url } = await upload(file);
-      setDetailsField(record.id, field, url);
-      const draft = { ...getDetailsDraft(record.id), [field]: url };
+      const newFile = { url, name: file.name || '', uploadedAt: new Date().toISOString() };
+      const nextFiles = [...(getDetailsDraft(record.id)[field] || []), newFile];
+      setDetailsField(record.id, field, nextFiles);
+      const draft = { ...getDetailsDraft(record.id), [field]: nextFiles };
       const updated = await StoreEquipment.update(record.id, { ...record, ...draft });
       setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
     } catch (err) {
       setError(err.message || String(err));
     } finally {
       setUploadingField((cur) => (cur === key ? null : cur));
+    }
+  }
+
+  async function handleDocRemove(record, field, index) {
+    setError('');
+    try {
+      const nextFiles = (getDetailsDraft(record.id)[field] || []).filter((_, i) => i !== index);
+      setDetailsField(record.id, field, nextFiles);
+      const draft = { ...getDetailsDraft(record.id), [field]: nextFiles };
+      const updated = await StoreEquipment.update(record.id, { ...record, ...draft });
+      setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+    } catch (err) {
+      setError(err.message || String(err));
     }
   }
 
@@ -754,57 +792,52 @@ export default function StoreEquipmentView({ readOnly = false }) {
           />
         </div>
 
-        <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
-          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_contract_file')}</label>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            {!readOnly && (
-              <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
-                {draft.contractFileUrl ? t('se_file_replace') : t('se_file_choose')}
-                <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'contractFileUrl', e.target.files[0])} />
-              </label>
-            )}
-            {uploadingField === `${rec.id}:contractFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
-            {draft.contractFileUrl ? (
-              <a href={draft.contractFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>
-            ) : readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
-            <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_from')}</span>
-            <input disabled={readOnly} type="date" value={draft.contractFrom} onChange={(e) => setDetailsField(rec.id, 'contractFrom', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
-            <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_to')}</span>
-            <input disabled={readOnly} type="date" value={draft.contractTo} onChange={(e) => setDetailsField(rec.id, 'contractTo', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
-          </div>
-        </div>
-
-        <div>
-          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_health_file')}</label>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {!readOnly && (
-              <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
-                {draft.healthCertFileUrl ? t('se_file_replace') : t('se_file_choose')}
-                <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'healthCertFileUrl', e.target.files[0])} />
-              </label>
-            )}
-            {uploadingField === `${rec.id}:healthCertFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
-            {draft.healthCertFileUrl ? (
-              <a href={draft.healthCertFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>
-            ) : readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
-          </div>
-        </div>
-
-        <div>
-          <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t('se_field_license_file')}</label>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {!readOnly && (
-              <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
-                {draft.operatingLicenseFileUrl ? t('se_file_replace') : t('se_file_choose')}
-                <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, 'operatingLicenseFileUrl', e.target.files[0])} />
-              </label>
-            )}
-            {uploadingField === `${rec.id}:operatingLicenseFileUrl` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
-            {draft.operatingLicenseFileUrl ? (
-              <a href={draft.operatingLicenseFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{t('se_file_view')}</a>
-            ) : readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
-          </div>
-        </div>
+        {DOC_CATEGORIES.map((cat) => {
+          const field = `${cat.key}Files`;
+          const files = draft[field] || [];
+          return (
+            <div key={cat.key} style={cat.hasDates ? { gridColumn: '1 / -1', borderTop: '1px solid #eef1f4', paddingTop: 10 } : undefined}>
+              <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5 }}>{t(cat.labelKey)}</label>
+              {files.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 6 }}>
+                  {files.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <a href={f.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                        {t('se_file_view')}{f.name ? ` — ${f.name}` : ''}
+                      </a>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => handleDocRemove(rec, field, i)}
+                          title={t('common_delete')}
+                          style={{ border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                        >✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                {!readOnly && (
+                  <label className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                    {t('se_file_add')}
+                    <input type="file" style={{ display: 'none' }} onChange={(e) => handleDocUpload(rec, field, e.target.files[0])} />
+                  </label>
+                )}
+                {uploadingField === `${rec.id}:${field}` && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_uploading')}</span>}
+                {files.length === 0 && readOnly && <span style={{ fontSize: 12, color: '#97a2b0' }}>{t('se_file_none')}</span>}
+                {cat.hasDates && (
+                  <>
+                    <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_from')}</span>
+                    <input disabled={readOnly} type="date" value={draft.contractFrom} onChange={(e) => setDetailsField(rec.id, 'contractFrom', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
+                    <span style={{ fontSize: 11, color: '#97a2b0' }}>{t('se_field_contract_to')}</span>
+                    <input disabled={readOnly} type="date" value={draft.contractTo} onChange={(e) => setDetailsField(rec.id, 'contractTo', e.target.value)} style={{ border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 7px', fontSize: 12.5 }} />
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
 
         <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eef1f4', paddingTop: 10 }}>
           <label style={{ fontSize: 11, color: '#97a2b0', display: 'block', marginBottom: 5, fontWeight: 600 }}>{t('se_field_ecommerce_section')}</label>
