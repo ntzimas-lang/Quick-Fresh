@@ -451,8 +451,10 @@ export const NcAttachments = {
     const record = {
       id,
       name: '',
+      category: '',
       url: '',
       fileName: '',
+      order: 0,
       ...body,
       id,
       createdBy: user?.id || null,
