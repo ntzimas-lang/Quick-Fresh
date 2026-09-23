@@ -306,12 +306,13 @@ export default function StoreEquipmentView({ readOnly = false }) {
     { key: 'health', labelKey: 'se_field_health_file', hasDates: false },
     { key: 'license', labelKey: 'se_field_license_file', hasDates: false },
     { key: 'insurance', labelKey: 'se_field_insurance_file', hasDates: false },
-    { key: 'declaration', labelKey: 'se_field_declaration_file', hasDates: false }
+    { key: 'declaration', labelKey: 'se_field_declaration_file', hasDates: false },
+    { key: 'assetTransfer', labelKey: 'se_field_asset_transfer_file', hasDates: false }
   ];
   const emptyDetails = {
     electricityMeterNo: '', waterMeterNo: '', address: '',
     contractFiles: [], contractFrom: '', contractTo: '',
-    healthFiles: [], licenseFiles: [], insuranceFiles: [], declarationFiles: [],
+    healthFiles: [], licenseFiles: [], insuranceFiles: [], declarationFiles: [], assetTransferFiles: [],
     ecommerceUsername: '', ecommercePassword: ''
   };
   // Μετατρέπει ένα παλιό μοναδικό xFileUrl σε λίστα ενός αρχείου (για records που
@@ -357,6 +358,7 @@ export default function StoreEquipmentView({ readOnly = false }) {
       licenseFiles: filesFor(rec, 'licenseFiles', 'operatingLicenseFileUrl'),
       insuranceFiles: rec.insuranceFiles || [],
       declarationFiles: rec.declarationFiles || [],
+      assetTransferFiles: rec.assetTransferFiles || [],
       ecommerceUsername: rec.ecommerceUsername || '',
       ecommercePassword: rec.ecommercePassword || ''
     };
