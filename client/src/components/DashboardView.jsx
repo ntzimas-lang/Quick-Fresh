@@ -666,6 +666,24 @@ export default function DashboardView({ isDriver = false } = {}) {
         .map(([store, profit]) => ({ store, profit: Math.round(profit) }))
         .sort((a, b) => b.profit - a.profit)
     }));
+  // Ίδια επιλογή καταστημάτων (effectiveTrendSelectedStores, από την ενότητα "Τάσεις"
+  // παραπάνω στον κώδικα) εφαρμόζεται και εδώ — μία καμπύλη Κέρδους ανά επιλεγμένο
+  // κατάστημα, πάνω στον ίδιο άξονα μηνών του γραφήματος Κέρδος ανά Μήνα, με κοινή
+  // κλίμακα ώστε να συγκρίνονται οπτικά (ίδιο pattern με trendCoordsShared).
+  const profitMonthKeys = profitByMonthList.map((m) => m.monthKey);
+  const storeProfitSeries = effectiveTrendSelectedStores.map((store, i) => ({
+    store,
+    color: STORE_TREND_COLORS[i % STORE_TREND_COLORS.length],
+    values: profitMonthKeys.map((mk) => Math.round((monthStoreProfit[mk] && monthStoreProfit[mk][store]) || 0))
+  }));
+  const storeProfitAllValues = storeProfitSeries.flatMap((s) => s.values);
+  const storeProfitLo = storeProfitAllValues.length ? Math.min(0, ...storeProfitAllValues) : 0;
+  const storeProfitHi = storeProfitAllValues.length ? Math.max(0, ...storeProfitAllValues, 1) : 1;
+  const storeProfitCoords = storeProfitSeries.map((s) => ({
+    ...s,
+    coords: trendCoordsShared(s.values, storeProfitLo, storeProfitHi, 360, 130, 25)
+  }));
+  const storeProfitZeroY = trendCoordsShared([0], storeProfitLo, storeProfitHi, 360, 130, 25)[0].y;
 
   // --- Ώρες Αιχμής (peak hours) --------------------------------------------
   // Ένα report "Sales By 30/15 Minutes" καλύπτει όλη την εφαρμογή μαζί (όχι ανά
@@ -720,6 +738,42 @@ export default function DashboardView({ isDriver = false } = {}) {
               <p style={{ fontSize: 13, color: '#97a2b0', margin: 0 }}>{t('d_sales_empty')}</p>
             ) : (
               <>
+                {trendStoreOptions.length > 0 && (
+                  <div style={{ paddingBottom: 16, marginBottom: 18, borderBottom: '1px solid #eef1f4' }}>
+                    <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 600, marginBottom: 8 }}>{t('d_trend_store_filter_label')}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {trendStoreOptions.map((s) => {
+                        const active = effectiveTrendSelectedStores.includes(s);
+                        const color = STORE_TREND_COLORS[effectiveTrendSelectedStores.indexOf(s) >= 0 ? effectiveTrendSelectedStores.indexOf(s) % STORE_TREND_COLORS.length : 0];
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => toggleTrendStore(s)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 14,
+                              border: active ? `1px solid ${color}` : '1px solid #d7dce2',
+                              background: active ? color + '1a' : '#fff', color: active ? color : '#6b7684',
+                              fontSize: 12, fontWeight: active ? 700 : 500, cursor: 'pointer'
+                            }}
+                          >
+                            {active && <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />}
+                            {s}
+                          </button>
+                        );
+                      })}
+                      {effectiveTrendSelectedStores.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setTrendSelectedStores(new Set())}
+                          style={{ padding: '5px 10px', borderRadius: 14, border: '1px solid #d7dce2', background: '#fff', color: '#c0392b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {t('d_trend_store_clear')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div style={{ borderBottom: '1px solid #eef1f4', paddingBottom: 18, marginBottom: 22 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: showProfitByMonth ? 6 : 0 }}>
                     <span style={{ fontSize: 11.5, color: '#97a2b0', fontWeight: 700, textTransform: 'uppercase' }}>
@@ -745,29 +799,66 @@ export default function DashboardView({ isDriver = false } = {}) {
                             {formatEuro(profitTotalAllMonths)}
                             <span style={{ fontSize: 12, color: '#97a2b0', fontWeight: 400, marginLeft: 8, textTransform: 'none' }}>{t('d_profit_by_month_total_label')}</span>
                           </div>
+                          {effectiveTrendSelectedStores.length > 0 && (
+                            <div style={{ display: 'flex', gap: 12, fontSize: 10.5, color: '#6b7684', flexWrap: 'wrap', marginBottom: 6 }}>
+                              {storeProfitCoords.map((s) => (
+                                <span key={s.store}><span style={{ display: 'inline-block', width: 14, height: 2.5, background: s.color, marginRight: 4, verticalAlign: 'middle' }} />{s.store}</span>
+                              ))}
+                            </div>
+                          )}
                           <svg viewBox="0 0 360 140" style={{ width: '100%', height: 190 }}>
-                            <line x1="6" y1="100" x2="354" y2="100" stroke="#e1e5ea" strokeWidth="1" />
-                            {profitByMonthList.map((m, i) => {
-                              const n = profitByMonthList.length;
-                              const slot = 340 / n;
-                              const bw = Math.min(38, slot * 0.55);
-                              const cx = 10 + slot * i + slot / 2;
-                              const barH = Math.max(2, (Math.abs(m.profit) / profitChartMax) * 88);
-                              const baseline = 100;
-                              const y = m.profit >= 0 ? baseline - barH : baseline;
-                              const barColor = m.profit >= 0 ? '#2f8f8a' : '#c0392b';
-                              return (
-                                <g key={m.monthKey}>
-                                  <rect x={cx - bw / 2} y={y} width={bw} height={barH} fill={barColor} rx="3" />
-                                  <text x={cx} y={m.profit >= 0 ? y - 6 : y + barH + 14} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={barColor}>
-                                    {formatEuro(m.profit)}
-                                  </text>
-                                  <text x={cx} y={baseline + 18} textAnchor="middle" fontSize="9" fill="#6b7684">
-                                    {monthLabel(m.monthKey, lang)}
-                                  </text>
-                                </g>
-                              );
-                            })}
+                            {effectiveTrendSelectedStores.length > 0 ? (
+                              <>
+                                <line x1="6" y1={storeProfitZeroY} x2="354" y2={storeProfitZeroY} stroke="#e1e5ea" strokeWidth="1" />
+                                {storeProfitCoords.map((s) => (
+                                  <g key={s.store}>
+                                    <polyline points={coordsToPoints(s.coords)} fill="none" stroke={s.color} strokeWidth="2.5" />
+                                    {s.coords.map((c, i) => (
+                                      <g key={s.store + i}>
+                                        <circle cx={c.x} cy={c.y} r="2.5" fill={s.color} />
+                                        <text x={c.x} y={c.y - 8} textAnchor={i === 0 ? 'start' : i === s.coords.length - 1 ? 'end' : 'middle'} fontSize="8" fontWeight="700" fill={s.color}>
+                                          {formatEuro(c.value)}
+                                        </text>
+                                      </g>
+                                    ))}
+                                  </g>
+                                ))}
+                                {profitMonthKeys.map((mk, i) => {
+                                  const n = profitMonthKeys.length;
+                                  const x = n > 1 ? (i * 360) / (n - 1) : 180;
+                                  return (
+                                    <text key={mk} x={x} y="138" textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize="9" fill="#6b7684">
+                                      {monthLabel(mk, lang)}
+                                    </text>
+                                  );
+                                })}
+                              </>
+                            ) : (
+                              <>
+                                <line x1="6" y1="100" x2="354" y2="100" stroke="#e1e5ea" strokeWidth="1" />
+                                {profitByMonthList.map((m, i) => {
+                                  const n = profitByMonthList.length;
+                                  const slot = 340 / n;
+                                  const bw = Math.min(38, slot * 0.55);
+                                  const cx = 10 + slot * i + slot / 2;
+                                  const barH = Math.max(2, (Math.abs(m.profit) / profitChartMax) * 88);
+                                  const baseline = 100;
+                                  const y = m.profit >= 0 ? baseline - barH : baseline;
+                                  const barColor = m.profit >= 0 ? '#2f8f8a' : '#c0392b';
+                                  return (
+                                    <g key={m.monthKey}>
+                                      <rect x={cx - bw / 2} y={y} width={bw} height={barH} fill={barColor} rx="3" />
+                                      <text x={cx} y={m.profit >= 0 ? y - 6 : y + barH + 14} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={barColor}>
+                                        {formatEuro(m.profit)}
+                                      </text>
+                                      <text x={cx} y={baseline + 18} textAnchor="middle" fontSize="9" fill="#6b7684">
+                                        {monthLabel(m.monthKey, lang)}
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+                              </>
+                            )}
                           </svg>
 
                           {profitByMonthStoreList.length > 0 && (
@@ -861,43 +952,6 @@ export default function DashboardView({ isDriver = false } = {}) {
                         ))}
                       </tbody>
                     </table>
-                  </div>
-                )}
-
-                {trendStoreOptions.length > 0 && (
-                  <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 14, marginBottom: 4 }}>
-                    <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 600, marginBottom: 8 }}>{t('d_trend_store_filter_label')}</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {trendStoreOptions.map((s, i) => {
-                        const active = effectiveTrendSelectedStores.includes(s);
-                        const color = STORE_TREND_COLORS[effectiveTrendSelectedStores.indexOf(s) >= 0 ? effectiveTrendSelectedStores.indexOf(s) % STORE_TREND_COLORS.length : 0];
-                        return (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => toggleTrendStore(s)}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 14,
-                              border: active ? `1px solid ${color}` : '1px solid #d7dce2',
-                              background: active ? color + '1a' : '#fff', color: active ? color : '#6b7684',
-                              fontSize: 12, fontWeight: active ? 700 : 500, cursor: 'pointer'
-                            }}
-                          >
-                            {active && <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />}
-                            {s}
-                          </button>
-                        );
-                      })}
-                      {effectiveTrendSelectedStores.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setTrendSelectedStores(new Set())}
-                          style={{ padding: '5px 10px', borderRadius: 14, border: '1px solid #d7dce2', background: '#fff', color: '#c0392b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                        >
-                          {t('d_trend_store_clear')}
-                        </button>
-                      )}
-                    </div>
                   </div>
                 )}
 
