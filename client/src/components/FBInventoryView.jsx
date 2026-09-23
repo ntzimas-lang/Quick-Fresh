@@ -505,11 +505,14 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                   const { revenue, isEstimate } = getSalesForMonth(mk);
                   // Κόστος Πωλήσεων / F.C. % με ΟΛΕΣ τις αφαιρέσεις (Καταστροφή/Ληγμένο + Λοιπές Αφαιρέσεις) — η "επίσημη" μέτρηση.
                   const costOfSales = canCompute ? (openingInfo.value || 0) + receipts - destr - (closingInfo.value || 0) : null;
-                  const fcPct = canCompute && revenue > 0 ? (costOfSales / revenue) * 100 : null;
+                  // Το F.C. % υπολογίζεται ΜΟΝΟ όταν οι Πωλήσεις είναι πραγματικό ποσό (sales_daily), ποτέ πάνω
+                  // σε εκτίμηση (proration από Sales Analysis Report) — μια εκτιμώμενη τιμή θα έδινε παραπλανητικό
+                  // F.C. %. Όταν δεν υπάρχουν ακόμα πραγματικές Ημερήσιες Πωλήσεις για τον μήνα, δείχνουμε "—".
+                  const fcPct = canCompute && !isEstimate && revenue > 0 ? (costOfSales / revenue) * 100 : null;
                   // F.C. % μόνο με Καταστροφή/Ληγμένο (χωρίς Λοιπές Αφαιρέσεις) — δείχνει το "καθαρό" F.C. χωρίς
                   // ό,τι αφαιρέθηκε για δειγματισμό/ζήτηση διοίκησης/άλλο, που δεν είναι πραγματική φθορά.
                   const costOfSalesWasteOnly = canCompute ? (openingInfo.value || 0) + receipts - destrWaste - (closingInfo.value || 0) : null;
-                  const fcPctWasteOnly = canCompute && revenue > 0 ? (costOfSalesWasteOnly / revenue) * 100 : null;
+                  const fcPctWasteOnly = canCompute && !isEstimate && revenue > 0 ? (costOfSalesWasteOnly / revenue) * 100 : null;
                   return (
                     <tr key={mk} style={{ borderTop: '1px solid #eef0f3' }}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: '#16233f' }}>{monthLabel(mk, lang)}</td>
