@@ -518,9 +518,15 @@ export default function FBInventoryView({ readOnly = false, active = true }) {
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destrWaste)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{fmtEuro(destrOther)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        {fmtEuro(revenue)}
-                        {revenue === 0 && <div style={{ fontSize: 9.5, color: '#c0392b', marginTop: 2 }}>{t('fb_no_sales_hint')}</div>}
-                        {revenue !== 0 && isEstimate && <div style={{ fontSize: 9.5, color: '#e0a500', marginTop: 2 }}>{t('fb_sales_estimate_hint')}</div>}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {fmtEuro(revenue)}
+                          {revenue === 0 && (
+                            <span title={t('fb_no_sales_hint')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#fdecea', color: '#c0392b', fontSize: 9.5, fontWeight: 700, cursor: 'default' }}>!</span>
+                          )}
+                          {revenue !== 0 && isEstimate && (
+                            <span title={t('fb_sales_estimate_hint')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#fdf2da', color: '#e0a500', fontSize: 9.5, fontWeight: 700, cursor: 'default' }}>~</span>
+                          )}
+                        </span>
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{renderInventoryCell(mk, 'closing')}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{costOfSales !== null ? fmtEuro(costOfSales) : '—'}</td>
