@@ -27,6 +27,7 @@ export default function NcAttachmentsView() {
   const [editAttachmentSaving, setEditAttachmentSaving] = useState(false);
   const editAttachmentFileInputRef = useRef(null);
   const [attachmentReordering, setAttachmentReordering] = useState(null);
+  const [categoryReordering, setCategoryReordering] = useState(null);
 
   useEffect(() => {
     loadAttachments();
@@ -51,7 +52,8 @@ export default function NcAttachmentsView() {
     try {
       const { url } = await upload(attachmentFile);
       const maxOrder = attachments.reduce((m, a) => Math.max(m, Number(a.order) || 0), 0);
-      const created = await NcAttachments.create({ name, category, url, fileName: attachmentFile.name || '', order: maxOrder + 1 });
+      const categoryOrder = getCategoryOrder(category);
+      const created = await NcAttachments.create({ name, category, categoryOrder, url, fileName: attachmentFile.name || '', order: maxOrder + 1 });
       setAttachments((prev) => [...prev, created]);
       setAttachmentName('');
       setAttachmentCategory('');
@@ -70,6 +72,17 @@ export default function NcAttachmentsView() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'el'));
   }, [attachments]);
 
+  // Order value shared by every attachment of a given category. When adding a file to an
+  // EXISTING category, we inherit that category's current order so it doesn't jump position.
+  // For a brand-new category name, it goes to the end (max + 1).
+  function getCategoryOrder(category) {
+    if (!category) return 0;
+    const existing = attachments.find((a) => a.category === category);
+    if (existing) return Number(existing.categoryOrder) || 0;
+    const maxCat = attachments.reduce((m, a) => (a.category ? Math.max(m, Number(a.categoryOrder) || 0) : m), -1);
+    return maxCat + 1;
+  }
+
   const attachmentGroups = useMemo(() => {
     const byCategory = {};
     attachments.forEach((a) => {
@@ -80,12 +93,50 @@ export default function NcAttachmentsView() {
     Object.values(byCategory).forEach((list) =>
       list.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
     );
-    const keys = Object.keys(byCategory)
+    const namedKeys = Object.keys(byCategory)
       .filter((k) => k !== '')
-      .sort((a, b) => a.localeCompare(b, 'el'));
-    if (byCategory['']) keys.push('');
+      .sort((a, b) => {
+        const oa = Number(byCategory[a][0].categoryOrder) || 0;
+        const ob = Number(byCategory[b][0].categoryOrder) || 0;
+        return oa - ob || a.localeCompare(b, 'el');
+      });
+    const keys = byCategory[''] ? [...namedKeys, ''] : namedKeys;
     return keys.map((key) => ({ category: key, items: byCategory[key] }));
   }, [attachments]);
+
+  async function moveCategory(index, direction) {
+    // Only the named categories are orderable — "no category" always stays last.
+    const namedGroups = attachmentGroups.filter((g) => g.category !== '');
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= namedGroups.length) return;
+    const reordered = namedGroups.slice();
+    const tmp = reordered[index];
+    reordered[index] = reordered[targetIdx];
+    reordered[targetIdx] = tmp;
+
+    const toPersist = [];
+    reordered.forEach((grp, i) => {
+      grp.items.forEach((item) => {
+        if ((Number(item.categoryOrder) || 0) !== i) toPersist.push({ item, newCategoryOrder: i });
+      });
+    });
+    if (toPersist.length === 0) return;
+    setCategoryReordering(namedGroups[index].category);
+    setAttachmentsError('');
+    try {
+      const updated = await Promise.all(
+        toPersist.map(({ item, newCategoryOrder }) => NcAttachments.update(item.id, { ...item, categoryOrder: newCategoryOrder }))
+      );
+      setAttachments((prev) => prev.map((x) => {
+        const match = updated.find((u) => u.id === x.id);
+        return match || x;
+      }));
+    } catch (err) {
+      setAttachmentsError(err.message || String(err));
+    } finally {
+      setCategoryReordering(null);
+    }
+  }
 
   async function moveAttachment(group, index, direction) {
     const targetIdx = index + direction;
@@ -164,7 +215,8 @@ export default function NcAttachmentsView() {
         fileName = editAttachmentFile.name || '';
       }
       const category = editAttachmentCategory.trim();
-      const updated = await NcAttachments.update(a.id, { ...a, name, category, url, fileName });
+      const categoryOrder = category === a.category ? a.categoryOrder : getCategoryOrder(category);
+      const updated = await NcAttachments.update(a.id, { ...a, name, category, categoryOrder, url, fileName });
       setAttachments((prev) => prev.map((x) => (x.id === a.id ? updated : x)));
       cancelEditAttachment();
     } catch (err) {
@@ -228,10 +280,32 @@ export default function NcAttachmentsView() {
             <p style={{ color: '#97a2b0', fontSize: 13 }}>{t('nc_att_no_records')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {attachmentGroups.map((grp) => (
+              {attachmentGroups.map((grp) => {
+                const namedGroups = attachmentGroups.filter((g) => g.category !== '');
+                const namedIdx = namedGroups.findIndex((g) => g.category === grp.category);
+                const isNamed = grp.category !== '';
+                return (
                 <div key={grp.category || '__none__'}>
-                  <div style={{ fontSize: 11.5, color: '#97a2b0', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 }}>
-                    {grp.category || t('nc_att_no_category')}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    {isNamed && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <button
+                          type="button"
+                          disabled={namedIdx === 0 || categoryReordering}
+                          onClick={() => moveCategory(namedIdx, -1)}
+                          style={{ border: 'none', background: 'transparent', cursor: namedIdx === 0 ? 'default' : 'pointer', color: namedIdx === 0 ? '#c7cdd6' : '#6b7684', fontSize: 11, lineHeight: 1, padding: 0 }}
+                        >▲</button>
+                        <button
+                          type="button"
+                          disabled={namedIdx === namedGroups.length - 1 || categoryReordering}
+                          onClick={() => moveCategory(namedIdx, 1)}
+                          style={{ border: 'none', background: 'transparent', cursor: namedIdx === namedGroups.length - 1 ? 'default' : 'pointer', color: namedIdx === namedGroups.length - 1 ? '#c7cdd6' : '#6b7684', fontSize: 11, lineHeight: 1, padding: 0 }}
+                        >▼</button>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11.5, color: '#97a2b0', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                      {grp.category || t('nc_att_no_category')}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {grp.items.map((a, idx) =>
@@ -297,7 +371,8 @@ export default function NcAttachmentsView() {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
