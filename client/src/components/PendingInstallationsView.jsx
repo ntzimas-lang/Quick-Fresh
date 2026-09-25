@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { PendingInstallations } from '../api.js';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { DEJAVU_SANS_BASE64 } from '../dejavu-font.js';
 import { useLanguage } from '../LanguageContext.jsx';
 
 // Λίστα καταστημάτων σε εκκρεμότητα εγκατάστασης. ΣΚΟΠΙΜΑ αυτόνομο πεδίο — δεν αντλεί
@@ -7,9 +10,10 @@ import { useLanguage } from '../LanguageContext.jsx';
 // από Στοιχεία Καταστήματος). Το όνομα καταστήματος είναι ελεύθερο κείμενο, γιατί αυτά
 // τα καταστήματα δεν έχουν ακόμα εγκατασταθεί — δεν υπάρχουν πουθενά αλλού στην εφαρμογή.
 //
-// Δύο βασικά "σχέδια" εξοπλισμού βλέπει ο χρήστης στην πράξη:
-//   Σχέδιο Α: Stockwell + Φούρνοι (Heat) + Καφές
-//   Σχέδιο Β: Ψυγείο 1 + Ψυγείο 2 + Φούρνοι (Heat) + Καφές
+// Δύο βασικά "σχέδια" εξοπλισμού βλέπει ο χρήστης στην πράξη (φωτογραφίες πάνω-πάνω στη
+// σελίδα, μόνο για οπτική αναφορά — δεν επηρεάζουν καθόλου τα δεδομένα):
+//   Σχέδιο με Ψυγεία: Ψυγείο 1 + Ψυγείο 2 + Φούρνοι (Heat) + Καφές
+//   Σχέδιο με Stockwell: Stockwell + Φούρνοι (Heat) + Καφές
 // Αντί να κλειδώσουμε δύο σταθερά "σχέδια", δίνουμε ένα ελεύθερο checklist με όλα τα
 // πιθανά κομμάτια — έτσι καλύπτεται και οποιοσδήποτε συνδυασμός στο μέλλον.
 const EQUIPMENT_OPTIONS = [
@@ -33,6 +37,12 @@ function emptyDraft() {
 
 function statusMeta(key) {
   return STATUS_OPTIONS.find((s) => s.key === key) || STATUS_OPTIONS[0];
+}
+
+function formatDate(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr + 'T00:00:00');
+  return d.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 export default function PendingInstallationsView({ canDelete = false, readOnly = false }) {
@@ -59,6 +69,10 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
 
   function toggleEquipment(list, key) {
     return list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
+  }
+
+  function equipmentLabel(list) {
+    return (list || []).map((key) => t(EQUIPMENT_OPTIONS.find((e) => e.key === key)?.labelKey || key)).join(', ') || '—';
   }
 
   async function handleCreate() {
@@ -122,16 +136,55 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
 
   const visibleRows = rows.filter((r) => (showDone ? true : r.status !== 'done'));
 
+  function exportPDF() {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+    doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
+    doc.setFontSize(12);
+    doc.text(`Quick & Fresh — ${t('nav_pending_installations')}`, 14, 12);
+    autoTable(doc, {
+      startY: 18,
+      head: [[t('pi_col_store'), t('pi_col_equipment'), t('pi_col_target_date'), t('pi_col_status'), t('pi_col_notes')]],
+      body: visibleRows.map((r) => [
+        r.store || '',
+        equipmentLabel(r.equipment),
+        formatDate(r.targetDate),
+        t(statusMeta(r.status).labelKey),
+        r.notes || ''
+      ]),
+      styles: { fontSize: 9, cellPadding: 3, font: 'DejaVuSans' },
+      headStyles: { fillColor: [22, 35, 63], font: 'DejaVuSans' },
+      columnStyles: { 4: { cellWidth: 80 } }
+    });
+    doc.save(`quick-fresh-ekkremeis-egkatastaseis-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #e1e5ea', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15 }}>{t('nav_pending_installations')}</strong>
+        <button className="btn-primary" style={{ background: '#c98a1f' }} onClick={exportPDF} title={t('common_export_pdf')}>
+          PDF
+        </button>
         <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6b7684' }}>
           <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
           {t('pi_show_done')}
         </label>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
+        {/* Δύο σχέδια εγκατάστασης — μόνο οπτική αναφορά, δεν συνδέονται με δεδομένα */}
+        <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px', background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, overflow: 'hidden' }}>
+            <img src="/pending-install-plan-fridges.jpg" alt={t('pi_plan_fridges')} style={{ width: '100%', display: 'block' }} />
+            <div style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#16233f' }}>{t('pi_plan_fridges')}</div>
+          </div>
+          <div style={{ flex: '1 1 320px', background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, overflow: 'hidden' }}>
+            <img src="/pending-install-plan-stockwell.jpg" alt={t('pi_plan_stockwell')} style={{ width: '100%', display: 'block' }} />
+            <div style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#16233f' }}>{t('pi_plan_stockwell')}</div>
+          </div>
+        </div>
+
         <p style={{ color: '#6b7684', fontSize: 12.5, margin: '0 0 14px' }}>{t('pi_hint')}</p>
 
         {error && (
@@ -140,147 +193,162 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
           </div>
         )}
 
-        {/* Νέα εκκρεμότητα */}
-        {!readOnly && (
-        <div style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 16, marginBottom: 18 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#16233f', marginBottom: 10 }}>{t('pi_new_title')}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <div className="field">
-              <label>{t('pi_col_store')}</label>
-              <input
-                value={newDraft.store}
-                onChange={(e) => setNewDraft((d) => ({ ...d, store: e.target.value }))}
-                placeholder={t('pi_store_placeholder')}
-              />
-            </div>
-            <div className="field">
-              <label>{t('pi_col_target_date')}</label>
-              <input
-                type="date"
-                value={newDraft.targetDate || ''}
-                onChange={(e) => setNewDraft((d) => ({ ...d, targetDate: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 600, marginBottom: 6 }}>{t('pi_col_equipment')}</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              {EQUIPMENT_OPTIONS.map((eq) => (
-                <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={newDraft.equipment.includes(eq.key)}
-                    onChange={() => setNewDraft((d) => ({ ...d, equipment: toggleEquipment(d.equipment, eq.key) }))}
-                  />
-                  {t(eq.labelKey)}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="field" style={{ marginBottom: 12 }}>
-            <label>{t('pi_col_notes')}</label>
-            <textarea
-              value={newDraft.notes}
-              onChange={(e) => setNewDraft((d) => ({ ...d, notes: e.target.value }))}
-              rows={2}
-              placeholder={t('pi_notes_placeholder')}
-            />
-          </div>
-          <button className="btn-primary" onClick={handleCreate} disabled={creating || !newDraft.store.trim()}>
-            {creating ? t('d_loading') : t('pi_add_button')}
-          </button>
-        </div>
-        )}
-
         {loading ? (
           <p style={{ color: '#97a2b0' }}>{t('d_loading')}</p>
-        ) : visibleRows.length === 0 ? (
-          <p style={{ color: '#97a2b0' }}>{t('pi_no_results')}</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {visibleRows.map((row) => {
-              const draft = draftFor(row);
-              const dirty = !!editDrafts[row.id];
-              const sm = statusMeta(draft.status);
-              return (
-                <div key={row.id} style={{ background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, padding: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff', borderRadius: 8, overflow: 'hidden' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
+                <th style={{ padding: '10px 12px', minWidth: 160 }}>{t('pi_col_store')}</th>
+                <th style={{ padding: '10px 12px', minWidth: 260 }}>{t('pi_col_equipment')}</th>
+                <th style={{ padding: '10px 12px', minWidth: 130 }}>{t('pi_col_target_date')}</th>
+                <th style={{ padding: '10px 12px', minWidth: 140 }}>{t('pi_col_status')}</th>
+                <th style={{ padding: '10px 12px', minWidth: 180 }}>{t('pi_col_notes')}</th>
+                {!readOnly && <th style={{ padding: '10px 12px' }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {!readOnly && (
+                <tr style={{ borderTop: '1px solid #eef1f4', background: '#fbfcfd' }}>
+                  <td style={{ padding: '6px 12px' }}>
                     <input
-                      value={draft.store}
-                      onChange={(e) => setDraftField(row.id, 'store', e.target.value)}
-                      disabled={readOnly}
-                      style={{ fontSize: 14, fontWeight: 700, color: '#16233f', border: '1px solid #d7dce2', borderRadius: 6, padding: '5px 8px', flex: '1 1 220px' }}
+                      value={newDraft.store}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, store: e.target.value }))}
+                      placeholder={t('pi_store_placeholder')}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
                     />
-                    <select
-                      value={draft.status}
-                      onChange={(e) => setDraftField(row.id, 'status', e.target.value)}
-                      disabled={readOnly}
-                      style={{ background: sm.color, color: '#fff', fontWeight: 600, border: 'none', borderRadius: 10, padding: '5px 10px', fontSize: 12 }}
-                    >
-                      {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{t(s.labelKey)}</option>)}
-                    </select>
-                    {!readOnly && row.status !== 'done' && (
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        style={{ background: '#2f8f8a' }}
-                        onClick={() => handleMarkDone(row)}
-                        disabled={savingId === row.id}
-                      >
-                        ✓ {t('pi_mark_done')}
-                      </button>
-                    )}
-                    {canDelete && (
-                      <button type="button" className="btn-danger" onClick={() => handleDelete(row.id)}>
-                        {t('common_delete')}
-                      </button>
-                    )}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                    <div className="field">
-                      <label>{t('pi_col_target_date')}</label>
-                      <input
-                        type="date"
-                        value={draft.targetDate || ''}
-                        onChange={(e) => setDraftField(row.id, 'targetDate', e.target.value)}
-                        disabled={readOnly}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 11.5, color: '#6b7684', fontWeight: 600, marginBottom: 6 }}>{t('pi_col_equipment')}</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                  </td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {EQUIPMENT_OPTIONS.map((eq) => (
-                        <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13 }}>
+                        <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap' }}>
                           <input
                             type="checkbox"
-                            checked={(draft.equipment || []).includes(eq.key)}
-                            onChange={() => setDraftField(row.id, 'equipment', toggleEquipment(draft.equipment || [], eq.key))}
-                            disabled={readOnly}
+                            checked={newDraft.equipment.includes(eq.key)}
+                            onChange={() => setNewDraft((d) => ({ ...d, equipment: toggleEquipment(d.equipment, eq.key) }))}
                           />
                           {t(eq.labelKey)}
                         </label>
                       ))}
                     </div>
-                  </div>
-                  <div className="field" style={{ marginBottom: 12 }}>
-                    <label>{t('pi_col_notes')}</label>
-                    <textarea
-                      value={draft.notes || ''}
-                      onChange={(e) => setDraftField(row.id, 'notes', e.target.value)}
-                      rows={2}
-                      disabled={readOnly}
+                  </td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <input
+                      type="date"
+                      value={newDraft.targetDate || ''}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, targetDate: e.target.value }))}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
                     />
-                  </div>
-                  {!readOnly && dirty && (
-                    <button className="btn-primary" onClick={() => handleSaveRow(row.id)} disabled={savingId === row.id}>
-                      {savingId === row.id ? t('d_loading') : t('common_save')}
+                  </td>
+                  <td style={{ padding: '6px 12px', color: '#97a2b0', fontSize: 12 }}>{t('pi_status_pending')}</td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <input
+                      value={newDraft.notes}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, notes: e.target.value }))}
+                      placeholder={t('pi_notes_placeholder')}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                    <button className="btn-primary" onClick={handleCreate} disabled={creating || !newDraft.store.trim()}>
+                      {creating ? '…' : t('pi_add_button')}
                     </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  </td>
+                </tr>
+              )}
+              {visibleRows.length === 0 && (
+                <tr>
+                  <td colSpan={readOnly ? 5 : 6} style={{ padding: '14px 12px', color: '#97a2b0' }}>{t('pi_no_results')}</td>
+                </tr>
+              )}
+              {visibleRows.map((row) => {
+                const draft = draftFor(row);
+                const dirty = !!editDrafts[row.id];
+                const sm = statusMeta(draft.status);
+                return (
+                  <tr key={row.id} style={{ borderTop: '1px solid #eef1f4' }}>
+                    <td style={{ padding: '6px 12px' }}>
+                      <input
+                        value={draft.store}
+                        onChange={(e) => setDraftField(row.id, 'store', e.target.value)}
+                        disabled={readOnly}
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5, fontWeight: 600, color: '#16233f' }}
+                      />
+                    </td>
+                    <td style={{ padding: '6px 12px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {EQUIPMENT_OPTIONS.map((eq) => (
+                          <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                            <input
+                              type="checkbox"
+                              checked={(draft.equipment || []).includes(eq.key)}
+                              onChange={() => setDraftField(row.id, 'equipment', toggleEquipment(draft.equipment || [], eq.key))}
+                              disabled={readOnly}
+                            />
+                            {t(eq.labelKey)}
+                          </label>
+                        ))}
+                      </div>
+                    </td>
+                    <td style={{ padding: '6px 12px' }}>
+                      <input
+                        type="date"
+                        value={draft.targetDate || ''}
+                        onChange={(e) => setDraftField(row.id, 'targetDate', e.target.value)}
+                        disabled={readOnly}
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                      />
+                    </td>
+                    <td style={{ padding: '6px 12px' }}>
+                      <select
+                        value={draft.status}
+                        onChange={(e) => setDraftField(row.id, 'status', e.target.value)}
+                        disabled={readOnly}
+                        style={{ background: sm.color, color: '#fff', fontWeight: 600, border: 'none', borderRadius: 10, padding: '5px 10px', fontSize: 12 }}
+                      >
+                        {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{t(s.labelKey)}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '6px 12px' }}>
+                      <input
+                        value={draft.notes || ''}
+                        onChange={(e) => setDraftField(row.id, 'notes', e.target.value)}
+                        disabled={readOnly}
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                      />
+                    </td>
+                    {!readOnly && (
+                      <td style={{ padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {dirty && (
+                            <button className="btn-primary" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleSaveRow(row.id)} disabled={savingId === row.id}>
+                              {savingId === row.id ? '…' : t('common_save')}
+                            </button>
+                          )}
+                          {row.status !== 'done' && (
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              style={{ background: '#2f8f8a', padding: '4px 10px', fontSize: 11.5 }}
+                              onClick={() => handleMarkDone(row)}
+                              disabled={savingId === row.id}
+                            >
+                              ✓
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button type="button" className="btn-danger" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => handleDelete(row.id)}>
+                              {t('common_delete')}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
