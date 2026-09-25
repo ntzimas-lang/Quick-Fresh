@@ -55,7 +55,10 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
   const [creating, setCreating] = useState(false);
   const [editDrafts, setEditDrafts] = useState({}); // id -> draft
   const [savingId, setSavingId] = useState(null);
-  const [showDone, setShowDone] = useState(false);
+  // Προεπιλογή true — οι ολοκληρωμένες εγκαταστάσεις ΔΕΝ εξαφανίζονται μόλις πατηθεί
+  // "Ολοκληρώθηκε" (μπέρδευε, έμοιαζε σαν να χάνονταν δεδομένα). Ο χρήστης μπορεί ακόμα
+  // να τις αποκρύψει χειροκίνητα με το checkbox αν θέλει πιο καθαρή λίστα εκκρεμοτήτων.
+  const [showDone, setShowDone] = useState(true);
 
   useEffect(() => {
     load();
@@ -262,54 +265,6 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
               </tr>
             </thead>
             <tbody>
-              {!readOnly && (
-                <tr style={{ borderTop: '1px solid #eef1f4', background: '#fbfcfd' }}>
-                  <td style={{ padding: '6px 12px' }}>
-                    <input
-                      value={newDraft.store}
-                      onChange={(e) => setNewDraft((d) => ({ ...d, store: e.target.value }))}
-                      placeholder={t('pi_store_placeholder')}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
-                    />
-                  </td>
-                  <td style={{ padding: '6px 12px' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {EQUIPMENT_OPTIONS.map((eq) => (
-                        <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                          <input
-                            type="checkbox"
-                            checked={newDraft.equipment.includes(eq.key)}
-                            onChange={() => setNewDraft((d) => ({ ...d, equipment: toggleEquipment(d.equipment, eq.key) }))}
-                          />
-                          {t(eq.labelKey)}
-                        </label>
-                      ))}
-                    </div>
-                  </td>
-                  <td style={{ padding: '6px 12px' }}>
-                    <input
-                      type="date"
-                      value={newDraft.targetDate || ''}
-                      onChange={(e) => setNewDraft((d) => ({ ...d, targetDate: e.target.value }))}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
-                    />
-                  </td>
-                  <td style={{ padding: '6px 12px', color: '#97a2b0', fontSize: 12 }}>{t('pi_status_pending')}</td>
-                  <td style={{ padding: '6px 12px' }}>
-                    <input
-                      value={newDraft.notes}
-                      onChange={(e) => setNewDraft((d) => ({ ...d, notes: e.target.value }))}
-                      placeholder={t('pi_notes_placeholder')}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
-                    />
-                  </td>
-                  <td style={{ padding: '6px 12px', whiteSpace: 'nowrap' }}>
-                    <button className="btn-primary" onClick={handleCreate} disabled={creating || !newDraft.store.trim()}>
-                      {creating ? '…' : t('pi_add_button')}
-                    </button>
-                  </td>
-                </tr>
-              )}
               {visibleRows.length === 0 && (
                 <tr>
                   <td colSpan={readOnly ? 5 : 6} style={{ padding: '14px 12px', color: '#97a2b0' }}>{t('pi_no_results')}</td>
@@ -401,6 +356,54 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                   </tr>
                 );
               })}
+              {!readOnly && (
+                <tr style={{ borderTop: '1px solid #eef1f4', background: '#fbfcfd' }}>
+                  <td style={{ padding: '6px 12px' }}>
+                    <input
+                      value={newDraft.store}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, store: e.target.value }))}
+                      placeholder={t('pi_store_placeholder')}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {EQUIPMENT_OPTIONS.map((eq) => (
+                        <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                          <input
+                            type="checkbox"
+                            checked={newDraft.equipment.includes(eq.key)}
+                            onChange={() => setNewDraft((d) => ({ ...d, equipment: toggleEquipment(d.equipment, eq.key) }))}
+                          />
+                          {t(eq.labelKey)}
+                        </label>
+                      ))}
+                    </div>
+                  </td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <input
+                      type="date"
+                      value={newDraft.targetDate || ''}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, targetDate: e.target.value }))}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 12px', color: '#97a2b0', fontSize: 12 }}>{t('pi_status_pending')}</td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <input
+                      value={newDraft.notes}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, notes: e.target.value }))}
+                      placeholder={t('pi_notes_placeholder')}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                    <button className="btn-primary" onClick={handleCreate} disabled={creating || !newDraft.store.trim()}>
+                      {creating ? '…' : t('pi_add_button')}
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}
