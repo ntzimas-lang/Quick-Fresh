@@ -674,6 +674,45 @@ export const StoreEquipment = {
   }
 };
 
+// Λίστα καταστημάτων σε εκκρεμότητα εγκατάστασης — ΑΥΤΟΝΟΜΟ πεδίο, σκόπιμα χωρίς καμία
+// σύνδεση με την κεντρική λίστα καταστημάτων ή το Στοιχεία Καταστήματος (το όνομα
+// καταστήματος εδώ είναι ελεύθερο κείμενο, όχι από datalist), γιατί αφορά καταστήματα
+// που ΔΕΝ έχουν εγκατασταθεί ακόμα — δεν υπάρχουν σε καμία άλλη λίστα της εφαρμογής.
+// equipment = πίνακας από κλειδιά εξοπλισμού (βλ. PENDING_INSTALL_EQUIPMENT στο
+// PendingInstallationsView.jsx) — τι θα μπει σε κάθε συγκεκριμένη εγκατάσταση.
+export const PendingInstallations = {
+  async list() {
+    const data = await fetchAllRows('pending_installations', { orderBy: 'updated_at', ascending: false });
+    return data.map(rowToRecord);
+  },
+  async create(body) {
+    const id = newId();
+    const record = { id, store: '', equipment: [], targetDate: '', notes: '', status: 'pending', ...body, id };
+    const { data, error } = await supabase
+      .from('pending_installations')
+      .insert({ id: record.id, data: record })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async update(id, body) {
+    const record = { ...body, id };
+    const { data, error } = await supabase
+      .from('pending_installations')
+      .update({ data: record, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToRecord(data);
+  },
+  async remove(id) {
+    const { error } = await supabase.from('pending_installations').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
 // Μηνιαία απογραφή αποθέματος F&B ανά κατάστημα (συνολική αξία σε €, ΟΧΙ ανά προϊόν) —
 // Απογραφή Έναρξης / Απογραφή Λήξης καταχωρούνται χειροκίνητα εδώ· οι ενδιάμεσες κινήσεις
 // (Παραλαβές, Καταστροφές, Πωλήσεις) υπολογίζονται ΑΥΤΟΜΑΤΑ στο FBInventoryView.jsx από

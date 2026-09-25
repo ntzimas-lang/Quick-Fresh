@@ -7,6 +7,7 @@ import ExpiredReportView from './components/ExpiredReportView.jsx';
 import DestructionsReportView from './components/DestructionsReportView.jsx';
 import DeliveryShortagesView from './components/DeliveryShortagesView.jsx';
 import StoreEquipmentView from './components/StoreEquipmentView.jsx';
+import PendingInstallationsView from './components/PendingInstallationsView.jsx';
 import NewCustomersView from './components/NewCustomersView.jsx';
 import NcAttachmentsView from './components/NcAttachmentsView.jsx';
 import ScenariosView from './components/ScenariosView.jsx';
@@ -251,6 +252,14 @@ export default function App() {
           )}
           {role !== 'driver' && (
             <button
+              className={'nav-item' + (view === 'pendingInstallations' ? ' active' : '')}
+              onClick={() => setView('pendingInstallations')}
+            >
+              {t('nav_pending_installations')}
+            </button>
+          )}
+          {role !== 'driver' && (
+            <button
               className={'nav-item' + (view === 'products' ? ' active' : '')}
               onClick={() => setView('products')}
             >
@@ -361,6 +370,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'storeEquipment' ? ' active' : '')}>
             <StoreEquipmentView readOnly={readOnly} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'pendingInstallations' ? ' active' : '')}>
+            <PendingInstallationsView canDelete={role === 'super_user'} readOnly={readOnly} />
           </section>
         )}
         <section className={'view' + (view === 'entry' ? ' active' : '')}>
