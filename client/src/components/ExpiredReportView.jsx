@@ -56,7 +56,7 @@ function getRowValue(e, key) {
   return '';
 }
 
-export default function ExpiredReportView({ canDelete = false }) {
+export default function ExpiredReportView({ canDelete = false, jumpToSearch = null, onConsumeJump }) {
   const { t, lang } = useLanguage();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -64,6 +64,13 @@ export default function ExpiredReportView({ canDelete = false }) {
   const [deleteError, setDeleteError] = useState('');
   const [storeFilter, setStoreFilter] = useState('all');
   const [search, setSearch] = useState('');
+
+  // Άφιξη από την καθολική αναζήτηση (sidebar) — γεμίζει το πεδίο αναζήτησης εδώ.
+  useEffect(() => {
+    if (jumpToSearch === null) return;
+    setSearch(jumpToSearch);
+    if (onConsumeJump) onConsumeJump();
+  }, [jumpToSearch]);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [columnFilters, setColumnFilters] = useState({});

@@ -45,7 +45,7 @@ function getRowValue(d, key) {
   return '';
 }
 
-export default function DestructionsReportView({ canDelete = false, onNewDestruction }) {
+export default function DestructionsReportView({ canDelete = false, onNewDestruction, jumpToSearch = null, onConsumeJump }) {
   const { t } = useLanguage();
   const [destructions, setDestructions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +53,13 @@ export default function DestructionsReportView({ canDelete = false, onNewDestruc
   const [deleteError, setDeleteError] = useState('');
   const [storeFilter, setStoreFilter] = useState('all');
   const [search, setSearch] = useState('');
+
+  // Άφιξη από την καθολική αναζήτηση (sidebar) — γεμίζει το πεδίο αναζήτησης εδώ.
+  useEffect(() => {
+    if (jumpToSearch === null) return;
+    setSearch(jumpToSearch);
+    if (onConsumeJump) onConsumeJump();
+  }, [jumpToSearch]);
   const [columnFilters, setColumnFilters] = useState({});
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('desc');

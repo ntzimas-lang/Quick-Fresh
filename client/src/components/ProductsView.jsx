@@ -172,7 +172,7 @@ const thumbBtnStyle = {
   color: '#fff', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
 };
 
-export default function ProductsView({ readOnly = false }) {
+export default function ProductsView({ readOnly = false, jumpToProductId = null, onConsumeJump }) {
   const { t } = useLanguage();
   const ALL_COLUMNS = buildAllColumns(t);
   const [products, setProducts] = useState([]);
@@ -223,6 +223,19 @@ export default function ProductsView({ readOnly = false }) {
   useEffect(() => {
     Products.list().then(setProducts);
   }, []);
+
+  // Άνοιγμα συγκεκριμένου προϊόντος από την καθολική αναζήτηση (sidebar) — μόλις
+  // φορτώσουν τα προϊόντα, αν υπάρχει jumpToProductId ανοίγουμε κατευθείαν την Κάρτα του.
+  useEffect(() => {
+    if (!jumpToProductId || !products.length) return;
+    const p = products.find((x) => x.id === jumpToProductId);
+    if (p) {
+      setCurrent(p);
+      setTab('info');
+      setViewMode('card');
+    }
+    if (onConsumeJump) onConsumeJump();
+  }, [jumpToProductId, products]);
 
   // Σιγουρεύει ότι η κάμερα κλείνει αν ο χρήστης φύγει από τη σελίδα ενώ σαρώνει.
   useEffect(() => {
