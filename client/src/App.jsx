@@ -15,6 +15,8 @@ import ErpView from './components/ErpView.jsx';
 import UsersView from './components/UsersView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import SalesView from './components/SalesView.jsx';
+import ForecastView from './components/ForecastView.jsx';
+import GlobalSearch from './components/GlobalSearch.jsx';
 import Login from './components/Login.jsx';
 import { Auth, Entries } from './api.js';
 import { useLanguage } from './LanguageContext.jsx';
@@ -41,6 +43,12 @@ export default function App() {
   // στην Καταχώρηση με προεπιλεγμένη τη λειτουργία "Καταστροφή" — one-shot τιμή, καταναλώνεται
   // από το ProductEntryView μόλις ανοίξει.
   const [pendingEntryMode, setPendingEntryMode] = useState(null);
+  // Στόχοι "άφιξης" από την καθολική αναζήτηση (sidebar) — κάθε ένα καταναλώνεται
+  // (ξαναγίνεται null) από το αντίστοιχο view μόλις το χρησιμοποιήσει, ώστε ένα δεύτερο
+  // κλικ στο ίδιο αποτέλεσμα να ξαναδουλέψει κανονικά.
+  const [jumpProductId, setJumpProductId] = useState(null);
+  const [jumpExpiredSearch, setJumpExpiredSearch] = useState(null);
+  const [jumpDestructionsSearch, setJumpDestructionsSearch] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
       const v = localStorage.getItem(SIDEBAR_KEY);
@@ -170,6 +178,12 @@ export default function App() {
             ‹
           </button>
         </div>
+        <GlobalSearch
+          onNavigate={setView}
+          onJumpProduct={setJumpProductId}
+          onJumpExpired={setJumpExpiredSearch}
+          onJumpDestructions={setJumpDestructionsSearch}
+        />
         <nav className="nav">
           <button
             className={'nav-item' + (view === 'dashboard' ? ' active' : '')}
@@ -268,6 +282,14 @@ export default function App() {
               {t('nav_fb_inventory')}
             </button>
           )}
+          {role !== 'driver' && (
+            <button
+              className={'nav-item' + (view === 'forecast' ? ' active' : '')}
+              onClick={() => setView('forecast')}
+            >
+              {t('nav_forecast')}
+            </button>
+          )}
           <div style={{ height: 14 }} />
           <button
             className="nav-item lang-toggle"
@@ -323,7 +345,7 @@ export default function App() {
         </section>
         {role !== 'driver' && (
           <section className={'view' + (view === 'products' ? ' active' : '')}>
-            <ProductsView readOnly={readOnly} />
+            <ProductsView readOnly={readOnly} jumpToProductId={jumpProductId} onConsumeJump={() => setJumpProductId(null)} />
           </section>
         )}
         {role !== 'driver' && (
@@ -349,12 +371,18 @@ export default function App() {
           />
         </section>
         <section className={'view' + (view === 'expired' ? ' active' : '')}>
-          <ExpiredReportView canDelete={role === 'super_user'} />
+          <ExpiredReportView
+            canDelete={role === 'super_user'}
+            jumpToSearch={jumpExpiredSearch}
+            onConsumeJump={() => setJumpExpiredSearch(null)}
+          />
         </section>
         <section className={'view' + (view === 'destructionsReport' ? ' active' : '')}>
           <DestructionsReportView
             canDelete={role === 'super_user' || role === 'user'}
             onNewDestruction={() => { setPendingEntryMode('destruction'); setView('entry'); }}
+            jumpToSearch={jumpDestructionsSearch}
+            onConsumeJump={() => setJumpDestructionsSearch(null)}
           />
         </section>
         <section className={'view' + (view === 'deliveryShortages' ? ' active' : '')}>
@@ -388,6 +416,11 @@ export default function App() {
         {role !== 'driver' && (
           <section className={'view' + (view === 'fbInventory' ? ' active' : '')}>
             <FBInventoryView readOnly={readOnly} active={view === 'fbInventory'} />
+          </section>
+        )}
+        {role !== 'driver' && (
+          <section className={'view' + (view === 'forecast' ? ' active' : '')}>
+            <ForecastView />
           </section>
         )}
         {role === 'super_user' && (
