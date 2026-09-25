@@ -12,16 +12,17 @@ import { useLanguage } from '../LanguageContext.jsx';
 //
 // Δύο βασικά "σχέδια" εξοπλισμού βλέπει ο χρήστης στην πράξη (φωτογραφίες πάνω-πάνω στη
 // σελίδα, μόνο για οπτική αναφορά — δεν επηρεάζουν καθόλου τα δεδομένα):
-//   Σχέδιο με Ψυγεία: Ψυγείο 1 + Ψυγείο 2 + Φούρνοι (Heat) + Καφές
-//   Σχέδιο με Stockwell: Stockwell + Φούρνοι (Heat) + Καφές
-// Αντί να κλειδώσουμε δύο σταθερά "σχέδια", δίνουμε ένα ελεύθερο checklist με όλα τα
-// πιθανά κομμάτια — έτσι καλύπτεται και οποιοσδήποτε συνδυασμός στο μέλλον.
+//   Σχέδιο με Ψυγεία: Ψυγείο 1 + Ψυγείο 2 + Heat + Καφές
+//   Σχέδιο με Stockwell: Stockwell + Heat + Καφές
+// Κάθε επιλογή παρακάτω αντιστοιχεί σε ΜΙΑ στήλη/ενότητα του πάγκου (όπως φαίνεται στις
+// φωτογραφίες) — π.χ. το "Heat" είναι ΜΙΑ στήλη με 2 φούρνους μέσα της, όχι δύο ξεχωριστές
+// επιλογές. Αντί να κλειδώσουμε δύο σταθερά "σχέδια", δίνουμε ένα ελεύθερο checklist με
+// όλες τις πιθανές στήλες — έτσι καλύπτεται και οποιοσδήποτε συνδυασμός στο μέλλον.
 const EQUIPMENT_OPTIONS = [
   { key: 'stockwell', labelKey: 'pi_eq_stockwell' },
   { key: 'fridge1', labelKey: 'pi_eq_fridge1' },
   { key: 'fridge2', labelKey: 'pi_eq_fridge2' },
-  { key: 'oven1', labelKey: 'pi_eq_oven1' },
-  { key: 'oven2', labelKey: 'pi_eq_oven2' },
+  { key: 'heat', labelKey: 'pi_eq_heat' },
   { key: 'coffee', labelKey: 'pi_eq_coffee' }
 ];
 
@@ -136,15 +137,68 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
 
   const visibleRows = rows.filter((r) => (showDone ? true : r.status !== 'done'));
 
-  function exportPDF() {
+  // Φορτώνει μια εικόνα από το /public σε base64 dataURL, ώστε να μπει μέσα στο PDF
+  // (το jsPDF χρειάζεται dataURL/ArrayBuffer, όχι απλό URL string).
+  function loadImageAsDataURL(url) {
+    return fetch(url)
+      .then((res) => res.blob())
+      .then(
+        (blob) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          })
+      );
+  }
+
+  function getImageSize(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ w: img.width, h: img.height });
+      img.src = dataUrl;
+    });
+  }
+
+  async function exportPDF() {
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
     doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
     doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(12);
-    doc.text(`Quick & Fresh — ${t('nav_pending_installations')}`, 14, 12);
+    doc.text(`Quick & Fresh — ${t('nav_pending_installations')}`, 14, 10);
+
+    // Τα δύο σχέδια εγκατάστασης πάνω-πάνω στο PDF, σαν οπτική αναφορά — ίδια λογική
+    // με την οθόνη.
+    let tableStartY = 16;
+    try {
+      const [fridgesUrl, stockwellUrl] = await Promise.all([
+        loadImageAsDataURL('/pending-install-plan-fridges.jpg'),
+        loadImageAsDataURL('/pending-install-plan-stockwell.jpg')
+      ]);
+      const [fridgesSize, stockwellSize] = await Promise.all([getImageSize(fridgesUrl), getImageSize(stockwellUrl)]);
+      const boxW = 128;
+      const gap = 10;
+      const x1 = 14;
+      const x2 = x1 + boxW + gap;
+      const h1 = boxW * (fridgesSize.h / fridgesSize.w);
+      const h2 = boxW * (stockwellSize.h / stockwellSize.w);
+      const imgY = 14;
+      doc.addImage(fridgesUrl, 'JPEG', x1, imgY, boxW, h1);
+      doc.addImage(stockwellUrl, 'JPEG', x2, imgY, boxW, h2);
+      doc.setFontSize(9);
+      doc.text(t('pi_plan_fridges'), x1, imgY + h1 + 5);
+      doc.text(t('pi_plan_stockwell'), x2, imgY + h2 + 5);
+      doc.setFontSize(12);
+      tableStartY = imgY + Math.max(h1, h2) + 12;
+    } catch (e) {
+      // Αν αποτύχει η φόρτωση των εικόνων (π.χ. offline), απλά συνεχίζουμε χωρίς αυτές —
+      // ο πίνακας δεδομένων είναι το σημαντικό μέρος του PDF.
+    }
+
     autoTable(doc, {
-      startY: 18,
+      startY: tableStartY,
       head: [[t('pi_col_store'), t('pi_col_equipment'), t('pi_col_target_date'), t('pi_col_status'), t('pi_col_notes')]],
       body: visibleRows.map((r) => [
         r.store || '',
