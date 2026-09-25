@@ -75,8 +75,10 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
     return list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
   }
 
+  // Πάντα με τη σταθερή σειρά του EQUIPMENT_OPTIONS (Stockwell, Ψυγείο 1, Ψυγείο 2,
+  // Φούρνοι, Καφές) — ΟΧΙ με τη σειρά που τσεκαρίστηκαν τα κουτάκια.
   function equipmentLabel(list) {
-    return (list || []).map((key) => t(EQUIPMENT_OPTIONS.find((e) => e.key === key)?.labelKey || key)).join(', ') || '—';
+    return EQUIPMENT_OPTIONS.filter((e) => (list || []).includes(e.key)).map((e) => t(e.labelKey)).join(', ') || '—';
   }
 
   async function handleCreate() {
@@ -229,7 +231,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
           {t('pi_show_done')}
         </label>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 260px', background: '#f9fafb' }}>
         {/* Δύο σχέδια εγκατάστασης — μόνο οπτική αναφορά, δεν συνδέονται με δεδομένα */}
         <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 320px', background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, overflow: 'hidden' }}>
@@ -388,7 +390,15 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                       style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
                     />
                   </td>
-                  <td style={{ padding: '6px 12px', color: '#97a2b0', fontSize: 12 }}>{t('pi_status_pending')}</td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <select
+                      value={newDraft.status}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, status: e.target.value }))}
+                      style={{ background: statusMeta(newDraft.status).color, color: '#fff', fontWeight: 600, border: 'none', borderRadius: 10, padding: '5px 10px', fontSize: 12 }}
+                    >
+                      {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{t(s.labelKey)}</option>)}
+                    </select>
+                  </td>
                   <td style={{ padding: '6px 12px' }}>
                     <input
                       value={newDraft.notes}
