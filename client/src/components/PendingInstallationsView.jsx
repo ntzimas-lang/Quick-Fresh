@@ -140,7 +140,18 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
     }
   }
 
-  const visibleRows = rows.filter((r) => (showDone ? true : r.status !== 'done'));
+  // Σειρά βάσει Επιθυμητής Ημερομηνίας (η πιο κοντινή πρώτη) — ισχύει και στην οθόνη
+  // και στο PDF, αφού και τα δύο διαβάζουν από το visibleRows. Γραμμές χωρίς ημερομηνία
+  // πάνε στο τέλος.
+  const visibleRows = rows
+    .filter((r) => (showDone ? true : r.status !== 'done'))
+    .slice()
+    .sort((a, b) => {
+      if (!a.targetDate && !b.targetDate) return 0;
+      if (!a.targetDate) return 1;
+      if (!b.targetDate) return -1;
+      return a.targetDate.localeCompare(b.targetDate);
+    });
 
   // Φορτώνει μια εικόνα από το /public σε base64 dataURL, ώστε να μπει μέσα στο PDF
   // (το jsPDF χρειάζεται dataURL/ArrayBuffer, όχι απλό URL string).
