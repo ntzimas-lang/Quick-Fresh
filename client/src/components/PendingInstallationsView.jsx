@@ -32,8 +32,18 @@ const STATUS_OPTIONS = [
   { key: 'done', labelKey: 'pi_status_done', color: '#2f8f8a' }
 ];
 
+// Χρώμα ανά τύπο εξοπλισμού — μόνο για να ξεχωρίζει οπτικά κάθε στοιχείο στη λίστα
+// επιλογής (checkboxes), ανεξάρτητα από το αν έχει ήδη γραφτεί το όνομα καταστήματος.
+const EQUIPMENT_COLOR = {
+  stockwell: '#2f8f8a',
+  fridge1: '#3d6bd6',
+  fridge2: '#3d6bd6',
+  heat: '#c98a1f',
+  coffee: '#8a5a3d'
+};
+
 function emptyDraft() {
-  return { store: '', equipment: [], targetDate: '', notes: '', status: 'pending' };
+  return { store: '', equipment: [], targetDate: '', notes: '', status: 'pending', peopleCount: '', subsidized: false };
 }
 
 function statusMeta(key) {
@@ -215,17 +225,19 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
 
     autoTable(doc, {
       startY: tableStartY,
-      head: [[t('pi_col_store'), t('pi_col_equipment'), t('pi_col_target_date'), t('pi_col_status'), t('pi_col_notes')]],
+      head: [[t('pi_col_store'), t('pi_col_equipment'), t('pi_col_people'), t('pi_col_subsidized'), t('pi_col_target_date'), t('pi_col_status'), t('pi_col_notes')]],
       body: visibleRows.map((r) => [
         r.store || '',
         equipmentLabel(r.equipment),
+        r.peopleCount || r.peopleCount === 0 ? String(r.peopleCount) : '—',
+        r.subsidized ? t('pi_subsidized_label') : '—',
         formatDate(r.targetDate),
         t(statusMeta(r.status).labelKey),
         r.notes || ''
       ]),
       styles: { fontSize: 9, cellPadding: 3, font: 'DejaVuSans' },
       headStyles: { fillColor: [22, 35, 63], font: 'DejaVuSans' },
-      columnStyles: { 4: { cellWidth: 80 } }
+      columnStyles: { 6: { cellWidth: 70 } }
     });
     doc.save(`quick-fresh-ekkremeis-egkatastaseis-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
@@ -242,7 +254,10 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
           {t('pi_show_done')}
         </label>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 260px', background: '#f9fafb' }}>
+      {/* Το padding-bottom είναι σκόπιμο κενό (ίδιο γκρι φόντο με την υπόλοιπη σελίδα,
+          #f9fafb) — δίνει χώρο ώστε το ημερολόγιο (date picker) της τελευταίας γραμμής
+          να μην κόβεται όταν ανοίγει. Δεν είναι bug/άδειο section. */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 140px', background: '#f9fafb' }}>
         {/* Δύο σχέδια εγκατάστασης — μόνο οπτική αναφορά, δεν συνδέονται με δεδομένα */}
         <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 320px', background: '#fff', border: '1px solid #e1e5ea', borderRadius: 10, overflow: 'hidden' }}>
@@ -271,6 +286,8 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
               <tr style={{ textAlign: 'left', color: '#6b7684', fontSize: 11.5, textTransform: 'uppercase', background: '#f4f6f8' }}>
                 <th style={{ padding: '10px 12px', minWidth: 160 }}>{t('pi_col_store')}</th>
                 <th style={{ padding: '10px 12px', minWidth: 260 }}>{t('pi_col_equipment')}</th>
+                <th style={{ padding: '10px 12px', minWidth: 80 }}>{t('pi_col_people')}</th>
+                <th style={{ padding: '10px 12px', minWidth: 120 }}>{t('pi_col_subsidized')}</th>
                 <th style={{ padding: '10px 12px', minWidth: 130 }}>{t('pi_col_target_date')}</th>
                 <th style={{ padding: '10px 12px', minWidth: 140 }}>{t('pi_col_status')}</th>
                 <th style={{ padding: '10px 12px', minWidth: 180 }}>{t('pi_col_notes')}</th>
@@ -280,7 +297,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
             <tbody>
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={readOnly ? 5 : 6} style={{ padding: '14px 12px', color: '#97a2b0' }}>{t('pi_no_results')}</td>
+                  <td colSpan={readOnly ? 7 : 8} style={{ padding: '14px 12px', color: '#97a2b0' }}>{t('pi_no_results')}</td>
                 </tr>
               )}
               {visibleRows.map((row) => {
@@ -300,7 +317,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                     <td style={{ padding: '6px 12px' }}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {EQUIPMENT_OPTIONS.map((eq) => (
-                          <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                          <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap', color: EQUIPMENT_COLOR[eq.key] || '#374151', fontWeight: 700 }}>
                             <input
                               type="checkbox"
                               checked={(draft.equipment || []).includes(eq.key)}
@@ -311,6 +328,32 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                           </label>
                         ))}
                       </div>
+                    </td>
+                    <td style={{ padding: '6px 12px' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        value={draft.peopleCount ?? ''}
+                        onChange={(e) => setDraftField(row.id, 'peopleCount', e.target.value)}
+                        disabled={readOnly}
+                        style={{ width: 64, boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                      />
+                    </td>
+                    <td style={{ padding: '6px 12px' }}>
+                      <label style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 10,
+                        fontSize: 11.5, fontWeight: 700, cursor: readOnly ? 'default' : 'pointer',
+                        background: draft.subsidized ? '#e1f5ee' : '#f4f6f8', color: draft.subsidized ? '#0f6e56' : '#97a2b0'
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={!!draft.subsidized}
+                          onChange={(e) => setDraftField(row.id, 'subsidized', e.target.checked)}
+                          disabled={readOnly}
+                          style={{ margin: 0 }}
+                        />
+                        {t('pi_subsidized_label')}
+                      </label>
                     </td>
                     <td style={{ padding: '6px 12px' }}>
                       <input
@@ -382,7 +425,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                   <td style={{ padding: '6px 12px' }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {EQUIPMENT_OPTIONS.map((eq) => (
-                        <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                        <label key={eq.key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, whiteSpace: 'nowrap', color: EQUIPMENT_COLOR[eq.key] || '#374151', fontWeight: 700 }}>
                           <input
                             type="checkbox"
                             checked={newDraft.equipment.includes(eq.key)}
@@ -392,6 +435,30 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                         </label>
                       ))}
                     </div>
+                  </td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      value={newDraft.peopleCount ?? ''}
+                      onChange={(e) => setNewDraft((d) => ({ ...d, peopleCount: e.target.value }))}
+                      style={{ width: 64, boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5 }}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <label style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 10,
+                      fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                      background: newDraft.subsidized ? '#e1f5ee' : '#f4f6f8', color: newDraft.subsidized ? '#0f6e56' : '#97a2b0'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={!!newDraft.subsidized}
+                        onChange={(e) => setNewDraft((d) => ({ ...d, subsidized: e.target.checked }))}
+                        style={{ margin: 0 }}
+                      />
+                      {t('pi_subsidized_label')}
+                    </label>
                   </td>
                   <td style={{ padding: '6px 12px' }}>
                     <input
