@@ -229,12 +229,21 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
       // ο πίνακας δεδομένων είναι το σημαντικό μέρος του PDF.
     }
 
+    // Ξεχωριστή στήλη ανά τύπο εξοπλισμού με ✓ — πιο καθαρό από μία στήλη με κόμματα.
     autoTable(doc, {
       startY: tableStartY,
-      head: [[t('pi_col_store'), t('pi_col_equipment'), t('pi_col_people'), t('pi_col_subsidized'), t('pi_col_target_date'), t('pi_col_status'), t('pi_col_notes')]],
+      head: [[
+        t('pi_col_store'),
+        ...EQUIPMENT_OPTIONS.map((eq) => t(eq.labelKey)),
+        t('pi_col_people'),
+        t('pi_col_subsidized'),
+        t('pi_col_target_date'),
+        t('pi_col_status'),
+        t('pi_col_notes')
+      ]],
       body: visibleRows.map((r) => [
         r.store || '',
-        equipmentLabel(r.equipment),
+        ...EQUIPMENT_OPTIONS.map((eq) => ((r.equipment || []).includes(eq.key) ? '✓' : '')),
         r.peopleCount || r.peopleCount === 0 ? String(r.peopleCount) : '—',
         r.subsidized ? t('pi_subsidized_label') : '—',
         formatDate(r.targetDate),
@@ -242,8 +251,15 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
         r.notes || ''
       ]),
       styles: { fontSize: 9, cellPadding: 3, font: 'DejaVuSans' },
-      headStyles: { fillColor: [22, 35, 63], font: 'DejaVuSans' },
-      columnStyles: { 6: { cellWidth: 70 } }
+      headStyles: { fillColor: [22, 35, 63], font: 'DejaVuSans', fontSize: 8 },
+      columnStyles: {
+        1: { halign: 'center', cellWidth: 18 },
+        2: { halign: 'center', cellWidth: 18 },
+        3: { halign: 'center', cellWidth: 18 },
+        4: { halign: 'center', cellWidth: 16 },
+        5: { halign: 'center', cellWidth: 16 },
+        10: { cellWidth: 60 }
+      }
     });
     doc.save(`quick-fresh-ekkremeis-egkatastaseis-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
