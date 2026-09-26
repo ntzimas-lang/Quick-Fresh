@@ -342,7 +342,10 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                         value={draft.store}
                         onChange={(e) => setDraftField(row.id, 'store', e.target.value)}
                         disabled={readOnly}
-                        style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2', fontSize: 12.5, fontWeight: 600, color: '#16233f' }}
+                        style={{
+                          width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6, border: '1px solid #d7dce2',
+                          fontSize: 12.5, fontWeight: 600, color: '#16233f', WebkitTextFillColor: '#16233f', opacity: 1
+                        }}
                       />
                     </td>
                     <td style={{ padding: '6px 12px' }}>
@@ -373,7 +376,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                     <td style={{ padding: '6px 12px' }}>
                       <label style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 10,
-                        fontSize: 11.5, fontWeight: 700, cursor: readOnly ? 'default' : 'pointer',
+                        fontSize: 11.5, fontWeight: 700, cursor: readOnly ? 'default' : 'pointer', whiteSpace: 'nowrap',
                         background: draft.subsidized ? '#e1f5ee' : '#f4f6f8', color: draft.subsidized ? '#0f6e56' : '#97a2b0'
                       }}>
                         <input
@@ -479,7 +482,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                   <td style={{ padding: '6px 12px' }}>
                     <label style={{
                       display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 10,
-                      fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                      fontSize: 11.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
                       background: newDraft.subsidized ? '#e1f5ee' : '#f4f6f8', color: newDraft.subsidized ? '#0f6e56' : '#97a2b0'
                     }}>
                       <input
