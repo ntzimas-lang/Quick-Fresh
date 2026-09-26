@@ -29,8 +29,13 @@ const EQUIPMENT_OPTIONS = [
 const STATUS_OPTIONS = [
   { key: 'pending', labelKey: 'pi_status_pending', color: '#c98a1f' },
   { key: 'scheduled', labelKey: 'pi_status_scheduled', color: '#2f80ed' },
-  { key: 'done', labelKey: 'pi_status_done', color: '#2f8f8a' }
+  { key: 'done', labelKey: 'pi_status_done', color: '#2f8f8a' },
+  { key: 'installed', labelKey: 'pi_status_installed', color: '#1d7a4c' }
 ];
+
+// Στάδια που θεωρούνται "τελικά" — κρύβονται όταν το checkbox "Εμφάνιση ολοκληρωμένων"
+// είναι απενεργοποιημένο.
+const TERMINAL_STATUSES = ['done', 'installed'];
 
 // Χρώμα ανά τύπο εξοπλισμού — μόνο για να ξεχωρίζει οπτικά κάθε στοιχείο στη λίστα
 // επιλογής (checkboxes), ανεξάρτητα από το αν έχει ήδη γραφτεί το όνομα καταστήματος.
@@ -154,7 +159,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
   // και στο PDF, αφού και τα δύο διαβάζουν από το visibleRows. Γραμμές χωρίς ημερομηνία
   // πάνε στο τέλος.
   const visibleRows = rows
-    .filter((r) => (showDone ? true : r.status !== 'done'))
+    .filter((r) => (showDone ? true : !TERMINAL_STATUSES.includes(r.status)))
     .slice()
     .sort((a, b) => {
       if (!a.targetDate && !b.targetDate) return 0;
@@ -390,7 +395,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
                               {savingId === row.id ? '…' : t('common_save')}
                             </button>
                           )}
-                          {row.status !== 'done' && (
+                          {!TERMINAL_STATUSES.includes(row.status) && (
                             <button
                               type="button"
                               className="btn-primary"
