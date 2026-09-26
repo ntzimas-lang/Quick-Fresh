@@ -229,7 +229,9 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
       // ο πίνακας δεδομένων είναι το σημαντικό μέρος του PDF.
     }
 
-    // Ξεχωριστή στήλη ανά τύπο εξοπλισμού με ✓ — πιο καθαρό από μία στήλη με κόμματα.
+    // Ξεχωριστή στήλη ανά τύπο εξοπλισμού με X — πιο καθαρό από μία στήλη με κόμματα.
+    // Σημείωση: το σύμβολο ✓ δεν αποδίδεται σωστά με τη γραμματοσειρά DejaVuSans που
+    // χρησιμοποιείται για τα ελληνικά στο PDF, γι' αυτό χρησιμοποιούμε απλό "X".
     autoTable(doc, {
       startY: tableStartY,
       head: [[
@@ -243,7 +245,7 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
       ]],
       body: visibleRows.map((r) => [
         r.store || '',
-        ...EQUIPMENT_OPTIONS.map((eq) => ((r.equipment || []).includes(eq.key) ? '✓' : '')),
+        ...EQUIPMENT_OPTIONS.map((eq) => ((r.equipment || []).includes(eq.key) ? 'X' : '')),
         r.peopleCount || r.peopleCount === 0 ? String(r.peopleCount) : '—',
         r.subsidized ? t('pi_subsidized_label') : '—',
         formatDate(r.targetDate),
