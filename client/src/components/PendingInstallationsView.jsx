@@ -27,6 +27,7 @@ const EQUIPMENT_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = [
+  { key: 'needs_meeting', labelKey: 'pi_status_needs_meeting', color: '#8a5a3d' },
   { key: 'pending', labelKey: 'pi_status_pending', color: '#c98a1f' },
   { key: 'scheduled', labelKey: 'pi_status_scheduled', color: '#2f80ed' },
   { key: 'done', labelKey: 'pi_status_done', color: '#2f8f8a' },
@@ -48,7 +49,7 @@ const EQUIPMENT_COLOR = {
 };
 
 function emptyDraft() {
-  return { store: '', equipment: [], targetDate: '', notes: '', status: 'pending', peopleCount: '', subsidized: false };
+  return { store: '', equipment: [], targetDate: '', notes: '', status: 'needs_meeting', peopleCount: '', subsidized: false };
 }
 
 function statusMeta(key) {
