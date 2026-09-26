@@ -252,15 +252,22 @@ export default function PendingInstallationsView({ canDelete = false, readOnly =
         t(statusMeta(r.status).labelKey),
         r.notes || ''
       ]),
-      styles: { fontSize: 9, cellPadding: 3, font: 'DejaVuSans' },
-      headStyles: { fillColor: [22, 35, 63], font: 'DejaVuSans', fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 2.5, font: 'DejaVuSans', overflow: 'linebreak' },
+      headStyles: { fillColor: [22, 35, 63], font: 'DejaVuSans', fontSize: 7.5 },
+      // Πλάτη ρητά ορισμένα ώστε η Ημερομηνία και η Κατάσταση να έχουν αρκετό χώρο και
+      // να ΜΗΝ "κόβονται"/τσαλακώνονται σε παράξενα σημεία (π.χ. "202" + "6" σε 2 γραμμές).
       columnStyles: {
-        1: { halign: 'center', cellWidth: 18 },
-        2: { halign: 'center', cellWidth: 18 },
-        3: { halign: 'center', cellWidth: 18 },
+        0: { cellWidth: 30 },
+        1: { halign: 'center', cellWidth: 16 },
+        2: { halign: 'center', cellWidth: 16 },
+        3: { halign: 'center', cellWidth: 16 },
         4: { halign: 'center', cellWidth: 16 },
         5: { halign: 'center', cellWidth: 16 },
-        10: { cellWidth: 60 }
+        6: { halign: 'center', cellWidth: 13 },
+        7: { cellWidth: 24 },
+        8: { cellWidth: 24 },
+        9: { cellWidth: 34 },
+        10: { cellWidth: 50 }
       }
     });
     doc.save(`quick-fresh-ekkremeis-egkatastaseis-${new Date().toISOString().slice(0, 10)}.pdf`);
